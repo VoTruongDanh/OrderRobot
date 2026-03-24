@@ -1,0 +1,209 @@
+from __future__ import annotations
+
+import asyncio
+import logging
+
+import httpx
+from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
+
+from app.config import get_settings
+from app.models import (
+    ConversationResponse,
+    SessionStartRequest,
+    SpeechSynthesisRequest,
+    SpeechTranscriptionResponse,
+    TurnRequest,
+)
+from app.services.conversation_engine import ConversationEngine
+from app.services.core_backend_client import CoreBackendClient
+from app.services.provider_client import ProviderError
+from app.services.speech_service import SpeechNotHeardError, SpeechService
+
+
+settings = get_settings()
+core_client = CoreBackendClient(settings.core_backend_url, settings.request_timeout_seconds)
+conversation_engine = ConversationEngine(settings, core_client)
+speech_service = SpeechService(settings, core_client)
+logger = logging.getLogger(__name__)
+
+app = FastAPI(title="Order Robot AI Backend", version="1.0.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.on_event("startup")
+async def preload_speech_model() -> None:
+    if not settings.stt_preload:
+        return
+
+    task = asyncio.create_task(speech_service.preload_stt())
+
+    def report_preload_failure(background_task: asyncio.Task[None]) -> None:
+        try:
+            background_task.result()
+        except Exception:
+            logger.exception("STT preload failed")
+
+    task.add_done_callback(report_preload_failure)
+
+
+@app.get("/health")
+def health() -> dict[str, object]:
+    return {
+        "status": "ok",
+        "provider_enabled": settings.provider_enabled,
+        "voice_style": settings.voice_style,
+        "stt_model": settings.stt_model,
+        "tts_voice": settings.tts_voice,
+        "active_sessions": conversation_engine.active_session_count(),
+    }
+
+
+@app.post("/sessions/start", response_model=ConversationResponse)
+def start_session(_: SessionStartRequest) -> ConversationResponse:
+    try:
+        return conversation_engine.start_session()
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail="Core backend khong san sang.") from exc
+    except ProviderError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/sessions/{session_id}/turn", response_model=ConversationResponse)
+def handle_turn(session_id: str, payload: TurnRequest) -> ConversationResponse:
+    try:
+        return conversation_engine.handle_turn(session_id, payload.transcript)
+    except httpx.HTTPStatusError as exc:
+        detail = exc.response.text or "Khong the tao don tu core backend."
+        raise HTTPException(status_code=502, detail=detail) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail="Khong the ket noi toi core backend.") from exc
+    except ProviderError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/sessions/{session_id}/reset", response_model=ConversationResponse)
+def reset_session(session_id: str) -> ConversationResponse:
+    return conversation_engine.reset_session(session_id)
+
+
+@app.post("/speech/synthesize")
+async def synthesize_speech(payload: SpeechSynthesisRequest) -> Response:
+    try:
+        audio = await speech_service.synthesize(payload.text)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Khong the tao giong noi: {exc}") from exc
+
+    return Response(content=audio.content, media_type=audio.media_type)
+
+
+@app.post("/speech/transcribe", response_model=SpeechTranscriptionResponse)
+async def transcribe_speech(file: UploadFile = File(...)) -> SpeechTranscriptionResponse:
+    try:
+        transcript = await speech_service.transcribe(file)
+        return SpeechTranscriptionResponse(transcript=transcript, status="ok")
+    except SpeechNotHeardError as exc:
+        return SpeechTranscriptionResponse(transcript="", status="retry", message=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.websocket("/speech/transcribe/ws")
+async def transcribe_speech_ws(websocket: WebSocket) -> None:
+    await websocket.accept()
+
+    filename = "speech.webm"
+    audio_chunks: list[bytes] = []
+    partial_task: asyncio.Task[str] | None = None
+    last_partial = ""
+
+    async def flush_partial() -> None:
+        nonlocal partial_task, last_partial
+        if partial_task is not None and not partial_task.done():
+            return
+        if not audio_chunks:
+            return
+
+        snapshot = b"".join(audio_chunks)
+        partial_task = asyncio.create_task(speech_service.transcribe_partial(snapshot, filename))
+        try:
+            transcript = await partial_task
+        except Exception:
+            logger.exception("Streaming partial STT failed")
+            return
+        finally:
+            partial_task = None
+
+        if transcript and transcript != last_partial:
+            last_partial = transcript
+            await websocket.send_json({"type": "partial", "transcript": transcript})
+
+    try:
+        while True:
+            message = await websocket.receive()
+            if message.get("type") == "websocket.disconnect":
+                break
+
+            if message.get("bytes") is not None:
+                audio_chunks.append(message["bytes"])
+                continue
+
+            payload = message.get("text")
+            if payload is None:
+                continue
+
+            if payload.startswith("start:"):
+                filename = payload.split(":", 1)[1] or "speech.webm"
+                audio_chunks.clear()
+                last_partial = ""
+                continue
+
+            if payload == "flush":
+                await flush_partial()
+                continue
+
+            if payload == "finalize":
+                if partial_task is not None and not partial_task.done():
+                    partial_task.cancel()
+                    partial_task = None
+
+                try:
+                    snapshot = b"".join(audio_chunks)
+                    if not snapshot:
+                        await websocket.send_json(
+                            {
+                                "type": "final",
+                                "status": "retry",
+                                "transcript": "",
+                                "message": "Mình nghe chưa rõ, bạn nói lại giúp mình nhé.",
+                            },
+                        )
+                        continue
+
+                    transcript = await speech_service.transcribe_partial(snapshot, filename)
+                    if transcript and transcript != last_partial:
+                        await websocket.send_json({"type": "partial", "transcript": transcript})
+
+                    final_transcript = await speech_service.transcribe_bytes(snapshot, filename)
+                    await websocket.send_json(
+                        {"type": "final", "status": "ok", "transcript": final_transcript},
+                    )
+                except SpeechNotHeardError as exc:
+                    await websocket.send_json(
+                        {"type": "final", "status": "retry", "transcript": "", "message": str(exc)},
+                    )
+                except Exception as exc:
+                    await websocket.send_json(
+                        {"type": "final", "status": "error", "message": str(exc), "transcript": ""},
+                    )
+                continue
+    except WebSocketDisconnect:
+        return

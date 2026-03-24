@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+.env
+data/orders.csv
+.agent/
+.agents/
+.cursor/
+.github/
+.kiro/
+agent/
