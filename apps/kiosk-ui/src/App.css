@@ -458,6 +458,13 @@ code {
   background: linear-gradient(135deg, #5fb9b0, #3e98a4);
 }
 
+.action-button--listening {
+  min-width: 220px;
+  background: linear-gradient(135deg, #e74c3c, #c0392b);
+  animation: pulse 2s ease-in-out infinite;
+  box-shadow: 0 8px 24px rgba(231, 76, 60, 0.3);
+}
+
 .action-button--small {
   padding: 10px 14px;
   font-size: 0.92rem;
@@ -501,6 +508,24 @@ code {
 
 .status-pill--muted {
   color: #7a6056;
+}
+
+.status-pill--active {
+  background: linear-gradient(135deg, #2b8d79 0%, #1fa88a 100%);
+  color: white;
+  border-color: #2b8d79;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.9;
+    transform: scale(1.02);
+  }
 }
 
 .side-panel__cta {

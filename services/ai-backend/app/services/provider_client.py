@@ -15,15 +15,15 @@ class ProviderError(RuntimeError):
 class ProviderClient:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
-        self.client = httpx.Client(
+        self.client = httpx.AsyncClient(
             base_url=settings.ai_base_url.rstrip("/"),
             headers={
                 "Authorization": f"Bearer {settings.ai_api_key}",
             },
-            timeout=settings.request_timeout_seconds,
+            timeout=settings.llm_timeout_seconds,  # Sử dụng timeout riêng cho LLM
         )
 
-    def compose_reply(self, prompt_payload: dict[str, Any]) -> dict[str, str]:
+    async def compose_reply(self, prompt_payload: dict[str, Any]) -> dict[str, str]:
         if not self.settings.provider_enabled:
             raise ProviderError("Provider AI chua duoc cau hinh.")
 
@@ -38,7 +38,7 @@ class ProviderClient:
 
         response: httpx.Response | None = None
         try:
-            response = self.client.post(
+            response = await self.client.post(
                 "/chat/completions",
                 json={
                     "model": self.settings.ai_model,
@@ -57,13 +57,70 @@ class ProviderClient:
             detail = response.text[:240] if response is not None else str(exc)
             raise ProviderError(f"Khong the lay phan hoi tu AI provider: {detail}") from exc
 
-    def transcribe_audio(self, filename: str, content: bytes, content_type: str) -> str:
+    async def compose_reply_stream(self, prompt_payload: dict[str, Any]):
+        """Stream LLM response for lower latency TTS pipeline."""
+        if not self.settings.provider_enabled:
+            raise ProviderError("Provider AI chua duoc cau hinh.")
+
+        system_prompt = (
+            "Bạn là robot hầu gái phục vụ gọi món bằng tiếng Việt. "
+            "Giọng nói dễ thương, thân thiện, lễ phép, câu ngắn gọn, không nói dài. "
+            "Không bao giờ bịa món không có trong menu. "
+            "Luôn trả lời bằng tiếng Việt có dấu tự nhiên."
+        )
+        user_prompt = json.dumps(prompt_payload, ensure_ascii=False)
+
+        try:
+            async with self.client.stream(
+                "POST",
+                "/chat/completions",
+                json={
+                    "model": self.settings.ai_model,
+                    "temperature": 0.6,
+                    "stream": True,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                },
+            ) as response:
+                response.raise_for_status()
+                buffer = ""
+                async for line in response.aiter_lines():
+                    if not line or line == "data: [DONE]":
+                        continue
+                    if line.startswith("data: "):
+                        try:
+                            chunk_data = json.loads(line[6:])
+                            delta = chunk_data.get("choices", [{}])[0].get("delta", {})
+                            content = delta.get("content", "")
+                            if content:
+                                buffer += content
+                                # Yield complete sentences for TTS
+                                while any(punct in buffer for punct in [".", "!", "?", "。", "！", "？"]):
+                                    for punct in [".", "!", "?", "。", "！", "？"]:
+                                        if punct in buffer:
+                                            idx = buffer.index(punct)
+                                            sentence = buffer[:idx + 1].strip()
+                                            buffer = buffer[idx + 1:].strip()
+                                            if sentence:
+                                                yield sentence
+                                            break
+                        except (json.JSONDecodeError, KeyError, IndexError):
+                            continue
+                # Yield remaining buffer
+                if buffer.strip():
+                    yield buffer.strip()
+        except httpx.HTTPError as exc:
+            raise ProviderError(f"Khong the stream tu AI provider: {exc}") from exc
+
+    async def transcribe_audio(self, filename: str, content: bytes, content_type: str) -> str:
         if not self.settings.provider_enabled:
             raise ProviderError("Provider AI chua duoc cau hinh cho speech-to-text.")
 
         response: httpx.Response | None = None
         try:
-            response = self.client.post(
+            response = await self.client.post(
                 "/audio/transcriptions",
                 data={"model": self.settings.stt_model or self.settings.ai_model},
                 files={"file": (filename, content, content_type)},

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import base64
 import re
 import unicodedata
 from dataclasses import dataclass
@@ -51,7 +53,7 @@ class ConversationEngine:
         self.sessions: dict[str, SessionState] = {}
         self.lock = Lock()
 
-    def start_session(self) -> ConversationResponse:
+    async def start_session(self) -> ConversationResponse:
         session_id = f"SES-{uuid4().hex[:10]}"
         with self.lock:
             self._cleanup_expired_sessions()
@@ -61,9 +63,9 @@ class ConversationEngine:
             scene="greeting",
             reply_seed="Chào mừng mình ạ. Hôm nay mình muốn thử món nào để em tư vấn ngay nhé?",
         )
-        return self._build_response(session_id, decision)
+        return await self._build_response(session_id, decision)
 
-    def reset_session(self, session_id: str) -> ConversationResponse:
+    async def reset_session(self, session_id: str) -> ConversationResponse:
         with self.lock:
             self._cleanup_expired_sessions()
             state = self.sessions.setdefault(session_id, SessionState(session_id=session_id))
@@ -76,9 +78,9 @@ class ConversationEngine:
             scene="reset",
             reply_seed="Em đã làm mới giỏ hàng rồi ạ. Mình muốn gọi món nào tiếp theo nè?",
         )
-        return self._build_response(session_id, decision)
+        return await self._build_response(session_id, decision)
 
-    def handle_turn(self, session_id: str, transcript: str) -> ConversationResponse:
+    async def handle_turn(self, session_id: str, transcript: str) -> ConversationResponse:
         with self.lock:
             self._cleanup_expired_sessions()
             state = self.sessions.get(session_id)
@@ -88,13 +90,13 @@ class ConversationEngine:
             self._touch_state(state)
             state.history.append(transcript)
 
-        menu = self.core_client.list_menu()
+        menu = await self.core_client.list_menu()
         normalized = normalize_text(transcript)
 
-        if contains_any(normalized, RESET_KEYWORDS):
+        if state.cart and contains_any(normalized, RESET_KEYWORDS):
             state.cart.clear()
             state.awaiting_confirmation = False
-            return self._build_response(
+            return await self._build_response(
                 session_id,
                 Decision(
                     scene="reset",
@@ -105,7 +107,7 @@ class ConversationEngine:
 
         if state.cart and contains_any(normalized, CONFIRM_KEYWORDS):
             if state.awaiting_confirmation:
-                order = self.core_client.create_order(
+                order = await self.core_client.create_order(
                     CreateOrderRequest(
                         session_id=session_id,
                         customer_text=transcript,
@@ -117,7 +119,7 @@ class ConversationEngine:
                 )
                 state.cart.clear()
                 state.awaiting_confirmation = False
-                return self._build_response(
+                return await self._build_response(
                     session_id,
                     Decision(
                         scene="order_created",
@@ -129,7 +131,7 @@ class ConversationEngine:
                 )
 
             state.awaiting_confirmation = True
-            return self._build_response(
+            return await self._build_response(
                 session_id,
                 Decision(
                     scene="ask_confirmation",
@@ -142,7 +144,7 @@ class ConversationEngine:
         if state.cart and contains_any(normalized, REMOVE_KEYWORDS):
             removed = self._remove_from_cart(state, normalized, menu)
             if removed:
-                return self._build_response(
+                return await self._build_response(
                     session_id,
                     Decision(
                         scene="remove_item",
@@ -154,7 +156,7 @@ class ConversationEngine:
         if contains_any(normalized, RECOMMEND_KEYWORDS) or "?" in transcript:
             recommended = self._rank_items(normalized, menu)[:3]
             if recommended:
-                return self._build_response(
+                return await self._build_response(
                     session_id,
                     Decision(
                         scene="recommendation",
@@ -177,7 +179,7 @@ class ConversationEngine:
                 if not state.awaiting_confirmation
                 else f"Em đã thêm {added_summary}. Em đọc lại giỏ hàng để mình xác nhận nhé."
             )
-            return self._build_response(
+            return await self._build_response(
                 session_id,
                 Decision(
                     scene=scene,
@@ -194,7 +196,7 @@ class ConversationEngine:
         if unavailable_matches and not available_matches:
             alternatives = self._rank_items(normalized, menu)[:3]
             unavailable_names = ", ".join(item.name for item in unavailable_matches[:2])
-            return self._build_response(
+            return await self._build_response(
                 session_id,
                 Decision(
                     scene="recommendation",
@@ -216,7 +218,7 @@ class ConversationEngine:
                     if not state.awaiting_confirmation
                     else f"Em đã thêm {quantity} {item.name}. Em đọc lại giỏ hàng để mình xác nhận nhé."
                 )
-                return self._build_response(
+                return await self._build_response(
                     session_id,
                     Decision(
                         scene=scene,
@@ -227,7 +229,7 @@ class ConversationEngine:
                     menu,
                 )
 
-            return self._build_response(
+            return await self._build_response(
                 session_id,
                 Decision(
                     scene="clarify_item",
@@ -239,7 +241,7 @@ class ConversationEngine:
 
         ranked_items = self._rank_items(normalized, menu)[:3]
         if ranked_items:
-            return self._build_response(
+            return await self._build_response(
                 session_id,
                 Decision(
                     scene="recommendation",
@@ -250,7 +252,7 @@ class ConversationEngine:
             )
 
         if state.cart:
-            return self._build_response(
+            return await self._build_response(
                 session_id,
                 Decision(
                     scene="cart_follow_up",
@@ -259,7 +261,7 @@ class ConversationEngine:
                 menu,
             )
 
-        return self._build_response(
+        return await self._build_response(
             session_id,
             Decision(
                 scene="fallback",
@@ -353,6 +355,116 @@ class ConversationEngine:
             return item_name
         return None
 
+    async def handle_turn_stream(self, session_id: str, transcript: str):
+        """Stream conversation response with interleaved text and audio for lower latency.
+        
+        This method enables progressive response delivery:
+        1. LLM streams text sentence by sentence
+        2. Each sentence is immediately sent to TTS
+        3. Audio chunks stream back as they're generated
+        
+        Result: User hears the first sentence while later sentences are still being generated.
+        """
+        # Note: Streaming only provides benefit when provider is enabled and supports streaming
+        # For fallback responses, we just use regular handle_turn
+        if not self.provider_client:
+            response = await self.handle_turn(session_id, transcript)
+            yield {"type": "text", "content": response.reply_text, "cart": [item.model_dump() for item in response.cart]}
+            
+            # Stream audio for fallback response
+            from app.services.speech_service import SpeechService
+            speech_service = SpeechService(self.settings, self.core_client)
+            try:
+                async for audio_chunk in speech_service.synthesize_stream(response.reply_text):
+                    yield {"type": "audio", "content": base64.b64encode(audio_chunk).decode("ascii")}
+            except Exception:
+                pass
+            return
+
+        # For provider-enabled streaming, we need to handle the conversation logic inline
+        # to stream LLM output as it arrives
+        with self.lock:
+            self._cleanup_expired_sessions()
+            state = self.sessions.get(session_id)
+            if state is None:
+                state = SessionState(session_id=session_id)
+                self.sessions[session_id] = state
+            self._touch_state(state)
+            state.history.append(transcript)
+
+        menu = await self.core_client.list_menu()
+        normalized = normalize_text(transcript)
+
+        # Determine the decision (same logic as handle_turn)
+        decision = None
+        
+        if state.cart and contains_any(normalized, CONFIRM_KEYWORDS):
+            if state.awaiting_confirmation:
+                order = await self.core_client.create_order(
+                    CreateOrderRequest(
+                        session_id=session_id,
+                        customer_text=transcript,
+                        items=[
+                            CreateOrderLineItem(item_id=item_id, quantity=quantity)
+                            for item_id, quantity in state.cart.items()
+                        ],
+                    )
+                )
+                state.cart.clear()
+                state.awaiting_confirmation = False
+                decision = Decision(
+                    scene="order_created",
+                    reply_seed=f"Đã xong rồi ạ. Em đã lên đơn thành công với mã {order.order_id}. Cảm ơn mình nha.",
+                    order_created=True,
+                    order_id=order.order_id,
+                )
+        
+        # For complex decisions, fall back to regular response
+        if decision is None:
+            response = await self.handle_turn(session_id, transcript)
+            yield {"type": "text", "content": response.reply_text, "cart": [item.model_dump() for item in response.cart]}
+            
+            from app.services.speech_service import SpeechService
+            speech_service = SpeechService(self.settings, self.core_client)
+            try:
+                async for audio_chunk in speech_service.synthesize_stream(response.reply_text):
+                    yield {"type": "audio", "content": base64.b64encode(audio_chunk).decode("ascii")}
+            except Exception:
+                pass
+            return
+
+        # Stream the decision response
+        cart = build_cart_items(state.cart, menu)
+        prompt_payload = {
+            "scene": decision.scene,
+            "seed": decision.reply_seed,
+            "cart_summary": [
+                {"name": item.name, "quantity": item.quantity, "line_total": str(item.line_total)}
+                for item in cart
+            ],
+            "recommended_items": [],
+            "needs_confirmation": decision.needs_confirmation,
+            "order_created": decision.order_created,
+            "voice_style": self.settings.voice_style,
+        }
+
+        from app.services.speech_service import SpeechService
+        speech_service = SpeechService(self.settings, self.core_client)
+        
+        try:
+            # Stream from LLM sentence by sentence
+            async for sentence in self.provider_client.compose_reply_stream(prompt_payload):
+                yield {"type": "text", "content": sentence}
+                
+                # Immediately stream audio for this sentence
+                async for audio_chunk in speech_service.synthesize_stream(sentence):
+                    yield {"type": "audio", "content": base64.b64encode(audio_chunk).decode("ascii")}
+        except Exception:
+            # Fallback to seed text
+            yield {"type": "text", "content": decision.reply_seed}
+            async for audio_chunk in speech_service.synthesize_stream(decision.reply_seed):
+                yield {"type": "audio", "content": base64.b64encode(audio_chunk).decode("ascii")}
+
     def active_session_count(self) -> int:
         with self.lock:
             self._cleanup_expired_sessions()
@@ -373,14 +485,14 @@ class ConversationEngine:
     def _touch_state(state: SessionState) -> None:
         state.last_interaction_at = datetime.now(UTC)
 
-    def _build_response(
+    async def _build_response(
         self,
         session_id: str,
         decision: Decision,
         menu: list[MenuItem] | None = None,
     ) -> ConversationResponse:
         state = self.sessions[session_id]
-        menu = menu or self.core_client.list_menu()
+        menu = menu or await self.core_client.list_menu()
         cart = build_cart_items(state.cart, menu)
         prompt_payload = {
             "scene": decision.scene,
@@ -404,7 +516,7 @@ class ConversationEngine:
         }
 
         if self.provider_client is not None:
-            provider_reply = self.provider_client.compose_reply(prompt_payload)
+            provider_reply = await self.provider_client.compose_reply(prompt_payload)
             reply_text = provider_reply["reply_text"]
             voice_style = provider_reply["voice_style"]
         else:

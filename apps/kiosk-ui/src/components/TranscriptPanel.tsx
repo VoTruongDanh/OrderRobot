@@ -72,24 +72,26 @@ export function TranscriptPanel({
         ) : (
           <span className="status-pill status-pill--warn">Bắt đầu thủ công</span>
         )}
-        <span className={`status-pill ${listening ? 'status-pill--ok' : 'status-pill--muted'}`}>
-          {listening ? 'Đang nghe' : 'Đang chờ'}
+        <span className={`status-pill ${listening ? 'status-pill--active' : 'status-pill--muted'}`}>
+          {listening ? '🎤 Đang nghe...' : 'Chờ lệnh'}
         </span>
       </div>
 
       <div className="side-panel__cta">
         <button
-          className="action-button action-button--secondary"
+          className={`action-button ${listening ? 'action-button--listening' : 'action-button--secondary'}`}
           onClick={onManualListen}
           type="button"
           disabled={!canListen}
         >
-          {listening ? 'Đang nghe...' : 'Nói với robot'}
+          {listening ? '🎤 Đang nghe bạn nói...' : '🎤 Nói với robot'}
         </button>
         <p className="side-panel__hint">
-          {canSpeak
-            ? 'Robot trả lời bằng giọng và tự đọc lại đơn trước khi chốt.'
-            : 'Robot đang phản hồi bằng chữ vì máy chưa phát được audio.'}
+          {listening 
+            ? 'Robot đang lắng nghe. Hãy nói rõ tên món bạn muốn đặt.'
+            : canSpeak
+              ? 'Robot trả lời bằng giọng và tự đọc lại đơn trước khi chốt.'
+              : 'Robot đang phản hồi bằng chữ vì máy chưa phát được audio.'}
         </p>
       </div>
 

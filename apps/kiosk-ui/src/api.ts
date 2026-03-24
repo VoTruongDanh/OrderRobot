@@ -49,6 +49,61 @@ export async function sendTurn(
   return readJson<ConversationResponse>(response)
 }
 
+export type StreamChunk =
+  | { type: 'text'; content: string; cart?: Array<{ item_id: string; name: string; quantity: number; unit_price: string; line_total: string }> }
+  | { type: 'audio'; content: string }
+
+export async function* sendTurnStream(
+  sessionId: string,
+  transcript: string,
+): AsyncGenerator<StreamChunk> {
+  const response = await fetch(`${AI_API_URL}/sessions/${sessionId}/turn/stream`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ transcript }),
+  })
+
+  if (!response.ok) {
+    let detail = 'Không thể kết nối dịch vụ.'
+    try {
+      const payload = await response.json()
+      detail = payload.detail ?? detail
+    } catch {
+      detail = response.statusText || detail
+    }
+    throw new Error(detail)
+  }
+
+  if (!response.body) {
+    throw new Error('Response body is null')
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() || ''
+
+    for (const line of lines) {
+      const trimmed = line.trim()
+      if (!trimmed) continue
+
+      try {
+        const chunk = JSON.parse(trimmed) as StreamChunk
+        yield chunk
+      } catch {
+        console.warn('Failed to parse streaming chunk:', trimmed)
+      }
+    }
+  }
+}
+
 export async function resetSession(sessionId: string): Promise<ConversationResponse> {
   const response = await fetch(`${AI_API_URL}/sessions/${sessionId}/reset`, {
     method: 'POST',
@@ -68,6 +123,24 @@ export async function synthesizeSpeech(text: string): Promise<Blob> {
   }
 
   return response.blob()
+}
+
+export async function synthesizeSpeechStream(text: string): Promise<ReadableStream<Uint8Array>> {
+  const response = await fetch(`${AI_API_URL}/speech/synthesize/stream`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  })
+
+  if (!response.ok) {
+    throw new Error(await readError(response))
+  }
+
+  if (!response.body) {
+    throw new Error('Response body is null')
+  }
+
+  return response.body
 }
 
 export type SpeechTranscriptionResult = {
