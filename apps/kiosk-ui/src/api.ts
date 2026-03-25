@@ -104,6 +104,22 @@ export async function* sendTurnStream(
   }
 }
 
+export async function saveFeedback(
+  sessionId: string,
+  rating: number,
+  comment: string,
+  transcriptHistory: string[],
+): Promise<void> {
+  const response = await fetch(`${AI_API_URL}/sessions/${sessionId}/feedback`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rating, comment, transcript_history: transcriptHistory }),
+  })
+  if (!response.ok) {
+    throw new Error(await readError(response))
+  }
+}
+
 export async function resetSession(sessionId: string): Promise<ConversationResponse> {
   const response = await fetch(`${AI_API_URL}/sessions/${sessionId}/reset`, {
     method: 'POST',

@@ -41,6 +41,12 @@ class TurnRequest(BaseModel):
     transcript: str = Field(min_length=1, max_length=500)
 
 
+class FeedbackRequest(BaseModel):
+    rating: int = Field(ge=1, le=5)
+    comment: str | None = None
+    transcript_history: list[str] = Field(default_factory=list)
+
+
 class TTSConfigRequest(BaseModel):
     voice: str | None = None
     rate: int | None = Field(default=None, ge=100, le=300)
@@ -103,3 +109,4 @@ class Decision:
     needs_confirmation: bool = False
     order_created: bool = False
     order_id: str | None = None
+    user_text: str | None = None

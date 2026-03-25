@@ -7,6 +7,7 @@ type OrderSuccessModalProps = {
   invoice: InvoiceSnapshot
   countdown: number
   onClose: () => void
+  onFeedbackSubmit?: (rating: number, comment: string) => void
 }
 
 const currency = new Intl.NumberFormat('vi-VN', {
@@ -15,9 +16,10 @@ const currency = new Intl.NumberFormat('vi-VN', {
   maximumFractionDigits: 0,
 })
 
-export function OrderSuccessModal({ invoice, countdown, onClose }: OrderSuccessModalProps) {
+export function OrderSuccessModal({ invoice, countdown, onClose, onFeedbackSubmit }: OrderSuccessModalProps) {
   const [qrDataUrl, setQrDataUrl] = useState('')
   const [showThankYou, setShowThankYou] = useState(false)
+  const [rating, setRating] = useState(0)
 
   useEffect(() => {
     let cancelled = false
@@ -70,6 +72,35 @@ export function OrderSuccessModal({ invoice, countdown, onClose }: OrderSuccessM
             <h2 id="thank-you-title">Cảm ơn quý khách!</h2>
             <p>Đơn hàng đã được xác nhận thành công</p>
             <p className="thank-you-order-id">Mã đơn: {invoice.orderId}</p>
+            
+            <div className="feedback-section" style={{ marginTop: '2rem', textAlign: 'center' }}>
+              <p style={{ marginBottom: '1rem', fontWeight: 500 }}>Vui lòng đánh giá trải nghiệm với Robot nha:</p>
+              <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <button
+                    key={star}
+                    onClick={() => {
+                      setRating(star)
+                      if (onFeedbackSubmit) {
+                        onFeedbackSubmit(star, '')
+                      } else {
+                        onClose()
+                      }
+                    }}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      fontSize: '3rem',
+                      cursor: 'pointer',
+                      filter: star <= rating ? 'none' : 'grayscale(100%) opacity(0.3)',
+                      transition: 'filter 0.2s ease',
+                    }}
+                  >
+                    ⭐
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         </section>
       </div>

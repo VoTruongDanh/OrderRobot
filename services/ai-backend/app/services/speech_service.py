@@ -116,7 +116,9 @@ class SpeechService:
 
     async def synthesize_stream(self, text: str, voice: str | None = None, rate: int | None = None):
         """Stream audio chunks directly from Edge TTS for low latency playback."""
-        normalized_text = normalize_speech_text(text)
+        # Prepend '. ' to force a ~300ms silent pause before speaking.
+        # This prevents Bluetooth/OS audio wake-up truncation of the first word!
+        normalized_text = ". " + normalize_speech_text(text)
         actual_voice = voice or self.settings.tts_voice
         actual_rate = rate or parse_tts_rate(self.settings.tts_rate)
         
@@ -211,9 +213,12 @@ class SpeechService:
     async def _synthesize_with_edge_tts(self, text: str, voice: str | None = None, rate: int | None = None) -> SynthesizedAudio:
         actual_voice = voice or self.settings.tts_voice
         actual_rate = rate or parse_tts_rate(self.settings.tts_rate)
+        # Prepend '. ' to force a ~300ms silent pause before speaking.
+        # This prevents Bluetooth/OS audio wake-up truncation of the first word!
+        padded_text = text if text.startswith(". ") else (". " + text)
         
         communicate = edge_tts.Communicate(
-            text=text,
+            text=padded_text,
             voice=pick_edge_voice(self.settings.voice_lang, actual_voice),
             rate=convert_rate_to_edge(actual_rate),
         )

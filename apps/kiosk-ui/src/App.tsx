@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import './App.css'
-import { fetchMenu, fetchOrder, resetSession, sendTurnStream, startSession } from './api'
+import { fetchMenu, fetchOrder, resetSession, sendTurnStream, startSession, saveFeedback } from './api'
 import { MenuBoard } from './components/MenuBoard'
 import { OrderSuccessModal } from './components/OrderSuccessModal'
 import { RobotAvatar } from './components/RobotAvatar'
@@ -149,6 +149,7 @@ function App() {
     startListening,
     stopListening,
     stopAudioPlayback: _stopAudioPlayback,
+    ensureAudioWakeLock,
     listening,
   } = useSpeech({
     lang: 'vi-VN',
@@ -297,10 +298,10 @@ function App() {
       })
     }, 1000)
 
-    // Close after 8s total (6s invoice + 2s thank you)
+    // Close after 20s total (6s invoice + 14s thank you UI)
     const closeTimer = window.setTimeout(() => {
       closeSuccessModal()
-    }, 8000)
+    }, 20000)
 
     return () => {
       window.clearInterval(countdownInterval)
@@ -464,11 +465,11 @@ function App() {
               combinedAudio.set(chunk, offset)
               offset += chunk.length
             }
-            // Use speak() which goes through the hook's echo gate + audio management
             const audioBlob = new Blob([combinedAudio], { type: 'audio/mpeg' })
             const audioUrl = URL.createObjectURL(audioBlob)
             const audio = new Audio(audioUrl)
-            
+            audio.preload = 'auto'  // tell browser to fully buffer before play
+
             await new Promise<void>((resolve, reject) => {
               audio.onended = () => {
                 URL.revokeObjectURL(audioUrl)
@@ -478,14 +479,18 @@ function App() {
                 URL.revokeObjectURL(audioUrl)
                 reject(new Error('Audio playback failed'))
               }
-              audio.play().catch(reject)
+              // Wait for browser to buffer audio before playing to prevent cut-off at start
+              audio.oncanplaythrough = () => {
+                audio.play().catch(reject)
+              }
+              audio.load()
             })
           } catch (error) {
             console.warn('Failed to play streaming audio:', error)
             addNotice('Không thể phát audio từ backend.', 'info')
           }
         } else if (audioChunks.length > 0 && orderCreatedDetected) {
-          // For order completion, just play audio without restarting mic
+          // For order completion, play audio with proper buffering
           try {
             const totalLength = audioChunks.reduce((sum, chunk) => sum + chunk.length, 0)
             const combinedAudio = new Uint8Array(totalLength)
@@ -497,8 +502,10 @@ function App() {
             const audioBlob = new Blob([combinedAudio], { type: 'audio/mpeg' })
             const audioUrl = URL.createObjectURL(audioBlob)
             const audio = new Audio(audioUrl)
+            audio.preload = 'auto'
             audio.onended = () => URL.revokeObjectURL(audioUrl)
-            void audio.play()
+            audio.oncanplaythrough = () => void audio.play()
+            audio.load()
           } catch {
             // Ignore audio errors on order completion — popup is the priority
           }
@@ -568,6 +575,9 @@ function App() {
       if (isBusyRef.current) {
         return
       }
+
+      // Initialize wake lock immediately on interaction
+      ensureAudioWakeLock()
 
       isBusyRef.current = true
       stopListening()
@@ -769,6 +779,17 @@ function App() {
           countdown={successCountdown}
           invoice={successModalInvoice}
           onClose={closeSuccessModal}
+          onFeedbackSubmit={(rating, comment) => {
+            if (sessionIdRef.current) {
+              void saveFeedback(
+                sessionIdRef.current,
+                rating,
+                comment,
+                transcriptEntries.map((e) => `${e.speaker}: ${e.text}`)
+              )
+            }
+            closeSuccessModal()
+          }}
         />
       ) : null}
     </div>

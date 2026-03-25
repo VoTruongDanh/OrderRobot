@@ -42,12 +42,50 @@ QUANTITY_WORDS = {
     "chin": 9,
     "muoi": 10,
 }
-CONFIRM_KEYWORDS = {"xac nhan", "dong y", "ok", "oke", "dat di", "chot don", "xac nhan don", "len don di"}
-RESET_KEYWORDS = {"huy", "lam lai", "dat lai", "bo het"}
-REMOVE_KEYWORDS = {"bo", "xoa", "huy mon", "khong lay", "bo di", "xoa di", "xoa mon", "bo mon"}
-RECOMMEND_KEYWORDS = {"goi y", "tu van", "nen uong", "nen an", "de uong", "it ngot", "mon nao", "co gi ngon", "ngon", "gioi thieu"}
-CHECKOUT_KEYWORDS = {"xong", "dat luon", "len don", "chot don", "thanh toan", "xong roi", "het roi"}
+CONFIRM_KEYWORDS = {
+    # Rõ ràng, không nhầm lẫn:
+    "xac nhan", "dong y", "ok", "oke", "okey", "okay",
+    "dat di", "chot don", "xac nhan don", "len don di",
+    "dung roi", "dung vay", "chuan roi", "chinh xac",
+    "duoc roi", "lay luon", "tien hanh di", "xac nhan luon",
+    # Câu xác nhận ngắn nhưng đặc thù (không cắt ra):
+    "vang em", "da vang", "uh huh", "oke luon",
+}
+RESET_KEYWORDS = {"huy", "lam lai", "dat lai", "bo het", "xoa het", "xoa tat ca", "bat dau lai", "reset"}
+REMOVE_KEYWORDS = {
+    "bo", "xoa", "huy mon", "khong lay", "bo di", "xoa di", "xoa mon", "bo mon",
+    "khong can", "bo ra", "xoa ra", "huy mon nay", "bo mon nay", "khong muon",
+}
+RECOMMEND_KEYWORDS = {
+    "goi y", "tu van", "nen uong", "nen an", "de uong", "it ngot", "mon nao",
+    "co gi ngon", "ngon", "gioi thieu", "co gi", "thu gi", "uong gi",
+    "an gi", "ban co gi", "cho em xem", "cho toi xem", "menu",
+}
+CHECKOUT_KEYWORDS = {
+    # Thường xử lý thêm lúc chốt
+    "xong", "dat luon", "len don", "chot don", "thanh toan", "xong roi", "het roi",
+    # Từ thị trường đặt hàng
+    "dat hang", "order", "order luon", "dat luon di", "dat don",
+    "dat ngay", "dat thoi", "toi muon dat", "cho toi dat",
+    "lay luon", "lay di", "lay thoi", "cho toi lay",
+    # Xác nhận mua
+    "chot", "mua luon", "mua di", "tinh tien", "thanh toan luon",
+    "tra tien", "xong di", "oke dat hang", "ok dat hang",
+}
 SEGMENT_SPLIT_PATTERN = re.compile(r"\s*(?:,|\bva\b|\bvoi\b|\bcung\b|\bthem\b)\s*")
+
+# Chitchat / non-ordering keywords — respond naturally instead of trying to match menu
+_CHITCHAT_PATTERNS = [
+    re.compile(r"ten (toi|minh|em|anh|chi) la"),  # “tên tôi là X”
+    re.compile(r"toi ten (la )?"),                  # “tôi tên là X”
+    re.compile(r"^(chao|hi|hello|xin chao)"),       # greetings
+    re.compile(r"o dau"),                           # “ở đâu”
+    re.compile(r"may gio"),                         # “mấy giờ”
+    re.compile(r"cam on"),                          # “cảm ơn”
+    re.compile(r"^(da|vang|ok|oke|uhm)$"),          # acknowledgments
+    re.compile(r"the la"),                          # “thế là”
+    re.compile(r"khong tin"),                       # “không tin”
+]
 
 # Vietnamese STT common misrecognitions and aliases
 # Maps normalized (diacritics-stripped) words to their correct forms
@@ -93,14 +131,16 @@ _STT_ALIASES: dict[str, str] = {
 }
 
 # Minimum similarity ratio for fuzzy matching (0.0 - 1.0)
-_FUZZY_THRESHOLD = 0.65
+_FUZZY_THRESHOLD = 0.70
+# Auto-add threshold: items with confidence >= this are added directly to cart
+_AUTO_ADD_THRESHOLD = 0.85
 
-# Scenes that can be handled entirely locally without LLM
-SIMPLE_SCENES = {"greeting", "reset", "cart_updated", "remove_item",
-                 "order_created", "cart_follow_up", "fallback",
-                 "ask_confirmation", "clarify_item"}
-# Only recommendation truly benefits from LLM creativity
-COMPLEX_SCENES = {"recommendation"}
+# Scenes handled locally without LLM
+SIMPLE_SCENES = {"reset", "cart_updated", "remove_item",
+                 "order_created", "cart_follow_up",
+                 "ask_confirmation", "clarify_item", "greeting_intro"}
+# Scenes that benefit from LLM context and creativity
+COMPLEX_SCENES = {"recommendation", "greeting", "fallback"}
 
 MENU_CACHE_TTL = 60.0  # seconds
 
@@ -137,7 +177,7 @@ class ConversationEngine:
             self.sessions[session_id] = SessionState(session_id=session_id, greeted=True)
 
         decision = Decision(
-            scene="greeting",
+            scene="greeting_intro",
             reply_seed="Chào mừng mình ạ. Hôm nay mình muốn thử món nào để em tư vấn ngay nhé?",
         )
         return await self._build_response(session_id, decision)
@@ -241,9 +281,22 @@ class ConversationEngine:
                         scene="recommendation",
                         reply_seed="Em tìm được vài món hợp gu của mình rồi ạ.",
                         recommended_item_ids=[candidate.item.item_id for candidate in recommended],
+                        user_text=transcript,
                     ),
                     menu,
                 )
+
+        # Chitchat / name / non-ordering input — respond naturally
+        if _is_chitchat(normalized):
+            return await self._build_response(
+                session_id,
+                Decision(
+                    scene="greeting",
+                    reply_seed="",
+                    user_text=transcript,
+                ),
+                menu,
+            )
 
         segment_matches = self._extract_segment_matches(normalized, menu)
         if segment_matches:
@@ -270,25 +323,31 @@ class ConversationEngine:
             )
 
         matched_items = self._match_explicit_items(normalized, menu)
-        available_matches = [item for item in matched_items if item.available]
-        unavailable_matches = [item for item in matched_items if not item.available]
+        available_matches = [(item, conf) for item, conf in matched_items if item.available]
+        unavailable_matches = [(item, conf) for item, conf in matched_items if not item.available]
         if unavailable_matches and not available_matches:
             alternatives = self._rank_items(normalized, menu)[:3]
-            unavailable_names = ", ".join(item.name for item in unavailable_matches[:2])
+            unavailable_names = ", ".join(item.name for item, _ in unavailable_matches[:2])
             return await self._build_response(
                 session_id,
                 Decision(
                     scene="recommendation",
                     reply_seed=f"Em xin lỗi, {unavailable_names} đang tạm hết rồi ạ. Em gợi ý mình đổi sang món khác nhé.",
                     recommended_item_ids=[candidate.item.item_id for candidate in alternatives],
+                    user_text=transcript,
                 ),
                 menu,
             )
 
         if available_matches:
             quantity = extract_quantity(normalized)
-            if len(available_matches) == 1:
-                item = available_matches[0]
+            # Auto-add: best match confidence >= 85% → add directly
+            best_match, best_conf = max(available_matches, key=lambda x: x[1])
+            high_conf_matches = [(item, conf) for item, conf in available_matches if conf >= _AUTO_ADD_THRESHOLD]
+            
+            if len(high_conf_matches) == 1 or (len(available_matches) >= 1 and best_conf >= _AUTO_ADD_THRESHOLD):
+                # Single high-confidence match or one clearly dominates → auto-add
+                item = best_match
                 state.cart[item.item_id] = state.cart.get(item.item_id, 0) + quantity
                 state.awaiting_confirmation = contains_any(normalized, CHECKOUT_KEYWORDS)
                 scene = "ask_confirmation" if state.awaiting_confirmation else "cart_updated"
@@ -308,12 +367,13 @@ class ConversationEngine:
                     menu,
                 )
 
+            # Multiple matches below auto-add threshold → ask for clarification
             return await self._build_response(
                 session_id,
                 Decision(
                     scene="clarify_item",
-                    reply_seed="Em thấy mình đang nhắc tới nhiều món quá. Mình chọn giúp em 1 món cụ thể nhé.",
-                    recommended_item_ids=[item.item_id for item in available_matches[:3]],
+                    reply_seed="Em thấy có mấy món gần giống. Mình muốn gọi món nào ạ?",
+                    recommended_item_ids=[item.item_id for item, _ in available_matches[:3]],
                 ),
                 menu,
             )
@@ -326,6 +386,7 @@ class ConversationEngine:
                     scene="recommendation",
                     reply_seed="Em có vài gợi ý dễ uống, thân thiện và dễ chọn cho mình đây ạ.",
                     recommended_item_ids=[candidate.item.item_id for candidate in ranked_items],
+                    user_text=transcript,
                 ),
                 menu,
             )
@@ -345,13 +406,17 @@ class ConversationEngine:
             Decision(
                 scene="fallback",
                 reply_seed="Em nghe chưa rõ lắm. Mình có thể nói tên món, khẩu vị như ít ngọt, hoặc bảo em tư vấn món dễ uống nhé.",
+                user_text=transcript,
             ),
             menu,
         )
 
-    def _match_explicit_items(self, normalized_transcript: str, menu: list[MenuItem]) -> list[MenuItem]:
-        """Match menu items using exact, token-based, and fuzzy matching."""
-        matches: list[MenuItem] = []
+    def _match_explicit_items(self, normalized_transcript: str, menu: list[MenuItem]) -> list[tuple[MenuItem, float]]:
+        """Match menu items using exact, token-based, and fuzzy matching.
+        Returns list of (MenuItem, confidence) tuples where confidence is 0.0-1.0.
+        """
+        exact_matches: list[tuple[MenuItem, float]] = []
+        fuzzy_matches: list[tuple[MenuItem, float]] = []
         matched_ids: set[str] = set()
         
         # Apply STT alias corrections to the transcript
@@ -362,26 +427,35 @@ class ConversationEngine:
                 continue
             normalized_name = normalize_text(item.name)
             
-            # 1. Exact substring match
+            # 1. Exact substring match → confidence 1.0
             if normalized_name in corrected:
-                matches.append(item)
+                exact_matches.append((item, 1.0))
                 matched_ids.add(item.item_id)
                 continue
             
-            # 2. Token-based match (all significant tokens present)
+            # 2. Token-based match (all significant tokens present) → confidence 0.95
             name_tokens = [token for token in normalized_name.split() if len(token) > 2]
             if name_tokens and all(token in corrected for token in name_tokens):
-                matches.append(item)
+                exact_matches.append((item, 0.95))
                 matched_ids.add(item.item_id)
                 continue
             
-            # 3. Fuzzy match — compare each word sequence in transcript
-            #    against the item name using SequenceMatcher
-            if _fuzzy_match(corrected, normalized_name):
-                matches.append(item)
+            # 3. Fuzzy match → confidence = actual similarity ratio
+            ratio = _fuzzy_match_ratio(corrected, normalized_name)
+            if ratio >= _FUZZY_THRESHOLD:
+                fuzzy_matches.append((item, ratio))
                 matched_ids.add(item.item_id)
         
-        return matches
+        # Prioritize exact/token matches over fuzzy
+        if exact_matches:
+            exact_matches.sort(key=lambda x: -len(x[0].name))
+            filtered: list[tuple[MenuItem, float]] = []
+            for m, conf in exact_matches:
+                if not any(normalize_text(m.name) in normalize_text(kept.name) for kept, _ in filtered):
+                    filtered.append((m, conf))
+            return filtered
+            
+        return fuzzy_matches
 
     def _extract_segment_matches(
         self,
@@ -398,11 +472,11 @@ class ConversationEngine:
 
         aggregated: dict[str, tuple[MenuItem, int]] = {}
         for segment in segments:
-            matches = [item for item in self._match_explicit_items(segment, menu) if item.available]
+            matches = [(item, conf) for item, conf in self._match_explicit_items(segment, menu) if item.available]
             if len(matches) != 1:
                 continue
 
-            item = matches[0]
+            item, _conf = matches[0]
             quantity = extract_quantity(segment)
             existing = aggregated.get(item.item_id)
             aggregated[item.item_id] = (
@@ -447,7 +521,7 @@ class ConversationEngine:
             if _fuzzy_match(corrected, normalized_name):
                 score += 8
             
-            score += 1
+            # Only include items with actual token matches (no free base score)
             if score > 0:
                 scores.append(Candidate(item=item, score=score))
         scores.sort(key=lambda candidate: (-candidate.score, candidate.item.name))
@@ -455,7 +529,7 @@ class ConversationEngine:
 
     def _remove_from_cart(self, state: SessionState, normalized_transcript: str, menu: list[MenuItem]) -> str | None:
         menu_map = {item.item_id: item for item in menu}
-        for item in self._match_explicit_items(normalized_transcript, menu):
+        for item, _conf in self._match_explicit_items(normalized_transcript, menu):
             if item.item_id in state.cart:
                 del state.cart[item.item_id]
                 state.awaiting_confirmation = False
@@ -492,6 +566,28 @@ class ConversationEngine:
                 yield {"type": "audio", "content": base64.b64encode(audio_chunk).decode("ascii")}
         except Exception:
             pass
+
+    async def save_feedback(self, session_id: str, rating: int, comment: str | None, transcript_history: list[str]) -> None:
+        """Save feedback and transcript logs to local JSONL for analytics."""
+        with self.lock:
+            # We don't read from state.history because frontend sends the full synced transcript_history, removing any async timing mismatch 
+            pass
+
+        feedback_data = {
+            "session_id": session_id,
+            "rating": rating,
+            "comment": comment,
+            "transcript_history": transcript_history,
+            "created_at": datetime.now(UTC).isoformat()
+        }
+
+        # Fire and forget write to log file
+        import os
+        import json
+        log_dir = "data"
+        os.makedirs(log_dir, exist_ok=True)
+        with open(os.path.join(log_dir, "feedback.jsonl"), "a", encoding="utf-8") as f:
+            f.write(json.dumps(feedback_data, ensure_ascii=False) + "\n")
 
     def active_session_count(self) -> int:
         with self.lock:
@@ -542,15 +638,17 @@ class ConversationEngine:
             "order_created": decision.order_created,
             "voice_style": self.settings.voice_style,
         }
+        if decision.user_text:
+            prompt_payload["user_text"] = decision.user_text
 
         # Only call LLM for complex scenes; simple scenes use local templates
         if self.provider_client is not None and decision.scene in COMPLEX_SCENES:
             try:
                 provider_reply = await self.provider_client.compose_reply(prompt_payload)
                 reply_text = provider_reply["reply_text"]
-                voice_style = provider_reply["voice_style"]
-            except Exception:
-                logger.warning("LLM call failed for scene '%s', using local fallback", decision.scene)
+                voice_style = provider_reply.get("voice_style", self.settings.voice_style)
+            except Exception as exc:
+                logger.warning("LLM call failed for scene '%s': %s — using local fallback", decision.scene, exc)
                 reply_text = render_fallback_reply(prompt_payload)
                 voice_style = self.settings.voice_style
         else:
@@ -608,19 +706,45 @@ def normalize_text(text: str) -> str:
     return re.sub(r"\s+", " ", stripped).strip()
 
 
+def _is_chitchat(normalized_text: str) -> bool:
+    """Check if input is chitchat/non-ordering conversation."""
+    for pattern in _CHITCHAT_PATTERNS:
+        if pattern.search(normalized_text):
+            return True
+    # Very short input (1-2 chars) that doesn't match any menu keyword
+    if len(normalized_text) <= 3:
+        return True
+    return False
+
+
 def extract_quantity(normalized_text: str) -> int:
-    # Pattern: "so luong X" or "X cai/ly/phan"
+    """Extract quantity from normalized text.
+    
+    Rules:
+    - "so luong X" → X  
+    - Digits like "3 ly" → 3
+    - Vietnamese number words ONLY when followed by a unit word (ly, cai, phan...)
+      or when they are at the very start followed by a noun.
+    - Avoids false positives: "muoi" in "ca phe muoi", "ba" in "banh", "nam" in "nam quoc".
+    """
+    # Pattern: "so luong X"
     qty_pattern = re.search(r"so luong\s+(\d+)", normalized_text)
     if qty_pattern:
         return max(1, min(int(qty_pattern.group(1)), 20))
-    
+
+    # Explicit digit
     digit_match = re.search(r"\b(\d+)\b", normalized_text)
     if digit_match:
         return max(1, min(int(digit_match.group(1)), 20))
 
-    for word, value in QUANTITY_WORDS.items():
-        if word in normalized_text:
-            return value
+    # Vietnamese number words — MUST be followed by a unit word to confirm it's a quantity
+    _UNIT_WORDS = {"ly", "cai", "phan", "chiec", "to", "dia", "bat", "chai", "lon", "coc", "tach", "suon"}
+    tokens = normalized_text.split()
+    for i, token in enumerate(tokens):
+        if token in QUANTITY_WORDS:
+            # Check next token is a unit word → confirmed quantity
+            if i + 1 < len(tokens) and tokens[i + 1] in _UNIT_WORDS:
+                return QUANTITY_WORDS[token]
     return 1
 
 
@@ -634,23 +758,20 @@ def _apply_stt_aliases(text: str) -> str:
     return result
 
 
-def _fuzzy_match(transcript: str, item_name: str) -> bool:
-    """Check if transcript fuzzy-matches the item name using SequenceMatcher.
+def _fuzzy_match_ratio(transcript: str, item_name: str) -> float:
+    """Return best fuzzy match ratio between transcript and item name.
     
-    Returns True if similarity is above threshold.
-    Handles cases like 'socola' matching 'socola da xay',
-    'tra vai hoa hong' matching imprecise STT output, etc.
+    Uses sliding window of item name length across transcript words.
+    Returns 0.0-1.0 similarity ratio.
     """
-    # Short item names need higher precision
     name_words = item_name.split()
     name_len = len(name_words)
     if name_len == 0:
-        return False
+        return 0.0
     
-    # Try sliding window of item name length across transcript
     transcript_words = transcript.split()
     if len(transcript_words) < 1:
-        return False
+        return 0.0
     
     best_ratio = 0.0
     for start in range(len(transcript_words)):
@@ -659,7 +780,12 @@ def _fuzzy_match(transcript: str, item_name: str) -> bool:
             ratio = difflib.SequenceMatcher(None, window, item_name).ratio()
             best_ratio = max(best_ratio, ratio)
     
-    return best_ratio >= _FUZZY_THRESHOLD
+    return best_ratio
+
+
+def _fuzzy_match(transcript: str, item_name: str) -> bool:
+    """Legacy wrapper: returns True if fuzzy ratio >= threshold."""
+    return _fuzzy_match_ratio(transcript, item_name) >= _FUZZY_THRESHOLD
 
 
 _GREETING_REPLIES = [
@@ -718,12 +844,17 @@ def render_fallback_reply(payload: dict[str, object]) -> str:
             return f"Em thấy có mấy món gần giống: {names}. Mình muốn gọi món nào ạ?"
         return f"{seed} Mình nói rõ tên món giúp em nhé."
     if scene == "recommendation":
-        item_names = (
-            ", ".join(item["name"] for item in recommended_items[:3])
-            if recommended_items
-            else "một vài món dễ uống"
-        )
-        return f"{seed} Em gợi ý {item_names}. Mình ưng ý món nào để em thêm vào giỏ nhé?"
+        if recommended_items:
+            lines = []
+            for item in recommended_items[:3]:
+                desc = item.get("description", "")
+                if desc:
+                    lines.append(f"- {item['name']}: {desc}")
+                else:
+                    lines.append(f"- {item['name']}")
+            items_text = "\n".join(lines)
+            return f"{seed}\n{items_text}\nMình thích món nào để em thêm vào giỏ nhé?"
+        return f"{seed} Mình muốn em gợi ý thêm không ạ?"
     if scene == "ask_confirmation":
         if cart_summary:
             details = ", ".join(

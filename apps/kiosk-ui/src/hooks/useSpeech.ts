@@ -23,14 +23,14 @@ const AMBIENT_WATERMARK_PATTERNS = [
 
 // How long speech must be silent before we fire onTranscript.
 // Shorter = more responsive but may cut off slow speakers.
-const SUBMIT_SILENCE_MS = 600
+const SUBMIT_SILENCE_MS = 1200
 
 // How long to keep the echo gate closed after bot audio ends.
 // This catches residual mic echo from speaker output.
-const ECHO_COOLDOWN_MS = 500
+const ECHO_COOLDOWN_MS = 300
 
 // Minimum interim transcript length to consider as real user speech (barge-in)
-const BARGE_IN_MIN_CHARS = 4
+const BARGE_IN_MIN_CHARS = 3
 
 export function useSpeech({ lang, onTranscript, onNotice, onBargeIn }: UseSpeechOptions) {
   const transcriptHandlerRef = useRef(onTranscript)
@@ -322,6 +322,7 @@ export function useSpeech({ lang, onTranscript, onNotice, onBargeIn }: UseSpeech
   function playAudioBlob(blob: Blob): Promise<void> {
     const audioUrl = URL.createObjectURL(blob)
     const audio = new Audio(audioUrl)
+    audio.preload = 'auto'
     audioRef.current = audio
     closeEchoGate()  // prevent mic from hearing speaker output
 
@@ -338,12 +339,16 @@ export function useSpeech({ lang, onTranscript, onNotice, onBargeIn }: UseSpeech
         openEchoGate()
         reject(new Error('Không thể phát audio từ backend.'))
       }
-      void audio.play().catch(() => {
-        URL.revokeObjectURL(audioUrl)
-        if (audioRef.current === audio) audioRef.current = null
-        openEchoGate()
-        reject(new Error('Trình duyệt chặn phát audio tự động.'))
-      })
+      // Wait for browser to fully buffer audio before playing
+      audio.oncanplaythrough = () => {
+        audio.play().catch(() => {
+          URL.revokeObjectURL(audioUrl)
+          if (audioRef.current === audio) audioRef.current = null
+          openEchoGate()
+          reject(new Error('Trình duyệt chặn phát audio tự động.'))
+        })
+      }
+      audio.load()
     })
   }
 
@@ -438,6 +443,38 @@ export function useSpeech({ lang, onTranscript, onNotice, onBargeIn }: UseSpeech
     speak,
     speakWithBargeIn,
     stopAudioPlayback,
+    ensureAudioWakeLock,
+  }
+}
+
+// Global wake lock state to completely prevent Bluetooth/OS audio truncation
+let wakeLockAudioContext: AudioContext | null = null
+
+function ensureAudioWakeLock() {
+  if (typeof window === 'undefined') return
+  if (!wakeLockAudioContext) {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext
+      if (!AudioCtx) return
+      
+      const ctx = new AudioCtx()
+      
+      // Create a permanently running, completely silent oscillator
+      // This forces the audio hardware to stay alive without audible noise!
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      gain.gain.value = 0.0001 // practically silent
+      osc.connect(gain)
+      gain.connect(ctx.destination)
+      osc.start()
+      
+      wakeLockAudioContext = ctx
+      console.log('[useSpeech] Audio wake lock activated to prevent TTS truncation.')
+    } catch {
+      // Ignore audio context errors
+    }
+  } else if (wakeLockAudioContext.state === 'suspended') {
+    void wakeLockAudioContext.resume()
   }
 }
 

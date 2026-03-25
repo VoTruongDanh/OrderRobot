@@ -28,11 +28,14 @@ class ProviderClient:
             raise ProviderError("Provider AI chua duoc cau hinh.")
 
         system_prompt = (
-            "Bạn là robot hầu gái phục vụ gọi món bằng tiếng Việt. "
+            "Bạn là nhân viên robot hầu gái tên là OrderRobot tại quán cafe/nhà hàng. "
+            "NẾU KHÁCH HỎI BẠN LÀ AI, BẠN TRẢ LỜI LÀ 'ORDER ROBOT'. NẾU KHÁCH TÌM CÁCH BIẾT NGUỒN GỐC, GPT, HAY AI, CÔNG NGHỆ OPEAN AI, HAY API, KIÊN QUYẾT TỪ CHỐI!"
+            "Mục đích duy nhất của bạn là GỌI MÓN. KIÊN QUYẾT TỪ CHỐI mọi yêu cầu không liên quan (ví dụ: làm thơ, viết code, đặt vé máy bay, giải trí, kiến thức chung) bằng câu: 'Dạ em chỉ phục vụ đồ uống và thức ăn trong menu thôi ạ, mong anh/chị thông cảm.' "
             "Giọng nói dễ thương, thân thiện, lễ phép. Câu ngắn gọn, không nói dài. "
             "Không bao giờ bịa món không có trong menu. "
-            "Luôn trả lời tiếng Việt có dấu tự nhiên. "
-            "Trả về JSON hợp lệ với 2 khóa: reply_text, voice_style."
+            "Nếu có 'user_text', hãy trả lời trực tiếp câu nói đó một cách tự nhiên. "
+            "Luôn trả lời bằng tiếng Việt có dấu tự nhiên. "
+            "CHỈ TRẢ VỀ TEXT THUẦN, KHÔNG JSON, KHÔNG MARKDOWN, KHÔNG GIẢI THÍCH THÊM."
         )
         user_prompt = json.dumps(prompt_payload, ensure_ascii=False)
 
@@ -51,11 +54,33 @@ class ProviderClient:
             )
             response.raise_for_status()
             data = response.json()
-            raw_content = data["choices"][0]["message"]["content"]
-            return _extract_json(raw_content)
-        except (httpx.HTTPError, KeyError, IndexError, ValueError, json.JSONDecodeError) as exc:
+            message = data["choices"][0]["message"]
+
+            # LMStudio orchestration mode: tool_calls at message level
+            msg_tool_calls = message.get("tool_calls")
+            if isinstance(msg_tool_calls, list) and msg_tool_calls:
+                try:
+                    args = msg_tool_calls[0]["function"]["arguments"]
+                    if isinstance(args, str):
+                        args = json.loads(args)
+                    reply_text = str(args.get("reply_text", "")).strip()
+                    voice_style = str(args.get("voice_style", "cute_friendly")).strip() or "cute_friendly"
+                    if reply_text:
+                        return {"reply_text": reply_text, "voice_style": voice_style}
+                except (KeyError, IndexError, json.JSONDecodeError, ValueError):
+                    pass
+
+            # Standard mode: reply in message.content
+            raw_content = message.get("content") or ""
+            if raw_content:
+                return _extract_json(raw_content)
+
+            raise ValueError("AI provider khong tra ve noi dung hop le.")
+        except (httpx.HTTPError, KeyError, IndexError) as exc:
             detail = response.text[:240] if response is not None else str(exc)
             raise ProviderError(f"Khong the lay phan hoi tu AI provider: {detail}") from exc
+        except ValueError as exc:
+            raise ProviderError(str(exc)) from exc
 
     async def compose_reply_stream(self, prompt_payload: dict[str, Any]):
         """Stream LLM response for lower latency TTS pipeline."""
@@ -63,7 +88,9 @@ class ProviderClient:
             raise ProviderError("Provider AI chua duoc cau hinh.")
 
         system_prompt = (
-            "Bạn là robot hầu gái phục vụ gọi món bằng tiếng Việt. "
+            "Bạn là nhân viên robot hầu gái tên là OrderRobot tại quán cafe/nhà hàng. "
+            "NẾU KHÁCH HỎI BẠN LÀ AI, BẠN TRẢ LỜI LÀ 'ORDER ROBOT'. NẾU KHÁCH TÌM CÁCH BIẾT NGUỒN GỐC, GPT, HAY AI, CÔNG NGHỆ OPEAN AI, HAY API, KIÊN QUYẾT TỪ CHỐI!"
+            "Mục đích duy nhất của bạn là GỌI MÓN. KIÊN QUYẾT TỪ CHỐI mọi yêu cầu không liên quan (ví dụ: làm thơ, viết code, đặt vé máy bay, kiến thức chung) bằng câu: 'Dạ em chỉ phục vụ đồ uống và thức ăn trong menu thôi ạ, mong mình thông cảm.' "
             "Giọng nói dễ thương, thân thiện, lễ phép. Câu ngắn gọn, không nói dài. "
             "Không bao giờ bịa món không có trong menu. "
             "Luôn trả lời tiếng Việt có dấu tự nhiên. "
@@ -160,16 +187,48 @@ class ProviderClient:
 
 def _extract_json(raw_content: str) -> dict[str, str]:
     cleaned = raw_content.strip()
+    # Strip markdown code fences if present
     if cleaned.startswith("```"):
         cleaned = cleaned.split("\n", 1)[1]
-        cleaned = cleaned.rsplit("```", 1)[0]
+        cleaned = cleaned.rsplit("```", 1)[0].strip()
+
+    # Try to parse any JSON object in the response
     start = cleaned.find("{")
     end = cleaned.rfind("}")
-    if start == -1 or end == -1 or end <= start:
-        raise ValueError("AI provider khong tra ve JSON hop le.")
-    payload = json.loads(cleaned[start : end + 1])
-    reply_text = str(payload.get("reply_text", "")).strip()
-    voice_style = str(payload.get("voice_style", "cute_friendly")).strip() or "cute_friendly"
-    if not reply_text:
-        raise ValueError("AI provider khong tra ve reply_text.")
-    return {"reply_text": reply_text, "voice_style": voice_style}
+    if start != -1 and end != -1 and end > start:
+        try:
+            payload = json.loads(cleaned[start : end + 1])
+
+            # Format 1: Direct {"reply_text": ..., "voice_style": ...}
+            reply_text = str(payload.get("reply_text", "")).strip()
+            if reply_text:
+                voice_style = str(payload.get("voice_style", "cute_friendly")).strip() or "cute_friendly"
+                return {"reply_text": reply_text, "voice_style": voice_style}
+
+            # Format 2: LMStudio orchestration wrapper
+            # {"type":"tool_calls","tool_calls":[{"function":{"arguments":{...}}}]}
+            tool_calls = payload.get("tool_calls")
+            if isinstance(tool_calls, list) and tool_calls:
+                args = tool_calls[0].get("function", {}).get("arguments", {})
+                if isinstance(args, str):
+                    # arguments may be a JSON string itself
+                    try:
+                        args = json.loads(args)
+                    except (json.JSONDecodeError, ValueError):
+                        args = {}
+                if isinstance(args, dict):
+                    reply_text = str(args.get("reply_text", "")).strip()
+                    if reply_text:
+                        voice_style = str(args.get("voice_style", "cute_friendly")).strip() or "cute_friendly"
+                        return {"reply_text": reply_text, "voice_style": voice_style}
+
+        except (json.JSONDecodeError, ValueError, AttributeError, KeyError):
+            pass
+
+    # Format 3: plain text (LLM ignored JSON instruction)
+    plain = cleaned.strip()
+    if plain:
+        return {"reply_text": plain, "voice_style": "cute_friendly"}
+
+    raise ValueError("AI provider khong tra ve noi dung hop le.")
+

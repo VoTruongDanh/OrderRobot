@@ -14,6 +14,7 @@ from fastapi.responses import Response, StreamingResponse
 from app.config import get_settings
 from app.models import (
     ConversationResponse,
+    FeedbackRequest,
     SessionStartRequest,
     SpeechSynthesisRequest,
     SpeechTranscriptionResponse,
@@ -132,6 +133,12 @@ async def handle_turn_stream(session_id: str, payload: TurnRequest) -> Streaming
 @app.post("/sessions/{session_id}/reset", response_model=ConversationResponse)
 async def reset_session(session_id: str) -> ConversationResponse:
     return await conversation_engine.reset_session(session_id)
+
+
+@app.post("/sessions/{session_id}/feedback")
+async def save_session_feedback(session_id: str, payload: FeedbackRequest) -> dict[str, str]:
+    await conversation_engine.save_feedback(session_id, payload.rating, payload.comment, payload.transcript_history)
+    return {"status": "ok"}
 
 
 @app.post("/speech/synthesize")
