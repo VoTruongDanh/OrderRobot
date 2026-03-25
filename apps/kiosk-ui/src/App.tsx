@@ -130,7 +130,7 @@ function App() {
   }, [])
 
   const {
-    listening,
+    capturePhase,
     recognitionSupported,
     synthesisSupported,
     speak,
@@ -152,6 +152,28 @@ function App() {
   const { videoRef, cameraReady, detectorSupported, presenceDetected } = usePresenceDetection({
     onNotice: addNotice,
   })
+
+  useEffect(() => {
+    if (robotMode !== 'listening') {
+      return
+    }
+
+    if (capturePhase === 'processing') {
+      setStatusMessage('Robot đã ghi âm xong và đang nhận dạng giọng nói...')
+      return
+    }
+
+    if (capturePhase === 'listening') {
+      setStatusMessage(
+        liveTranscript
+          ? `Robot đang nghe: "${liveTranscript}"`
+          : 'Robot đang nghe, bạn nói tên món hoặc yêu cầu thêm nhé.',
+      )
+      return
+    }
+
+    setStatusMessage('Robot đang chờ yêu cầu tiếp theo để tiếp tục đặt món.')
+  }, [capturePhase, liveTranscript, robotMode])
 
   useEffect(() => {
     if (!recognitionSupported) {
@@ -473,9 +495,9 @@ function App() {
             detectorSupported={detectorSupported}
             entries={transcriptEntries}
             invoice={invoice}
-            listening={listening}
             liveTranscript={liveTranscript}
             notices={notices}
+            speechPhase={capturePhase}
             onConfirmOrder={() => {
               void submitIntent('xác nhận')
             }}

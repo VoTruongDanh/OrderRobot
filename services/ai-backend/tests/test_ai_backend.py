@@ -101,3 +101,33 @@ def test_conversation_engine_can_add_multiple_items_in_one_turn() -> None:
 
     assert len(added.cart) == 2
     assert {item.item_id for item in added.cart} == {"tra-dao", "matcha"}
+
+
+def test_conversation_engine_checkout_keywords_support_voice_only_flow() -> None:
+    settings = Settings(
+        ai_base_url="",
+        ai_api_key="",
+        ai_model="",
+        core_backend_url="http://127.0.0.1:8001",
+        voice_lang="vi-VN",
+        voice_style="cute_friendly",
+        tts_voice="vietnam",
+        tts_rate="165",
+        stt_model="small",
+        stt_device="cpu",
+        stt_compute_type="int8",
+        session_timeout_minutes=15,
+    )
+    core_client = FakeCoreBackendClient()
+    engine = ConversationEngine(settings, core_client)
+
+    start = engine.start_session()
+    added = engine.handle_turn(start.session_id, "cho minh 1 tra dao cam sa")
+    assert len(added.cart) == 1
+
+    ask_confirmation = engine.handle_turn(start.session_id, "dat luon")
+    assert ask_confirmation.needs_confirmation is True
+
+    created = engine.handle_turn(start.session_id, "xac nhan")
+    assert created.order_created is True
+    assert created.order_id == "ORD-TEST"

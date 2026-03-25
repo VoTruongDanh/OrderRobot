@@ -1,3 +1,5 @@
+import { useEffect, useRef } from 'react'
+import type { SpeechCapturePhase } from '../hooks/useSpeech'
 import type { AppNotice, CartItem, InvoiceSnapshot, TranscriptEntry } from '../types'
 
 type TranscriptPanelProps = {
@@ -5,8 +7,8 @@ type TranscriptPanelProps = {
   cart: CartItem[]
   invoice: InvoiceSnapshot | null
   liveTranscript: string
+  speechPhase: SpeechCapturePhase
   sessionActive: boolean
-  listening: boolean
   canListen: boolean
   canSpeak: boolean
   cameraReady: boolean
@@ -30,8 +32,8 @@ export function TranscriptPanel({
   cart,
   invoice,
   liveTranscript,
+  speechPhase,
   sessionActive,
-  listening,
   canListen,
   canSpeak,
   cameraReady,
@@ -45,6 +47,20 @@ export function TranscriptPanel({
 }: TranscriptPanelProps) {
   const primaryNotice =
     notices.find((notice) => notice.level === 'warning') ?? notices[notices.length - 1] ?? null
+  const transcriptListRef = useRef<HTMLDivElement | null>(null)
+  const showListeningDraft = speechPhase === 'listening'
+  const showProcessingDraft = speechPhase === 'processing'
+  const showEmptyTranscript =
+    entries.length === 0 && !liveTranscript && !showListeningDraft && !showProcessingDraft
+
+  useEffect(() => {
+    const panel = transcriptListRef.current
+    if (!panel) {
+      return
+    }
+
+    panel.scrollTop = panel.scrollHeight
+  }, [entries, liveTranscript, speechPhase])
 
   return (
     <section className="side-panel">
@@ -72,8 +88,20 @@ export function TranscriptPanel({
         ) : (
           <span className="status-pill status-pill--warn">Bắt đầu thủ công</span>
         )}
-        <span className={`status-pill ${listening ? 'status-pill--ok' : 'status-pill--muted'}`}>
-          {listening ? 'Đang nghe' : 'Đang chờ'}
+        <span
+          className={`status-pill ${
+            speechPhase === 'listening'
+              ? 'status-pill--ok'
+              : speechPhase === 'processing'
+                ? 'status-pill--working'
+                : 'status-pill--muted'
+          }`}
+        >
+          {speechPhase === 'listening'
+            ? 'Đang nghe'
+            : speechPhase === 'processing'
+              ? 'Đang nhận dạng'
+              : 'Đang chờ'}
         </span>
       </div>
 
@@ -82,12 +110,18 @@ export function TranscriptPanel({
           className="action-button action-button--secondary"
           onClick={onManualListen}
           type="button"
-          disabled={!canListen}
+          disabled={!canListen || speechPhase === 'processing'}
         >
-          {listening ? 'Đang nghe...' : 'Nói với robot'}
+          {speechPhase === 'listening'
+            ? 'Đang nghe...'
+            : speechPhase === 'processing'
+              ? 'Đang nhận dạng...'
+              : 'Nói với robot'}
         </button>
         <p className="side-panel__hint">
-          {canSpeak
+          {speechPhase === 'processing'
+            ? 'Robot đã ghi âm xong, đang chuyển giọng nói thành text để gửi API.'
+            : canSpeak
             ? 'Robot trả lời bằng giọng và tự đọc lại đơn trước khi chốt.'
             : 'Robot đang phản hồi bằng chữ vì máy chưa phát được audio.'}
         </p>
@@ -102,8 +136,8 @@ export function TranscriptPanel({
         </div>
       ) : null}
 
-      <div className="transcript-list" aria-live="polite">
-        {entries.length === 0 && !liveTranscript ? (
+      <div className="transcript-list" aria-live="polite" ref={transcriptListRef}>
+        {showEmptyTranscript ? (
           <div className="empty-state empty-state--transcript">
             Lời chào và các lượt nói sẽ hiện ở đây ngay khi robot bắt đầu phiên mới.
           </div>
@@ -124,13 +158,22 @@ export function TranscriptPanel({
                 <p>{entry.text}</p>
               </article>
             ))}
-            {liveTranscript ? (
-              <article className="bubble bubble--user bubble--draft">
+            {showListeningDraft ? (
+              <article className="bubble bubble--user bubble--draft bubble--draft-live">
                 <header>
                   <strong>Khách</strong>
                   <span>Đang nghe...</span>
                 </header>
-                <p>{liveTranscript}</p>
+                <p>{liveTranscript || 'Mời bạn nói món muốn gọi...'}</p>
+              </article>
+            ) : null}
+            {showProcessingDraft ? (
+              <article className="bubble bubble--system bubble--status">
+                <header>
+                  <strong>Hệ thống</strong>
+                  <span>Đang xử lý</span>
+                </header>
+                <p>Đang nhận dạng giọng nói và chuẩn bị gửi yêu cầu lên server...</p>
               </article>
             ) : null}
           </>

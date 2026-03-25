@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 
 import httpx
 from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
@@ -124,15 +125,28 @@ async def transcribe_speech_ws(websocket: WebSocket) -> None:
     audio_chunks: list[bytes] = []
     partial_task: asyncio.Task[str] | None = None
     last_partial = ""
+    last_partial_at = 0.0
+    last_partial_size = 0
+    min_partial_interval_sec = 0.55
+    min_partial_delta_bytes = 12_000
 
-    async def flush_partial() -> None:
-        nonlocal partial_task, last_partial
+    async def flush_partial(*, force: bool = False) -> None:
+        nonlocal partial_task, last_partial, last_partial_at, last_partial_size
         if partial_task is not None and not partial_task.done():
             return
         if not audio_chunks:
             return
 
         snapshot = b"".join(audio_chunks)
+        snapshot_size = len(snapshot)
+        now = time.monotonic()
+        if (
+            not force
+            and snapshot_size - last_partial_size < min_partial_delta_bytes
+            and now - last_partial_at < min_partial_interval_sec
+        ):
+            return
+
         partial_task = asyncio.create_task(speech_service.transcribe_partial(snapshot, filename))
         try:
             transcript = await partial_task
@@ -145,6 +159,8 @@ async def transcribe_speech_ws(websocket: WebSocket) -> None:
         if transcript and transcript != last_partial:
             last_partial = transcript
             await websocket.send_json({"type": "partial", "transcript": transcript})
+        last_partial_at = now
+        last_partial_size = snapshot_size
 
     try:
         while True:
@@ -164,6 +180,8 @@ async def transcribe_speech_ws(websocket: WebSocket) -> None:
                 filename = payload.split(":", 1)[1] or "speech.webm"
                 audio_chunks.clear()
                 last_partial = ""
+                last_partial_at = 0.0
+                last_partial_size = 0
                 continue
 
             if payload == "flush":
@@ -183,12 +201,13 @@ async def transcribe_speech_ws(websocket: WebSocket) -> None:
                                 "type": "final",
                                 "status": "retry",
                                 "transcript": "",
-                                "message": "Mình nghe chưa rõ, bạn nói lại giúp mình nhé.",
+                                "message": "Minh nghe chua ro, ban noi lai giup minh nhe.",
                             },
                         )
                         continue
 
-                    transcript = await speech_service.transcribe_partial(snapshot, filename)
+                    await flush_partial(force=True)
+                    transcript = last_partial or await speech_service.transcribe_partial(snapshot, filename)
                     if transcript and transcript != last_partial:
                         await websocket.send_json({"type": "partial", "transcript": transcript})
 

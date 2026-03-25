@@ -5,7 +5,7 @@ const AI_API_URL = import.meta.env.VITE_AI_API_URL ?? 'http://127.0.0.1:8002'
 
 async function readJson<T>(response: Response): Promise<T> {
   if (!response.ok) {
-    let detail = 'Không thể kết nối dịch vụ.'
+    let detail = 'Khong the ket noi dich vu.'
     try {
       const payload = await response.json()
       detail = payload.detail ?? detail
@@ -76,37 +76,63 @@ export type SpeechTranscriptionResult = {
   message?: string | null
 }
 
-export type StreamingSpeechEvent =
-  | { type: 'partial'; transcript: string }
-  | { type: 'final'; transcript: string; status?: 'ok' | 'retry' | 'error'; message?: string | null }
+export type StreamingSpeechPartialEvent = { type: 'partial'; transcript: string }
+export type StreamingSpeechFinalEvent = {
+  type: 'final'
+  transcript: string
+  status?: 'ok' | 'retry' | 'error'
+  message?: string | null
+}
+export type StreamingSpeechEvent = StreamingSpeechPartialEvent | StreamingSpeechFinalEvent
 
 export class StreamingSpeechClient {
   private socket: WebSocket
+  private onError?: (error: Error) => void
 
-  constructor(onEvent: (event: StreamingSpeechEvent) => void) {
+  constructor(onEvent: (event: StreamingSpeechEvent) => void, onError?: (error: Error) => void) {
     const wsUrl = buildSpeechWebSocketUrl()
+    this.onError = onError
     this.socket = new WebSocket(wsUrl)
+
     this.socket.onmessage = (event) => {
-      const payload = JSON.parse(String(event.data)) as StreamingSpeechEvent
-      onEvent(payload)
+      try {
+        const payload = JSON.parse(String(event.data)) as StreamingSpeechEvent
+        onEvent(payload)
+      } catch {
+        this.onError?.(new Error('Du lieu streaming STT khong hop le.'))
+      }
+    }
+
+    this.socket.onerror = () => {
+      this.onError?.(new Error('Ket noi streaming STT gap loi.'))
     }
   }
 
-  async waitUntilOpen() {
-    if (this.socket.readyState === WebSocket.OPEN) {
+  get isOpen() {
+    return this.socket.readyState === WebSocket.OPEN
+  }
+
+  async waitUntilOpen(timeoutMs = 3000) {
+    if (this.isOpen) {
       return
     }
 
     await new Promise<void>((resolve, reject) => {
+      const timeoutId = window.setTimeout(() => {
+        cleanup()
+        reject(new Error('Mo ket noi streaming STT bi timeout.'))
+      }, timeoutMs)
+
       const handleOpen = () => {
         cleanup()
         resolve()
       }
       const handleError = () => {
         cleanup()
-        reject(new Error('Không thể mở kết nối streaming STT.'))
+        reject(new Error('Khong the mo ket noi streaming STT.'))
       }
       const cleanup = () => {
+        window.clearTimeout(timeoutId)
         this.socket.removeEventListener('open', handleOpen)
         this.socket.removeEventListener('error', handleError)
       }
@@ -117,22 +143,37 @@ export class StreamingSpeechClient {
   }
 
   start(filename = 'speech.webm') {
+    if (!this.isOpen) {
+      return
+    }
     this.socket.send(`start:${filename}`)
   }
 
   sendChunk(chunk: Blob) {
+    if (!this.isOpen) {
+      return
+    }
     this.socket.send(chunk)
   }
 
   flush() {
+    if (!this.isOpen) {
+      return
+    }
     this.socket.send('flush')
   }
 
   finalize() {
+    if (!this.isOpen) {
+      return
+    }
     this.socket.send('finalize')
   }
 
   close() {
+    if (this.socket.readyState === WebSocket.CLOSED) {
+      return
+    }
     this.socket.close()
   }
 }
@@ -150,7 +191,7 @@ export async function transcribeSpeech(audio: Blob): Promise<SpeechTranscription
 }
 
 async function readError(response: Response): Promise<string> {
-  let detail = 'Không thể kết nối dịch vụ.'
+  let detail = 'Khong the ket noi dich vu.'
   try {
     const payload = await response.json()
     detail = payload.detail ?? detail

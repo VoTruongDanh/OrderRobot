@@ -103,7 +103,9 @@ class ConversationEngine:
                 menu,
             )
 
-        if state.cart and contains_any(normalized, CONFIRM_KEYWORDS):
+        if state.cart and (
+            contains_any(normalized, CONFIRM_KEYWORDS) or contains_any(normalized, CHECKOUT_KEYWORDS)
+        ):
             if state.awaiting_confirmation:
                 order = self.core_client.create_order(
                     CreateOrderRequest(

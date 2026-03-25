@@ -26,6 +26,8 @@ class Settings:
     stt_compute_type: str
     stt_beam_size: int = 8
     stt_best_of: int = 5
+    stt_partial_beam_size: int = 2
+    stt_partial_best_of: int = 1
     stt_vad_min_silence_ms: int = 450
     stt_preload: bool = True
     stt_cpu_threads: int = 8
@@ -50,10 +52,12 @@ def get_settings() -> Settings:
         tts_voice=os.getenv("TTS_VOICE", "vietnam").strip(),
         tts_rate=os.getenv("TTS_RATE", "165").strip(),
         stt_model=os.getenv("STT_MODEL", "medium").strip(),
-        stt_device=os.getenv("STT_DEVICE", "cpu").strip(),
-        stt_compute_type=os.getenv("STT_COMPUTE_TYPE", "int8").strip(),
+        stt_device=os.getenv("STT_DEVICE", "auto").strip(),
+        stt_compute_type=os.getenv("STT_COMPUTE_TYPE", "auto").strip(),
         stt_beam_size=int(os.getenv("STT_BEAM_SIZE", "8")),
         stt_best_of=int(os.getenv("STT_BEST_OF", "5")),
+        stt_partial_beam_size=max(1, int(os.getenv("STT_PARTIAL_BEAM_SIZE", "2"))),
+        stt_partial_best_of=max(1, int(os.getenv("STT_PARTIAL_BEST_OF", "1"))),
         stt_vad_min_silence_ms=int(os.getenv("STT_VAD_MIN_SILENCE_MS", "450")),
         stt_preload=os.getenv("STT_PRELOAD", "true").strip().lower() not in {"0", "false", "no"},
         stt_cpu_threads=max(1, int(os.getenv("STT_CPU_THREADS", str(default_cpu_threads)))),

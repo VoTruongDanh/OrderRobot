@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import logging
 import os
 import re
 import subprocess
@@ -20,6 +21,8 @@ from faster_whisper import WhisperModel
 
 from app.config import Settings
 from app.services.core_backend_client import CoreBackendClient
+
+logger = logging.getLogger(__name__)
 
 
 COMMON_ORDERING_PHRASES = {
@@ -246,11 +249,19 @@ $synth.Dispose()
         model = self._get_stt_model()
         language = self.settings.voice_lang.split("-", 1)[0].lower()
         transcript = self._post_process_transcript(
-            self._run_transcription_pass(model, content, filename, language, vad_filter=True),
+            self._run_transcription_pass(
+                model,
+                content,
+                filename,
+                language,
+                vad_filter=True,
+                decode_mode="partial",
+            ),
         )
-        if self._looks_actionable(transcript):
-            return transcript
-        return ""
+        normalized = normalize_vietnamese_text(transcript)
+        if len(normalized) < 3:
+            return ""
+        return transcript
 
     def _run_transcription_pass(
         self,
@@ -260,23 +271,37 @@ $synth.Dispose()
         language: str,
         *,
         vad_filter: bool,
+        decode_mode: str = "final",
     ) -> str:
+        partial_mode = decode_mode == "partial"
+        beam_size = (
+            self.settings.stt_partial_beam_size if partial_mode else self.settings.stt_beam_size
+        )
+        best_of = (
+            self.settings.stt_partial_best_of if partial_mode else self.settings.stt_best_of
+        )
+        silence_ms = (
+            max(220, self.settings.stt_vad_min_silence_ms - 160)
+            if partial_mode
+            else self.settings.stt_vad_min_silence_ms
+        )
+
         audio_stream = io.BytesIO(content)
         audio_stream.name = filename
         segments, _ = model.transcribe(
             audio_stream,
             language=language,
             vad_filter=vad_filter,
-            beam_size=self.settings.stt_beam_size,
-            best_of=self.settings.stt_best_of,
+            beam_size=beam_size,
+            best_of=best_of,
             temperature=0,
             condition_on_previous_text=False,
             without_timestamps=True,
             compression_ratio_threshold=2.1,
             log_prob_threshold=-1.0,
             no_speech_threshold=0.45,
-            vad_parameters={"min_silence_duration_ms": self.settings.stt_vad_min_silence_ms},
-            initial_prompt=self._build_stt_prompt(),
+            vad_parameters={"min_silence_duration_ms": silence_ms},
+            initial_prompt=None if partial_mode else self._build_stt_prompt(),
             hotwords=self._build_stt_hotwords(),
         )
         return clean_spacing(" ".join(segment.text.strip() for segment in segments).strip())
@@ -287,15 +312,64 @@ $synth.Dispose()
 
         with self._stt_lock:
             if self._stt_model is None:
-                self._stt_model = WhisperModel(
-                    self.settings.stt_model,
-                    device=self.settings.stt_device,
-                    compute_type=self.settings.stt_compute_type,
-                    cpu_threads=self.settings.stt_cpu_threads,
-                    num_workers=self.settings.stt_num_workers,
-                )
+                last_error: Exception | None = None
+                for device, compute_type in self._resolve_model_candidates():
+                    try:
+                        self._stt_model = WhisperModel(
+                            self.settings.stt_model,
+                            device=device,
+                            compute_type=compute_type,
+                            cpu_threads=self.settings.stt_cpu_threads,
+                            num_workers=self.settings.stt_num_workers,
+                        )
+                        logger.info(
+                            "Loaded faster-whisper model '%s' on %s (%s)",
+                            self.settings.stt_model,
+                            device,
+                            compute_type,
+                        )
+                        break
+                    except Exception as exc:
+                        last_error = exc
+                        logger.warning(
+                            "STT init failed on %s (%s), trying fallback. Reason: %s",
+                            device,
+                            compute_type,
+                            exc,
+                        )
+
+                if self._stt_model is None and last_error is not None:
+                    raise last_error
 
         return self._stt_model
+
+    def _resolve_model_candidates(self) -> list[tuple[str, str]]:
+        configured_device = self.settings.stt_device.strip().lower() or "auto"
+        configured_compute = self.settings.stt_compute_type.strip().lower() or "auto"
+
+        if configured_device != "auto":
+            primary_compute = (
+                self._default_compute_for_device(configured_device)
+                if configured_compute == "auto"
+                else configured_compute
+            )
+            candidates = [(configured_device, primary_compute)]
+            if configured_device != "cpu":
+                candidates.append(("cpu", "int8"))
+            return _dedupe_candidates(candidates)
+
+        auto_candidates = [("cuda", "int8_float16"), ("cuda", "float16"), ("cpu", "int8")]
+        if configured_compute != "auto":
+            auto_candidates = [(device, configured_compute) for device, _ in auto_candidates]
+
+        return _dedupe_candidates(auto_candidates)
+
+    def _default_compute_for_device(self, device: str) -> str:
+        if device == "cuda":
+            return "int8_float16"
+        if device == "cpu":
+            return "int8"
+        return "int8"
 
     def _build_stt_prompt(self) -> str:
         if self._stt_prompt_cache is not None:
@@ -546,3 +620,14 @@ def best_lexicon_match(
 
 def contains_keyword(text: str, keywords: set[str]) -> bool:
     return any(keyword in text for keyword in keywords)
+
+
+def _dedupe_candidates(candidates: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    deduped: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for candidate in candidates:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        deduped.append(candidate)
+    return deduped
