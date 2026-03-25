@@ -1,7 +1,7 @@
 import type { ConversationResponse, MenuItem, OrderRecord } from './types'
 
-const CORE_API_URL = import.meta.env.VITE_CORE_API_URL ?? 'http://127.0.0.1:8001'
-const AI_API_URL = import.meta.env.VITE_AI_API_URL ?? 'http://127.0.0.1:8002'
+const CORE_API_URL = import.meta.env.VITE_CORE_API_URL ?? 'http://127.0.0.1:8011'
+const AI_API_URL = import.meta.env.VITE_AI_API_URL ?? 'http://127.0.0.1:8012'
 
 async function readJson<T>(response: Response): Promise<T> {
   if (!response.ok) {

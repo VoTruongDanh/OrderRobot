@@ -298,10 +298,10 @@ function App() {
       })
     }, 1000)
 
-    // Close after 20s total (6s invoice + 14s thank you UI)
+    // Close after 16s total (6s invoice + 10s thank you UI)
     const closeTimer = window.setTimeout(() => {
       closeSuccessModal()
-    }, 20000)
+    }, 16000)
 
     return () => {
       window.clearInterval(countdownInterval)
