@@ -19,9 +19,10 @@ $env:PUBLIC_API_HOST = '127.0.0.1'
 $env:NODE_ENV = 'development'
 
 # Keep hidden bridge runtime on demand.
-# Run non-minimized to ensure extension content script reliably initializes.
+# Keep minimized by default to avoid visible browser window on kiosk screens.
 $env:BRIDGE_AUTOSTART_ON_DEMAND = 'true'
-$env:BRIDGE_LAUNCH_MINIMIZED = 'false'
+$env:BRIDGE_LAUNCH_MINIMIZED = if ($env:BRIDGE_LAUNCH_MINIMIZED) { $env:BRIDGE_LAUNCH_MINIMIZED } else { 'true' }
+$env:BRIDGE_LAUNCH_OFFSCREEN = if ($env:BRIDGE_LAUNCH_OFFSCREEN) { $env:BRIDGE_LAUNCH_OFFSCREEN } else { 'true' }
 $env:BRIDGE_AUTOSTART = 'true'
 
 function Test-TruthyEnv {
@@ -149,6 +150,7 @@ if ($null -ne $listener) {
 
 Write-Host "[bridge] starting DPG gateway from $gatewayRoot on $bridgeUrl"
 Write-Host "[bridge] BRIDGE_LAUNCH_MINIMIZED=$env:BRIDGE_LAUNCH_MINIMIZED"
+Write-Host "[bridge] BRIDGE_LAUNCH_OFFSCREEN=$env:BRIDGE_LAUNCH_OFFSCREEN"
 Write-Host "[bridge] BRIDGE_FORCE_RESTART=$shouldForceRestart"
 Write-Host "[bridge] if first run: npm run install:bridge"
 
