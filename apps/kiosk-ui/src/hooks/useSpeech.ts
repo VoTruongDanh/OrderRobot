@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import SpeechRecognition, { useSpeechRecognition } from 'react-speech-recognition'
 
 import {
-  type StreamingSpeechFinalEvent,
   type StreamingSpeechEvent,
+  type StreamingSpeechFinalEvent,
   StreamingSpeechClient,
   synthesizeSpeech,
   transcribeSpeech,
@@ -26,6 +26,7 @@ const SILENCE_RMS_THRESHOLD = 0.02
 const BROWSER_FINAL_WAIT_MS = 600
 const STREAMING_FINAL_WAIT_MS = 3200
 const STREAMING_READY_WAIT_MS = 1400
+const STREAMING_FLUSH_INTERVAL_MS = 420
 const REPEATED_TRANSCRIPT_WINDOW_MS = 15000
 
 const AMBIENT_WATERMARK_PATTERNS = [
@@ -62,6 +63,7 @@ export function useSpeech({ lang, onTranscript, onPartialTranscript, onNotice }:
   const streamingFinalPromiseRef = useRef<Promise<StreamingSpeechFinalEvent | null> | null>(null)
   const resolveStreamingFinalRef = useRef<((value: StreamingSpeechFinalEvent | null) => void) | null>(null)
   const latestStreamingPartialRef = useRef('')
+  const lastStreamingFlushAtRef = useRef(0)
 
   const lastAcceptedTranscriptRef = useRef<{ text: string; at: number } | null>(null)
   const latestBrowserTranscriptRef = useRef('')
@@ -160,6 +162,7 @@ export function useSpeech({ lang, onTranscript, onPartialTranscript, onNotice }:
       latestBrowserTranscriptRef.current = ''
       latestBrowserFinalTranscriptRef.current = ''
       latestStreamingPartialRef.current = ''
+      lastStreamingFlushAtRef.current = 0
       partialTranscriptHandlerRef.current?.('')
       resetTranscript()
       initStreamingClient('speech.webm')
@@ -177,7 +180,11 @@ export function useSpeech({ lang, onTranscript, onPartialTranscript, onNotice }:
         const streamingClient = streamingClientRef.current
         if (streamingClient) {
           streamingClient.sendChunk(event.data)
-          streamingClient.flush()
+          const now = Date.now()
+          if (now - lastStreamingFlushAtRef.current >= STREAMING_FLUSH_INTERVAL_MS) {
+            streamingClient.flush()
+            lastStreamingFlushAtRef.current = now
+          }
         }
       }
 
@@ -203,7 +210,7 @@ export function useSpeech({ lang, onTranscript, onPartialTranscript, onNotice }:
             language: lang,
           })
         } catch {
-          // Backend streaming STT still works even when browser STT fails.
+          // Keep backend streaming STT active even if browser STT fails.
         }
       }
 
@@ -320,7 +327,11 @@ export function useSpeech({ lang, onTranscript, onPartialTranscript, onNotice }:
         !transcript &&
         (!browserTranscript || shouldIgnoreTranscript(browserTranscript, lastAcceptedTranscriptRef.current))
 
-      if (!transcript && browserTranscript && !shouldIgnoreTranscript(browserTranscript, lastAcceptedTranscriptRef.current)) {
+      if (
+        !transcript &&
+        browserTranscript &&
+        !shouldIgnoreTranscript(browserTranscript, lastAcceptedTranscriptRef.current)
+      ) {
         transcript = browserTranscript
       }
 
@@ -432,6 +443,7 @@ export function useSpeech({ lang, onTranscript, onPartialTranscript, onNotice }:
       return null
     }
 
+    streamingClient.flush()
     streamingClient.finalize()
     const finalPromise = streamingFinalPromiseRef.current
     if (!finalPromise) {

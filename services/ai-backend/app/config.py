@@ -33,6 +33,7 @@ class Settings:
     stt_cpu_threads: int = 8
     stt_num_workers: int = 1
     request_timeout_seconds: float = 25.0
+    llm_timeout_seconds: float = 120.0  # Tăng timeout cho LLM
     session_timeout_minutes: int = 15
 
     @property
@@ -62,5 +63,7 @@ def get_settings() -> Settings:
         stt_preload=os.getenv("STT_PRELOAD", "true").strip().lower() not in {"0", "false", "no"},
         stt_cpu_threads=max(1, int(os.getenv("STT_CPU_THREADS", str(default_cpu_threads)))),
         stt_num_workers=max(1, int(os.getenv("STT_NUM_WORKERS", "1"))),
+        request_timeout_seconds=float(os.getenv("REQUEST_TIMEOUT_SECONDS", "25.0")),
+        llm_timeout_seconds=float(os.getenv("LLM_TIMEOUT_SECONDS", "120.0")),
         session_timeout_minutes=int(os.getenv("SESSION_TIMEOUT_MINUTES", "15")),
     )

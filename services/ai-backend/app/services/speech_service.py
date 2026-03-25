@@ -109,6 +109,33 @@ class SpeechService:
     async def synthesize(self, text: str) -> SynthesizedAudio:
         return await self._synthesize_async(text)
 
+    async def synthesize_stream(self, text: str):
+        """Stream audio chunks directly from Edge TTS for low latency playback."""
+        normalized_text = normalize_speech_text(text)
+        try:
+            communicate = edge_tts.Communicate(
+                text=normalized_text,
+                voice=pick_edge_voice(self.settings.voice_lang, self.settings.tts_voice),
+                rate=convert_rate_to_edge(parse_tts_rate(self.settings.tts_rate)),
+            )
+            async for chunk in communicate.stream():
+                if chunk["type"] == "audio":
+                    yield chunk["data"]
+        except Exception as edge_error:
+            # Fallback: Generate full audio synchronously and yield as single chunk
+            # Cannot use asyncio.to_thread in streaming context due to executor lifecycle
+            try:
+                audio = await self._synthesize_async(normalized_text)
+                yield audio.content
+            except Exception as fallback_error:
+                # Log both errors but don't crash the stream
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Edge TTS failed: {edge_error}")
+                logger.error(f"Fallback TTS also failed: {fallback_error}")
+                # Yield empty to close stream gracefully
+                return
+
     async def transcribe(self, file: UploadFile) -> str:
         content = await file.read()
         if not content:

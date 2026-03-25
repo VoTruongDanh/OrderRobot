@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import './App.css'
-import { fetchMenu, fetchOrder, resetSession, sendTurn, startSession } from './api'
+import { fetchMenu, fetchOrder, resetSession, sendTurnStream, startSession } from './api'
 import { MenuBoard } from './components/MenuBoard'
 import { OrderSuccessModal } from './components/OrderSuccessModal'
 import { RobotAvatar } from './components/RobotAvatar'
@@ -338,8 +338,161 @@ function App() {
           throw new Error('Chưa có phiên AI hoạt động.')
         }
 
-        const response = await sendTurn(activeSessionId, transcript)
-        await handleAssistantResponseRef.current(response)
+        // Use streaming API for lower latency
+        let fullText = ''
+        const audioChunks: Uint8Array[] = []
+        let cartData: ConversationResponse['cart'] = []
+
+        setRobotMode('speaking')
+        setStatusMessage('Robot đang phản hồi...')
+
+        for await (const chunk of sendTurnStream(activeSessionId, transcript)) {
+          if (chunk.type === 'text') {
+            fullText += chunk.content
+            
+            // Update cart if provided
+            if (chunk.cart) {
+              cartData = chunk.cart
+              setCart(cartData)
+            }
+            
+            // Show progressive text in transcript
+            setTranscriptEntries((current) => {
+              const lastEntry = current[current.length - 1]
+              if (lastEntry?.speaker === 'assistant' && lastEntry.id.startsWith('streaming-')) {
+                return [
+                  ...current.slice(0, -1),
+                  {
+                    ...lastEntry,
+                    text: fullText,
+                  },
+                ]
+              }
+              
+              return [
+                ...current,
+                {
+                  id: `streaming-${crypto.randomUUID()}`,
+                  speaker: 'assistant',
+                  text: fullText,
+                  timestamp: new Date().toLocaleTimeString('vi-VN', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  }),
+                },
+              ]
+            })
+          } else if (chunk.type === 'audio') {
+            // Collect audio chunks - will play after all chunks received
+            const audioData = Uint8Array.from(atob(chunk.content), c => c.charCodeAt(0))
+            audioChunks.push(audioData)
+          }
+        }
+
+        // Finalize transcript entry with complete text
+        setTranscriptEntries((current) => {
+          const lastEntry = current[current.length - 1]
+          if (lastEntry?.speaker === 'assistant' && lastEntry.id.startsWith('streaming-')) {
+            return [
+              ...current.slice(0, -1),
+              {
+                ...lastEntry,
+                id: `assistant-${crypto.randomUUID()}`,
+                text: fullText,
+              },
+            ]
+          }
+          return current
+        })
+
+        // Play complete audio using speak() from useSpeech hook
+        if (audioChunks.length > 0) {
+          try {
+            // Combine all audio chunks into single blob
+            const totalLength = audioChunks.reduce((sum, chunk) => sum + chunk.length, 0)
+            const combinedAudio = new Uint8Array(totalLength)
+            let offset = 0
+            for (const chunk of audioChunks) {
+              combinedAudio.set(chunk, offset)
+              offset += chunk.length
+            }
+            
+            const audioBlob = new Blob([combinedAudio], { type: 'audio/mpeg' })
+            const audioUrl = URL.createObjectURL(audioBlob)
+            const audio = new Audio(audioUrl)
+            
+            await new Promise<void>((resolve, reject) => {
+              audio.onended = () => {
+                URL.revokeObjectURL(audioUrl)
+                resolve()
+              }
+              audio.onerror = () => {
+                URL.revokeObjectURL(audioUrl)
+                reject(new Error('Audio playback failed'))
+              }
+              audio.play().catch(reject)
+            })
+          } catch (error) {
+            console.warn('Failed to play streaming audio:', error)
+            addNotice('Không thể phát audio từ backend.', 'info')
+          }
+        }
+
+        // Check if order was created (detect from response text)
+        const orderCreated = fullText.includes('đã lên đơn thành công') || fullText.includes('mã đơn')
+        
+        if (orderCreated) {
+          // Extract order ID from text if possible
+          const orderIdMatch = fullText.match(/mã\s+([A-Z0-9-]+)/i)
+          const orderId = orderIdMatch?.[1]
+          
+          if (orderId) {
+            const fallbackInvoice = buildLocalInvoiceSnapshot({
+              orderId,
+              createdAt: new Date(),
+              items: cartData,
+              totalAmount: cartData.reduce((sum, item) => sum + Number(item.line_total), 0),
+            })
+
+            setInvoice(fallbackInvoice)
+            setSuccessModalInvoice(fallbackInvoice)
+            setSuccessCountdown(6)
+            setStatusMessage('Đơn đã được xác nhận. Kiosk đang hiển thị mã QR cho khách.')
+            setCart([])
+            setAwaitingConfirmation(false)
+            setSessionId(null)
+            setAwaitingVacancy(false)
+
+            void (async () => {
+              try {
+                const order = await fetchOrder(orderId)
+                const completedInvoice = buildInvoiceSnapshot(order)
+                setInvoice(completedInvoice)
+                setSuccessModalInvoice(completedInvoice)
+              } catch (error) {
+                const message =
+                  error instanceof Error
+                    ? `Đã tạo đơn nhưng không tải được hóa đơn: ${error.message}`
+                    : 'Đã tạo đơn nhưng không tải được hóa đơn.'
+                addNotice(message, 'info')
+              }
+            })()
+          }
+          
+          setRobotMode('idle')
+          return
+        }
+
+        // Auto-listen for next turn if not order completion
+        if (recognitionSupported) {
+          setRobotMode('listening')
+          setStatusMessage('Robot đang nghe yêu cầu tiếp theo để tiếp tục đặt món.')
+          // Add small delay to ensure audio playback is fully complete
+          await new Promise(resolve => setTimeout(resolve, 300))
+          void startListening()
+        } else {
+          setRobotMode('idle')
+        }
       } catch (error) {
         const message =
           error instanceof Error
@@ -355,7 +508,7 @@ function App() {
         isBusyRef.current = false
       }
     },
-    [appendTranscript, createSilentSession, handleUiError, stopListening],
+    [addNotice, appendTranscript, createSilentSession, handleUiError, recognitionSupported, startListening, stopListening],
   )
 
   useEffect(() => {
@@ -502,7 +655,12 @@ function App() {
               void submitIntent('xác nhận')
             }}
             onManualListen={() => {
+              console.log('[App] onManualListen called')
               void startListening()
+            }}
+            onStopListening={() => {
+              console.log('[App] onStopListening called')
+              stopListening()
             }}
             onManualStart={() => {
               void beginSession('manual')

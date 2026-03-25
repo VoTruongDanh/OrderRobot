@@ -13,6 +13,7 @@
     "test:core": "powershell -NoProfile -Command \"Set-Location 'services/core-backend'; python -m pytest tests\"",
     "test:ai": "powershell -NoProfile -Command \"Set-Location 'services/ai-backend'; python -m pytest tests\"",
     "test:python": "npm run test:core && npm run test:ai",
+    "build": "npm run build:ui",
     "build:ui": "npm --prefix apps/kiosk-ui run build"
   },
   "devDependencies": {

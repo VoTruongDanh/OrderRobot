@@ -17,6 +17,7 @@ type TranscriptPanelProps = {
   notices: AppNotice[]
   onManualStart: () => void
   onManualListen: () => void
+  onStopListening: () => void
   onReset: () => void
   onConfirmOrder: () => void
 }
@@ -42,6 +43,7 @@ export function TranscriptPanel({
   notices,
   onManualStart,
   onManualListen,
+  onStopListening,
   onReset,
   onConfirmOrder,
 }: TranscriptPanelProps) {
@@ -108,7 +110,7 @@ export function TranscriptPanel({
       <div className="side-panel__cta">
         <button
           className="action-button action-button--secondary"
-          onClick={onManualListen}
+          onClick={speechPhase === 'listening' ? onStopListening : onManualListen}
           type="button"
           disabled={!canListen || speechPhase === 'processing'}
         >
@@ -122,8 +124,8 @@ export function TranscriptPanel({
           {speechPhase === 'processing'
             ? 'Robot đã ghi âm xong, đang chuyển giọng nói thành text để gửi API.'
             : canSpeak
-            ? 'Robot trả lời bằng giọng và tự đọc lại đơn trước khi chốt.'
-            : 'Robot đang phản hồi bằng chữ vì máy chưa phát được audio.'}
+              ? 'Robot trả lời bằng giọng và tự đọc lại đơn trước khi chốt.'
+              : 'Robot đang phản hồi bằng chữ vì máy chưa phát được audio.'}
         </p>
       </div>
 

@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import json
 import logging
 import time
 
 import httpx
 from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 
 from app.config import get_settings
 from app.models import (
@@ -69,9 +71,9 @@ def health() -> dict[str, object]:
 
 
 @app.post("/sessions/start", response_model=ConversationResponse)
-def start_session(_: SessionStartRequest) -> ConversationResponse:
+async def start_session(_: SessionStartRequest) -> ConversationResponse:
     try:
-        return conversation_engine.start_session()
+        return await conversation_engine.start_session()
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail="Core backend khong san sang.") from exc
     except ProviderError as exc:
@@ -79,9 +81,28 @@ def start_session(_: SessionStartRequest) -> ConversationResponse:
 
 
 @app.post("/sessions/{session_id}/turn", response_model=ConversationResponse)
-def handle_turn(session_id: str, payload: TurnRequest) -> ConversationResponse:
+async def handle_turn(session_id: str, payload: TurnRequest) -> ConversationResponse:
     try:
-        return conversation_engine.handle_turn(session_id, payload.transcript)
+        return await conversation_engine.handle_turn(session_id, payload.transcript)
+    except httpx.HTTPStatusError as exc:
+        detail = exc.response.text or "Khong the tao don tu core backend."
+        raise HTTPException(status_code=502, detail=detail) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail="Khong the ket noi toi core backend.") from exc
+    except ProviderError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/sessions/{session_id}/turn/stream")
+async def handle_turn_stream(session_id: str, payload: TurnRequest) -> StreamingResponse:
+    """Stream conversation response with interleaved text and audio chunks for lower latency."""
+    try:
+        async def response_stream():
+            async for chunk in conversation_engine.handle_turn_stream(session_id, payload.transcript):
+                # Yield JSON-encoded chunks: {"type": "text", "content": "..."} or {"type": "audio", "content": base64}
+                yield json.dumps(chunk, ensure_ascii=False).encode("utf-8") + b"\n"
+
+        return StreamingResponse(response_stream(), media_type="application/x-ndjson")
     except httpx.HTTPStatusError as exc:
         detail = exc.response.text or "Khong the tao don tu core backend."
         raise HTTPException(status_code=502, detail=detail) from exc
@@ -92,8 +113,8 @@ def handle_turn(session_id: str, payload: TurnRequest) -> ConversationResponse:
 
 
 @app.post("/sessions/{session_id}/reset", response_model=ConversationResponse)
-def reset_session(session_id: str) -> ConversationResponse:
-    return conversation_engine.reset_session(session_id)
+async def reset_session(session_id: str) -> ConversationResponse:
+    return await conversation_engine.reset_session(session_id)
 
 
 @app.post("/speech/synthesize")
@@ -104,6 +125,18 @@ async def synthesize_speech(payload: SpeechSynthesisRequest) -> Response:
         raise HTTPException(status_code=502, detail=f"Khong the tao giong noi: {exc}") from exc
 
     return Response(content=audio.content, media_type=audio.media_type)
+
+
+@app.post("/speech/synthesize/stream")
+async def synthesize_speech_stream(payload: SpeechSynthesisRequest) -> StreamingResponse:
+    try:
+        async def audio_stream():
+            async for chunk in speech_service.synthesize_stream(payload.text):
+                yield chunk
+
+        return StreamingResponse(audio_stream(), media_type="audio/mpeg")
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Khong the tao giong noi: {exc}") from exc
 
 
 @app.post("/speech/transcribe", response_model=SpeechTranscriptionResponse)
