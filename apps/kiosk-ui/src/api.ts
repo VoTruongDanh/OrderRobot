@@ -54,11 +54,13 @@ export type StreamChunk =
 export async function* sendTurnStream(
   sessionId: string,
   transcript: string,
+  signal?: AbortSignal,
 ): AsyncGenerator<StreamChunk> {
   const response = await fetch(`${getAiApiUrl()}/sessions/${sessionId}/turn/stream`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ transcript }),
+    signal,
   })
 
   if (!response.ok) {

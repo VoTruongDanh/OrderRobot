@@ -38,6 +38,7 @@ export function useSpeech({ lang, onTranscript, onNotice, onBargeIn }: UseSpeech
   const bargeInHandlerRef = useRef(onBargeIn)
   const notifiedKeysRef = useRef<Set<string>>(new Set())
   const audioRef = useRef<HTMLAudioElement | null>(null)
+  const audioCleanupRef = useRef<(() => void) | null>(null)
   const lastAcceptedTranscriptRef = useRef<{ text: string; at: number } | null>(null)
 
   // === Echo cancellation state ===
@@ -324,17 +325,22 @@ export function useSpeech({ lang, onTranscript, onNotice, onBargeIn }: UseSpeech
     const audio = new Audio(audioUrl)
     audio.preload = 'auto'
     audioRef.current = audio
+    audioCleanupRef.current = () => {
+      URL.revokeObjectURL(audioUrl)
+    }
     closeEchoGate()  // prevent mic from hearing speaker output
 
     return new Promise<void>((resolve, reject) => {
       audio.onended = () => {
-        URL.revokeObjectURL(audioUrl)
+        audioCleanupRef.current?.()
+        audioCleanupRef.current = null
         if (audioRef.current === audio) audioRef.current = null
         openEchoGate()  // re-open gate after speech ends (with cooldown)
         resolve()
       }
       audio.onerror = () => {
-        URL.revokeObjectURL(audioUrl)
+        audioCleanupRef.current?.()
+        audioCleanupRef.current = null
         if (audioRef.current === audio) audioRef.current = null
         openEchoGate()
         reject(new Error('Không thể phát audio từ backend.'))
@@ -342,7 +348,8 @@ export function useSpeech({ lang, onTranscript, onNotice, onBargeIn }: UseSpeech
       // Wait for browser to fully buffer audio before playing
       audio.oncanplaythrough = () => {
         audio.play().catch(() => {
-          URL.revokeObjectURL(audioUrl)
+          audioCleanupRef.current?.()
+          audioCleanupRef.current = null
           if (audioRef.current === audio) audioRef.current = null
           openEchoGate()
           reject(new Error('Trình duyệt chặn phát audio tự động.'))
@@ -352,12 +359,115 @@ export function useSpeech({ lang, onTranscript, onNotice, onBargeIn }: UseSpeech
     })
   }
 
+  function createStreamingAudioPlayer():
+    | {
+        appendChunk: (chunk: Uint8Array) => void
+        finalize: () => Promise<void>
+      }
+    | null {
+    if (
+      !synthesisSupported ||
+      typeof MediaSource === 'undefined' ||
+      !MediaSource.isTypeSupported('audio/mpeg')
+    ) {
+      return null
+    }
+
+    stopAudioPlayback()
+
+    const audio = new Audio()
+    const mediaSource = new MediaSource()
+    const audioUrl = URL.createObjectURL(mediaSource)
+    audio.src = audioUrl
+    audio.preload = 'auto'
+    audioRef.current = audio
+    audioCleanupRef.current = () => {
+      URL.revokeObjectURL(audioUrl)
+    }
+    closeEchoGate()
+
+    let sourceBuffer: SourceBuffer | null = null
+    let playStarted = false
+    let finalized = false
+    const pendingChunks: Uint8Array[] = []
+
+    const playbackDone = new Promise<void>((resolve, reject) => {
+      const cleanup = () => {
+        audioCleanupRef.current?.()
+        audioCleanupRef.current = null
+        if (audioRef.current === audio) {
+          audioRef.current = null
+        }
+      }
+
+      audio.onended = () => {
+        cleanup()
+        openEchoGate()
+        resolve()
+      }
+      audio.onerror = () => {
+        cleanup()
+        openEchoGate()
+        reject(new Error('Không thể phát audio streaming từ backend.'))
+      }
+    })
+
+    const flushBuffer = () => {
+      if (!sourceBuffer || sourceBuffer.updating) {
+        return
+      }
+
+      const nextChunk = pendingChunks.shift()
+      if (nextChunk) {
+        const safeChunk = new Uint8Array(nextChunk.byteLength)
+        safeChunk.set(nextChunk)
+        sourceBuffer.appendBuffer(safeChunk)
+        if (!playStarted) {
+          playStarted = true
+          void audio.play().catch((error) => {
+            console.warn('[useSpeech] Streaming audio autoplay blocked:', error)
+          })
+        }
+        return
+      }
+
+      if (finalized && mediaSource.readyState === 'open') {
+        try {
+          mediaSource.endOfStream()
+        } catch {
+          // no-op
+        }
+      }
+    }
+
+    mediaSource.addEventListener('sourceopen', () => {
+      sourceBuffer = mediaSource.addSourceBuffer('audio/mpeg')
+      sourceBuffer.mode = 'sequence'
+      sourceBuffer.addEventListener('updateend', flushBuffer)
+      flushBuffer()
+    })
+
+    return {
+      appendChunk: (chunk: Uint8Array) => {
+        pendingChunks.push(chunk)
+        flushBuffer()
+      },
+      finalize: async () => {
+        finalized = true
+        flushBuffer()
+        await playbackDone
+      },
+    }
+  }
+
   function stopAudioPlayback() {
     if (!audioRef.current) return
     const a = audioRef.current
     audioRef.current = null
     a.pause()
     a.currentTime = 0
+    audioCleanupRef.current?.()
+    audioCleanupRef.current = null
     openEchoGate()  // immediately re-open gate on manual stop
   }
 
@@ -442,6 +552,7 @@ export function useSpeech({ lang, onTranscript, onNotice, onBargeIn }: UseSpeech
     stopListening,
     speak,
     speakWithBargeIn,
+    createStreamingAudioPlayer,
     stopAudioPlayback,
     ensureAudioWakeLock,
   }

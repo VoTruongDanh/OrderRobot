@@ -39,10 +39,14 @@ function App() {
 
   const sessionIdRef = useRef<string | null>(null)
   const isBusyRef = useRef(false)
+  const currentTurnAbortRef = useRef<AbortController | null>(null)
+  const activeTurnRequestIdRef = useRef(0)
   const handleAssistantResponseRef = useRef<
     (response: ConversationResponse, options?: { autoListen?: boolean }) => Promise<void>
   >(async () => {})
-  const handleTranscriptRef = useRef<(transcript: string) => Promise<void>>(async () => {})
+  const handleTranscriptRef = useRef<
+    (transcript: string, options?: { interruptCurrent?: boolean }) => Promise<void>
+  >(async () => {})
 
   // Random greeting messages for faster initial response
   const greetingMessages = [
@@ -148,6 +152,7 @@ function App() {
     synthesisSupported,
     speak,
     speakWithBargeIn,
+    createStreamingAudioPlayer,
     startListening,
     stopListening,
     stopAudioPlayback: _stopAudioPlayback,
@@ -156,11 +161,14 @@ function App() {
   } = useSpeech({
     lang: 'vi-VN',
     onTranscript: (transcript) => {
-      void handleTranscriptRef.current(transcript)
+      void handleTranscriptRef.current(transcript, {
+        interruptCurrent: isBusyRef.current,
+      })
     },
     onNotice: addNotice,
     onBargeIn: () => {
       console.log('[App] User barged in — switching to listening mode')
+      currentTurnAbortRef.current?.abort()
       setRobotMode('listening')
       setStatusMessage('Robot đã ngừng nói và đang nghe mình...')
     },
@@ -268,6 +276,11 @@ function App() {
       try {
         await speakWithBargeIn(response.reply_text)
       } catch (error) {
+        if (error instanceof Error && error.name === 'AbortError') {
+          console.log('[submitIntent] Turn interrupted before completion')
+          return
+        }
+
         const message =
           error instanceof Error
             ? `Không phát được audio từ backend: ${error.message}`
@@ -327,10 +340,21 @@ function App() {
   }, [])
 
   const submitIntent = useCallback(
-    async (transcript: string, options?: { ensureSession?: boolean }) => {
-      if (isBusyRef.current) {
+    async (transcript: string, options?: { ensureSession?: boolean; interruptCurrent?: boolean }) => {
+      const interruptCurrent = options?.interruptCurrent ?? false
+
+      if (isBusyRef.current && !interruptCurrent) {
         return
       }
+
+      if (interruptCurrent) {
+        currentTurnAbortRef.current?.abort()
+      }
+
+      const turnRequestId = activeTurnRequestIdRef.current + 1
+      activeTurnRequestIdRef.current = turnRequestId
+      const turnAbortController = new AbortController()
+      currentTurnAbortRef.current = turnAbortController
 
       stopListening()
       isBusyRef.current = true
@@ -351,6 +375,9 @@ function App() {
         // Use streaming API for lower latency
         let fullText = ''
         const audioChunks: Uint8Array[] = []
+        let streamingAudioPlayer: ReturnType<typeof createStreamingAudioPlayer> | null = null
+        let receivedStreamingAudio = false
+        let bargeInListeningStarted = false
         let cartData: ConversationResponse['cart'] = []
         let orderCreatedDetected = false
         let detectedOrderId: string | null = null
@@ -358,7 +385,7 @@ function App() {
         setRobotMode('speaking')
         setStatusMessage('Robot đang phản hồi...')
 
-        for await (const chunk of sendTurnStream(activeSessionId, transcript)) {
+        for await (const chunk of sendTurnStream(activeSessionId, transcript, turnAbortController.signal)) {
           if (chunk.type === 'text') {
             fullText += chunk.content
             
@@ -438,9 +465,27 @@ function App() {
               ]
             })
           } else if (chunk.type === 'audio') {
-            // Collect audio chunks - will play after all chunks received
+            if (recognitionSupported && !bargeInListeningStarted && !orderCreatedDetected) {
+              bargeInListeningStarted = true
+              try {
+                await startListening()
+                console.log('[submitIntent] Barge-in listening active during streaming audio')
+              } catch (error) {
+                console.warn('[submitIntent] Could not start barge-in listening during audio:', error)
+              }
+            }
+
             const audioData = Uint8Array.from(atob(chunk.content), c => c.charCodeAt(0))
-            audioChunks.push(audioData)
+            if (!streamingAudioPlayer && !orderCreatedDetected) {
+              streamingAudioPlayer = createStreamingAudioPlayer()
+            }
+
+            if (streamingAudioPlayer && !orderCreatedDetected) {
+              receivedStreamingAudio = true
+              streamingAudioPlayer.appendChunk(audioData)
+            } else {
+              audioChunks.push(audioData)
+            }
           }
         }
 
@@ -460,8 +505,14 @@ function App() {
           return current
         })
 
-        // Play complete audio using speak() from useSpeech hook (respects echo gate)
-        if (audioChunks.length > 0 && !orderCreatedDetected) {
+        if (streamingAudioPlayer && receivedStreamingAudio && !orderCreatedDetected) {
+          try {
+            await streamingAudioPlayer.finalize()
+          } catch (error) {
+            console.warn('Failed to finalize streaming audio:', error)
+            addNotice('KhÃ´ng thá»ƒ phÃ¡t audio tá»« backend.', 'info')
+          }
+        } else if (audioChunks.length > 0 && !orderCreatedDetected) {
           try {
             const totalLength = audioChunks.reduce((sum, chunk) => sum + chunk.length, 0)
             const combinedAudio = new Uint8Array(totalLength)
@@ -526,17 +577,24 @@ function App() {
         if (recognitionSupported) {
           setRobotMode('listening')
           setStatusMessage('Robot đang nghe yêu cầu tiếp theo để tiếp tục đặt món.')
-          try {
-            await startListening()
-            console.log('[submitIntent] Successfully restarted listening after streaming')
-          } catch (error) {
-            console.error('[submitIntent] Failed to restart listening:', error)
-            setRobotMode('idle')
+          if (!bargeInListeningStarted) {
+            try {
+              await startListening()
+              console.log('[submitIntent] Successfully restarted listening after streaming')
+            } catch (error) {
+              console.error('[submitIntent] Failed to restart listening:', error)
+              setRobotMode('idle')
+            }
           }
         } else {
           setRobotMode('idle')
         }
       } catch (error) {
+        if (error instanceof Error && error.name === 'AbortError') {
+          console.log('[submitIntent] Turn interrupted before completion')
+          return
+        }
+
         const message =
           error instanceof Error
             ? `Em xin lỗi, backend AI đang gặp lỗi: ${error.message}`
@@ -547,15 +605,29 @@ function App() {
         setRecommendedItemIds([])
         setAwaitingConfirmation(false)
       } finally {
-        isBusyRef.current = false
+        if (currentTurnAbortRef.current === turnAbortController) {
+          currentTurnAbortRef.current = null
+        }
+        if (activeTurnRequestIdRef.current === turnRequestId) {
+          isBusyRef.current = false
+        }
       }
     },
-    [addNotice, appendTranscript, createSilentSession, handleUiError, recognitionSupported, startListening, stopListening],
+    [
+      addNotice,
+      appendTranscript,
+      createSilentSession,
+      createStreamingAudioPlayer,
+      handleUiError,
+      recognitionSupported,
+      startListening,
+      stopListening,
+    ],
   )
 
   useEffect(() => {
-    handleTranscriptRef.current = async (transcript: string) => {
-      await submitIntent(transcript)
+    handleTranscriptRef.current = async (transcript: string, options) => {
+      await submitIntent(transcript, options)
     }
   }, [submitIntent])
 
