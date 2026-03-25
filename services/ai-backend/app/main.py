@@ -29,8 +29,8 @@ from app.services.speech_service import SpeechNotHeardError, SpeechService
 
 settings = get_settings()
 core_client = CoreBackendClient(settings.core_backend_url, settings.request_timeout_seconds)
-conversation_engine = ConversationEngine(settings, core_client)
 speech_service = SpeechService(settings, core_client)
+conversation_engine = ConversationEngine(settings, core_client, speech_service)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Order Robot AI Backend", version="1.0.0")
@@ -60,8 +60,15 @@ async def preload_speech_model() -> None:
     task.add_done_callback(report_preload_failure)
 
 
+@app.on_event("shutdown")
+async def shutdown_clients() -> None:
+    await core_client.aclose()
+    if conversation_engine.provider_client is not None:
+        await conversation_engine.provider_client.aclose()
+
+
 @app.get("/health")
-def health() -> dict[str, object]:
+async def health() -> dict[str, object]:
     return {
         "status": "ok",
         "provider_enabled": settings.provider_enabled,
@@ -69,7 +76,7 @@ def health() -> dict[str, object]:
         "stt_model": settings.stt_model,
         "tts_voice": settings.tts_voice,
         "tts_rate": settings.tts_rate,
-        "active_sessions": conversation_engine.active_session_count(),
+        "active_sessions": await conversation_engine.active_session_count(),
     }
 
 

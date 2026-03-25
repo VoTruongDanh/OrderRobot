@@ -19,6 +19,16 @@ class MenuItem(BaseModel):
     tags: list[str] = Field(default_factory=list)
 
 
+class UpsertMenuItemRequest(BaseModel):
+    item_id: str
+    name: str
+    category: str
+    description: str
+    price: Decimal
+    available: bool
+    tags: list[str] = Field(default_factory=list)
+
+
 class CreateOrderLineInput(BaseModel):
     item_id: str
     quantity: int = Field(gt=0, le=20)
@@ -46,4 +56,3 @@ class OrderRecord(BaseModel):
     items: list[OrderLineItem]
     total_amount: Decimal = Field(ge=0)
     status: Literal["confirmed"] = "confirmed"
-

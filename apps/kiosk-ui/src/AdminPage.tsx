@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import './admin.css'
-import { getAiApiUrl, getCoreApiUrl } from './config'
+import { getAiApiUrl, getCoreApiUrl, getMenuApiUrl, getOrdersApiUrl, normalizeEnvValue } from './config'
 import { useLiveCaption } from './hooks/useLiveCaption'
 import { useSpeech } from './hooks/useSpeech'
 
@@ -42,6 +42,8 @@ const ENV_TEMPLATE: EnvField[] = [
   { key: 'SESSION_TIMEOUT_MINUTES', label: 'Session Timeout Minutes', value: '15' },
   { key: 'VITE_CORE_API_URL', label: 'VITE Core URL', value: getCoreApiUrl() },
   { key: 'VITE_AI_API_URL', label: 'VITE AI URL', value: getAiApiUrl() },
+  { key: 'VITE_MENU_API_URL', label: 'VITE Menu API URL', value: getMenuApiUrl() },
+  { key: 'VITE_ORDERS_API_URL', label: 'VITE Orders API URL', value: getOrdersApiUrl() },
 ]
 
 function loadSavedEnv(): EnvField[] {
@@ -53,7 +55,7 @@ function loadSavedEnv(): EnvField[] {
     const saved = JSON.parse(raw) as Record<string, string>
     return ENV_TEMPLATE.map((field) => ({
       ...field,
-      value: saved[field.key] ?? field.value,
+      value: normalizeEnvValue(field.key, saved[field.key] ?? field.value),
     }))
   } catch {
     return ENV_TEMPLATE
@@ -61,15 +63,12 @@ function loadSavedEnv(): EnvField[] {
 }
 
 export default function AdminPage() {
-  const [services, setServices] = useState<ServiceStatus[]>([
-    { name: 'Core Backend', url: `${getCoreApiUrl()}/health`, status: 'idle', latencyMs: null, detail: '' },
-    { name: 'AI Backend', url: `${getAiApiUrl()}/health`, status: 'idle', latencyMs: null, detail: '' },
-  ])
   const [micState, setMicState] = useState<'idle' | 'checking' | 'ok' | 'error'>('idle')
   const [micDetail, setMicDetail] = useState('')
   const [sttPartialText, setSttPartialText] = useState('')
   const [sttFinalText, setSttFinalText] = useState('')
   const [envFields, setEnvFields] = useState<EnvField[]>(() => loadSavedEnv())
+  const [services, setServices] = useState<ServiceStatus[]>([])
   const [copied, setCopied] = useState(false)
   const [speechNotices, setSpeechNotices] = useState<Array<{ text: string; level: 'warning' | 'info' }>>([])
   const [ttsVoice, setTtsVoice] = useState('vi-VN-HoaiMyNeural')
@@ -77,6 +76,14 @@ export default function AdminPage() {
   const [ttsTestText, setTtsTestText] = useState('Xin chào! Mình là robot đặt món. Bạn muốn gọi gì hôm nay?')
   const [ttsTestStatus, setTtsTestStatus] = useState<'idle' | 'playing' | 'error'>('idle')
   const liveCaption = useLiveCaption({ lang: 'vi-VN' })
+  const envFieldMap = useMemo(
+    () => Object.fromEntries(envFields.map((field) => [field.key, normalizeEnvValue(field.key, field.value)])),
+    [envFields],
+  )
+  const currentCoreApiUrl = envFieldMap.VITE_CORE_API_URL || getCoreApiUrl()
+  const currentAiApiUrl = envFieldMap.VITE_AI_API_URL || getAiApiUrl()
+  const currentMenuApiUrl = envFieldMap.VITE_MENU_API_URL || getMenuApiUrl()
+  const currentOrdersApiUrl = envFieldMap.VITE_ORDERS_API_URL || getOrdersApiUrl()
 
   const { listening, interimTranscript, recognitionSupported, startListening, stopListening } = useSpeech({
     lang: 'vi-VN',
@@ -107,6 +114,43 @@ export default function AdminPage() {
       setMicDetail('Dang nhan partial transcript...')
     }
   }, [interimTranscript])
+
+  useEffect(() => {
+    const normalizedFields = envFields.map((field) => {
+      const normalizedValue = normalizeEnvValue(field.key, field.value)
+      return normalizedValue === field.value ? field : { ...field, value: normalizedValue }
+    })
+    const changed = normalizedFields.some((field, index) => field.value !== envFields[index]?.value)
+    if (!changed) {
+      return
+    }
+
+    setEnvFields(normalizedFields)
+    const payload = Object.fromEntries(normalizedFields.map((field) => [field.key, field.value]))
+    localStorage.setItem('admin.env.fields', JSON.stringify(payload))
+  }, [envFields])
+
+  useEffect(() => {
+    setServices((current) => {
+      const nextServices = [
+        { name: 'Core Backend', url: `${currentCoreApiUrl}/health` },
+        { name: 'AI Backend', url: `${currentAiApiUrl}/health` },
+        { name: 'Menu API', url: currentMenuApiUrl },
+        { name: 'Orders API', url: `${currentOrdersApiUrl}?limit=1` },
+      ]
+
+      return nextServices.map((service) => {
+        const existing = current.find((item) => item.name === service.name)
+        if (!existing) {
+          return { ...service, status: 'idle', latencyMs: null, detail: '' }
+        }
+        if (existing.url === service.url) {
+          return existing
+        }
+        return { ...existing, url: service.url, status: 'idle', latencyMs: null, detail: '' }
+      })
+    })
+  }, [currentAiApiUrl, currentCoreApiUrl, currentMenuApiUrl, currentOrdersApiUrl])
 
   const checkService = useCallback(async (service: ServiceStatus) => {
     const startedAt = performance.now()
@@ -189,7 +233,9 @@ export default function AdminPage() {
   )
 
   const saveEnvDraft = useCallback(() => {
-    const payload = Object.fromEntries(envFields.map((field) => [field.key, field.value]))
+    const payload = Object.fromEntries(
+      envFields.map((field) => [field.key, normalizeEnvValue(field.key, field.value)]),
+    )
     localStorage.setItem('admin.env.fields', JSON.stringify(payload))
   }, [envFields])
 
@@ -202,7 +248,7 @@ export default function AdminPage() {
   const testTtsVoice = useCallback(async () => {
     setTtsTestStatus('playing')
     try {
-      const response = await fetch(`${getAiApiUrl()}/speech/synthesize`, {
+      const response = await fetch(`${currentAiApiUrl}/speech/synthesize`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -238,12 +284,12 @@ export default function AdminPage() {
       console.error('TTS test failed:', error)
       setTimeout(() => setTtsTestStatus('idle'), 2000)
     }
-  }, [ttsTestText, ttsVoice, ttsRate])
+  }, [currentAiApiUrl, ttsTestText, ttsVoice, ttsRate])
 
   const applyTtsConfig = useCallback(async () => {
     try {
       // Update backend runtime config
-      const response = await fetch(`${getAiApiUrl()}/config/tts`, {
+      const response = await fetch(`${currentAiApiUrl}/config/tts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -269,7 +315,7 @@ export default function AdminPage() {
     } catch (error) {
       alert('❌ Không thể apply config: ' + (error instanceof Error ? error.message : 'Unknown error'))
     }
-  }, [ttsVoice, ttsRate])
+  }, [currentAiApiUrl, ttsVoice, ttsRate])
 
   return (
     <main className="admin-page">

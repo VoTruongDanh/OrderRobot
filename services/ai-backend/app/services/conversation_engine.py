@@ -13,7 +13,7 @@ import unicodedata
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from threading import Lock
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 logger = logging.getLogger(__name__)
@@ -31,6 +31,9 @@ from app.models import (
 from app.services.core_backend_client import CoreBackendClient
 from app.services.provider_client import ProviderClient
 
+if TYPE_CHECKING:
+    from app.services.speech_service import SpeechService
+
 
 QUANTITY_WORDS = {
     "mot": 1,
@@ -43,6 +46,15 @@ QUANTITY_WORDS = {
     "tam": 8,
     "chin": 9,
     "muoi": 10,
+}
+QUANTITY_CONTEXT_WORDS = {
+    "cho", "them", "lay", "mua", "dat", "order", "bo", "xoa", "bot", "giam",
+}
+QUANTITY_SKIP_PREVIOUS_WORDS = {"phim", "ma", "so", "tap", "bai", "model"}
+GENERIC_NOUN_HINTS = {
+    "ca", "phe", "tra", "sua", "matcha", "socola", "cookie", "cream", "chanh", "day",
+    "bac", "xiu", "latte", "americano", "cappuccino", "flan", "tiramisu", "dao", "cam",
+    "sa", "vai", "hong",
 }
 CONFIRM_KEYWORDS = {
     # Rõ ràng, không nhầm lẫn:
@@ -154,12 +166,18 @@ class Candidate:
 
 
 class ConversationEngine:
-    def __init__(self, settings: Settings, core_client: CoreBackendClient) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        core_client: CoreBackendClient,
+        speech_service: "SpeechService | None" = None,
+    ) -> None:
         self.settings = settings
         self.core_client = core_client
+        self.speech_service = speech_service
         self.provider_client = ProviderClient(settings) if settings.provider_enabled else None
         self.sessions: dict[str, SessionState] = {}
-        self.lock = Lock()
+        self.lock = asyncio.Lock()
         self._menu_cache: list[MenuItem] | None = None
         self._menu_cache_at: float = 0.0
 
@@ -174,7 +192,7 @@ class ConversationEngine:
 
     async def start_session(self) -> ConversationResponse:
         session_id = f"SES-{uuid4().hex[:10]}"
-        with self.lock:
+        async with self.lock:
             self._cleanup_expired_sessions()
             self.sessions[session_id] = SessionState(session_id=session_id, greeted=True)
 
@@ -185,7 +203,7 @@ class ConversationEngine:
         return await self._build_response(session_id, decision)
 
     async def reset_session(self, session_id: str) -> ConversationResponse:
-        with self.lock:
+        async with self.lock:
             self._cleanup_expired_sessions()
             state = self.sessions.setdefault(session_id, SessionState(session_id=session_id))
             self._touch_state(state)
@@ -200,7 +218,7 @@ class ConversationEngine:
         return await self._build_response(session_id, decision)
 
     async def handle_turn(self, session_id: str, transcript: str) -> ConversationResponse:
-        with self.lock:
+        async with self.lock:
             self._cleanup_expired_sessions()
             state = self.sessions.get(session_id)
             if state is None:
@@ -342,7 +360,6 @@ class ConversationEngine:
             )
 
         if available_matches:
-            quantity = extract_quantity(normalized)
             # Auto-add: best match confidence >= 85% → add directly
             best_match, best_conf = max(available_matches, key=lambda x: x[1])
             high_conf_matches = [(item, conf) for item, conf in available_matches if conf >= _AUTO_ADD_THRESHOLD]
@@ -350,6 +367,7 @@ class ConversationEngine:
             if len(high_conf_matches) == 1 or (len(available_matches) >= 1 and best_conf >= _AUTO_ADD_THRESHOLD):
                 # Single high-confidence match or one clearly dominates → auto-add
                 item = best_match
+                quantity = extract_quantity(normalized, item_name=normalize_text(item.name))
                 state.cart[item.item_id] = state.cart.get(item.item_id, 0) + quantity
                 state.awaiting_confirmation = contains_any(normalized, CHECKOUT_KEYWORDS)
                 scene = "ask_confirmation" if state.awaiting_confirmation else "cart_updated"
@@ -479,7 +497,7 @@ class ConversationEngine:
                 continue
 
             item, _conf = matches[0]
-            quantity = extract_quantity(segment)
+            quantity = extract_quantity(segment, item_name=normalize_text(item.name))
             existing = aggregated.get(item.item_id)
             aggregated[item.item_id] = (
                 item,
@@ -533,8 +551,15 @@ class ConversationEngine:
         menu_map = {item.item_id: item for item in menu}
         for item, _conf in self._match_explicit_items(normalized_transcript, menu):
             if item.item_id in state.cart:
-                del state.cart[item.item_id]
+                quantity_to_remove = extract_quantity(normalized_transcript, item_name=normalize_text(item.name))
+                remaining = state.cart[item.item_id] - quantity_to_remove
+                if remaining > 0:
+                    state.cart[item.item_id] = remaining
+                else:
+                    del state.cart[item.item_id]
                 state.awaiting_confirmation = False
+                if quantity_to_remove > 1:
+                    return f"{quantity_to_remove} {item.name}"
                 return item.name
 
         if state.cart:
@@ -560,18 +585,19 @@ class ConversationEngine:
             "cart": [item.model_dump() for item in response.cart],
         }
 
-        # Stream audio
-        from app.services.speech_service import SpeechService
-        speech_service = SpeechService(self.settings, self.core_client)
+        # Stream audio with the shared service so we keep runtime caches warm.
+        if self.speech_service is None:
+            return
+
         try:
-            async for audio_chunk in speech_service.synthesize_stream(response.reply_text):
+            async for audio_chunk in self.speech_service.synthesize_stream(response.reply_text):
                 yield {"type": "audio", "content": base64.b64encode(audio_chunk).decode("ascii")}
         except Exception:
             pass
 
     async def save_feedback(self, session_id: str, rating: int, comment: str | None, transcript_history: list[str]) -> None:
         """Save feedback and transcript logs to local JSONL for analytics."""
-        with self.lock:
+        async with self.lock:
             # We don't read from state.history because frontend sends the full synced transcript_history, removing any async timing mismatch 
             pass
 
@@ -589,8 +615,8 @@ class ConversationEngine:
         with log_path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(feedback_data, ensure_ascii=False) + "\n")
 
-    def active_session_count(self) -> int:
-        with self.lock:
+    async def active_session_count(self) -> int:
+        async with self.lock:
             self._cleanup_expired_sessions()
             return len(self.sessions)
 
@@ -717,7 +743,7 @@ def _is_chitchat(normalized_text: str) -> bool:
     return False
 
 
-def extract_quantity(normalized_text: str) -> int:
+def extract_quantity(normalized_text: str, item_name: str | None = None) -> int:
     """Extract quantity from normalized text.
     
     Rules:
@@ -727,25 +753,80 @@ def extract_quantity(normalized_text: str) -> int:
       or when they are at the very start followed by a noun.
     - Avoids false positives: "muoi" in "ca phe muoi", "ba" in "banh", "nam" in "nam quoc".
     """
+    corrected_text = _apply_stt_aliases(normalized_text)
+    unit_words = {"ly", "cai", "phan", "chiec", "to", "dia", "bat", "chai", "lon", "coc", "tach", "suon"}
+    tokens = corrected_text.split()
+
     # Pattern: "so luong X"
-    qty_pattern = re.search(r"so luong\s+(\d+)", normalized_text)
+    qty_pattern = re.search(r"so luong\s+(\d+)", corrected_text)
     if qty_pattern:
         return max(1, min(int(qty_pattern.group(1)), 20))
 
-    # Explicit digit
-    digit_match = re.search(r"\b(\d+)\b", normalized_text)
-    if digit_match:
-        return max(1, min(int(digit_match.group(1)), 20))
+    if item_name:
+        item_index = _find_subsequence(tokens, item_name.split())
+        if item_index is not None:
+            quantity = _extract_quantity_near_item(tokens, item_index)
+            if quantity is not None:
+                return quantity
+
+    # Explicit digit with stronger context to avoid false positives like "phim 300 socola"
+    for index, token in enumerate(tokens):
+        if not token.isdigit():
+            continue
+        previous = tokens[index - 1] if index > 0 else ""
+        next_token = tokens[index + 1] if index + 1 < len(tokens) else ""
+        if previous in QUANTITY_SKIP_PREVIOUS_WORDS:
+            continue
+        if (
+            index == 0
+            or previous in QUANTITY_CONTEXT_WORDS
+            or next_token in unit_words
+            or next_token in GENERIC_NOUN_HINTS
+        ):
+            return max(1, min(int(token), 20))
 
     # Vietnamese number words — MUST be followed by a unit word to confirm it's a quantity
-    _UNIT_WORDS = {"ly", "cai", "phan", "chiec", "to", "dia", "bat", "chai", "lon", "coc", "tach", "suon"}
-    tokens = normalized_text.split()
     for i, token in enumerate(tokens):
         if token in QUANTITY_WORDS:
-            # Check next token is a unit word → confirmed quantity
-            if i + 1 < len(tokens) and tokens[i + 1] in _UNIT_WORDS:
+            previous = tokens[i - 1] if i > 0 else ""
+            next_token = tokens[i + 1] if i + 1 < len(tokens) else ""
+            if (
+                next_token in unit_words
+                or next_token in GENERIC_NOUN_HINTS
+                or i == 0
+                or previous in QUANTITY_CONTEXT_WORDS
+            ):
                 return QUANTITY_WORDS[token]
     return 1
+
+
+def _find_subsequence(tokens: list[str], pattern: list[str]) -> int | None:
+    if not pattern or len(pattern) > len(tokens):
+        return None
+    for index in range(len(tokens) - len(pattern) + 1):
+        if tokens[index : index + len(pattern)] == pattern:
+            return index
+    return None
+
+
+def _extract_quantity_near_item(tokens: list[str], item_index: int) -> int | None:
+    for lookback in (1, 2):
+        qty_index = item_index - lookback
+        if qty_index < 0:
+            continue
+
+        token = tokens[qty_index]
+        previous = tokens[qty_index - 1] if qty_index - 1 >= 0 else ""
+        if previous in QUANTITY_SKIP_PREVIOUS_WORDS:
+            continue
+        if lookback > 1 and previous and previous not in QUANTITY_CONTEXT_WORDS:
+            continue
+
+        if token.isdigit():
+            return max(1, min(int(token), 20))
+        if token in QUANTITY_WORDS:
+            return QUANTITY_WORDS[token]
+    return None
 
 
 def _apply_stt_aliases(text: str) -> str:
@@ -814,6 +895,27 @@ _FALLBACK_REPLIES = [
     "Em xin lỗi, nghe không rõ ạ. Mình nói lại tên món hoặc hỏi em gợi ý nhé.",
 ]
 
+_SOFT_REDIRECT_PATTERNS = {
+    "sing": [re.compile(r"\bhat\b"), re.compile(r"\bca\b")],
+    "poem": [re.compile(r"\btho\b"), re.compile(r"\blam tho\b")],
+    "heart": [re.compile(r"\btam su\b"), re.compile(r"\bbuon\b"), re.compile(r"\bmet\b"), re.compile(r"\bco don\b")],
+}
+
+_SOFT_REDIRECT_REPLIES = {
+    "sing": [
+        "Em xin nợ một câu hát dễ thương thôi nha, còn bây giờ mình chọn món em phục vụ liền nè.",
+        "Em hát dở nên xin phép chiều mình bằng đồ uống ngon hơn nha, mình muốn gọi món gì ạ?",
+    ],
+    "poem": [
+        "Em xin gửi một vần thơ ngắn trong lòng thôi, còn ngoài đời em mời mình chọn món hợp mood nha.",
+        "Em làm thơ ít chữ thôi kẻo quên order mất, mình muốn em gợi ý món nào cho hợp tâm trạng ạ?",
+    ],
+    "heart": [
+        "Nếu mình đang mệt hay buồn thì để em ở đây nói chuyện một chút rồi gợi ý món hợp tâm trạng cho mình nha.",
+        "Nghe mình nói vậy là em muốn chăm mình bằng một món thật hợp gu rồi đó, mình thích ngọt dịu hay đậm vị hơn ạ?",
+    ],
+}
+
 _ORDER_CREATED_SUFFIXES = [
     " Hẹn gặp lại mình ạ!",
     " Chúc mình ngon miệng nha!",
@@ -827,8 +929,12 @@ def render_fallback_reply(payload: dict[str, object]) -> str:
     seed = str(payload["seed"])
     cart_summary = payload.get("cart_summary", [])
     recommended_items = payload.get("recommended_items", [])
+    user_text = str(payload.get("user_text", "")).strip()
 
     if scene == "greeting":
+        soft_reply = _render_soft_redirect(user_text)
+        if soft_reply:
+            return soft_reply
         return random.choice(_GREETING_REPLIES)
     if scene == "cart_updated":
         return seed + random.choice(_CART_UPDATED_SUFFIXES)
@@ -837,6 +943,9 @@ def render_fallback_reply(payload: dict[str, object]) -> str:
     if scene == "reset":
         return random.choice(_RESET_REPLIES)
     if scene == "fallback":
+        soft_reply = _render_soft_redirect(user_text)
+        if soft_reply:
+            return soft_reply
         return random.choice(_FALLBACK_REPLIES)
     if scene == "clarify_item":
         if recommended_items:
@@ -877,3 +986,14 @@ def render_fallback_reply(payload: dict[str, object]) -> str:
             return f"{seed} Giỏ hàng hiện có {details} ạ."
         return seed
     return seed
+
+
+def _render_soft_redirect(user_text: str) -> str | None:
+    normalized = normalize_text(user_text)
+    if not normalized:
+        return None
+
+    for key, patterns in _SOFT_REDIRECT_PATTERNS.items():
+        if any(pattern.search(normalized) for pattern in patterns):
+            return random.choice(_SOFT_REDIRECT_REPLIES[key])
+    return None

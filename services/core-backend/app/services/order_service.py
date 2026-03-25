@@ -55,3 +55,6 @@ class OrderService:
 
     def get_order(self, order_id: str) -> OrderRecord | None:
         return self.order_repository.get_order(order_id)
+
+    def list_orders(self, *, session_id: str | None = None, limit: int = 100) -> list[OrderRecord]:
+        return self.order_repository.list_orders(session_id=session_id, limit=limit)

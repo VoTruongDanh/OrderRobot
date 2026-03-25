@@ -591,7 +591,6 @@ function App() {
       // Get random greeting and play immediately for faster response
       const greetingText = getRandomGreeting()
       setStatusMessage('Robot đang chào khách...')
-      appendTranscript('assistant', greetingText)
 
       try {
         // Play greeting audio immediately without waiting for backend session
@@ -653,7 +652,7 @@ function App() {
         isBusyRef.current = false
       }
     },
-    [addNotice, appendTranscript, getRandomGreeting, handleUiError, recognitionSupported, speak, startListening, stopListening],
+    [addNotice, getRandomGreeting, handleUiError, recognitionSupported, speak, startListening, stopListening],
   )
 
   useEffect(() => {

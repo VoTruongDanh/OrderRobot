@@ -1,7 +1,5 @@
+import { getAiApiUrl, getMenuApiUrl, getOrdersApiUrl } from './config'
 import type { ConversationResponse, MenuItem, OrderRecord } from './types'
-
-const CORE_API_URL = import.meta.env.VITE_CORE_API_URL ?? 'http://127.0.0.1:8011'
-const AI_API_URL = import.meta.env.VITE_AI_API_URL ?? 'http://127.0.0.1:8012'
 
 async function readJson<T>(response: Response): Promise<T> {
   if (!response.ok) {
@@ -19,17 +17,17 @@ async function readJson<T>(response: Response): Promise<T> {
 }
 
 export async function fetchMenu(): Promise<MenuItem[]> {
-  const response = await fetch(`${CORE_API_URL}/menu`)
+  const response = await fetch(getMenuApiUrl())
   return readJson<MenuItem[]>(response)
 }
 
 export async function fetchOrder(orderId: string): Promise<OrderRecord> {
-  const response = await fetch(`${CORE_API_URL}/orders/${orderId}`)
+  const response = await fetch(`${getOrdersApiUrl()}/${orderId}`)
   return readJson<OrderRecord>(response)
 }
 
 export async function startSession(source: 'camera' | 'manual'): Promise<ConversationResponse> {
-  const response = await fetch(`${AI_API_URL}/sessions/start`, {
+  const response = await fetch(`${getAiApiUrl()}/sessions/start`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ source }),
@@ -41,7 +39,7 @@ export async function sendTurn(
   sessionId: string,
   transcript: string,
 ): Promise<ConversationResponse> {
-  const response = await fetch(`${AI_API_URL}/sessions/${sessionId}/turn`, {
+  const response = await fetch(`${getAiApiUrl()}/sessions/${sessionId}/turn`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ transcript }),
@@ -57,7 +55,7 @@ export async function* sendTurnStream(
   sessionId: string,
   transcript: string,
 ): AsyncGenerator<StreamChunk> {
-  const response = await fetch(`${AI_API_URL}/sessions/${sessionId}/turn/stream`, {
+  const response = await fetch(`${getAiApiUrl()}/sessions/${sessionId}/turn/stream`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ transcript }),
@@ -110,7 +108,7 @@ export async function saveFeedback(
   comment: string,
   transcriptHistory: string[],
 ): Promise<void> {
-  const response = await fetch(`${AI_API_URL}/sessions/${sessionId}/feedback`, {
+  const response = await fetch(`${getAiApiUrl()}/sessions/${sessionId}/feedback`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ rating, comment, transcript_history: transcriptHistory }),
@@ -121,14 +119,14 @@ export async function saveFeedback(
 }
 
 export async function resetSession(sessionId: string): Promise<ConversationResponse> {
-  const response = await fetch(`${AI_API_URL}/sessions/${sessionId}/reset`, {
+  const response = await fetch(`${getAiApiUrl()}/sessions/${sessionId}/reset`, {
     method: 'POST',
   })
   return readJson<ConversationResponse>(response)
 }
 
 export async function synthesizeSpeech(text: string): Promise<Blob> {
-  const response = await fetch(`${AI_API_URL}/speech/synthesize`, {
+  const response = await fetch(`${getAiApiUrl()}/speech/synthesize`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ text }),
@@ -142,7 +140,7 @@ export async function synthesizeSpeech(text: string): Promise<Blob> {
 }
 
 export async function synthesizeSpeechStream(text: string): Promise<ReadableStream<Uint8Array>> {
-  const response = await fetch(`${AI_API_URL}/speech/synthesize/stream`, {
+  const response = await fetch(`${getAiApiUrl()}/speech/synthesize/stream`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ text }),
@@ -272,7 +270,7 @@ export async function transcribeSpeech(audio: Blob): Promise<SpeechTranscription
   const formData = new FormData()
   formData.append('file', audio, 'speech.webm')
 
-  const response = await fetch(`${AI_API_URL}/speech/transcribe`, {
+  const response = await fetch(`${getAiApiUrl()}/speech/transcribe`, {
     method: 'POST',
     body: formData,
   })
@@ -292,7 +290,7 @@ async function readError(response: Response): Promise<string> {
 }
 
 function buildSpeechWebSocketUrl() {
-  const httpUrl = new URL(AI_API_URL)
+  const httpUrl = new URL(getAiApiUrl())
   httpUrl.protocol = httpUrl.protocol === 'https:' ? 'wss:' : 'ws:'
   httpUrl.pathname = '/speech/transcribe/ws'
   httpUrl.search = ''

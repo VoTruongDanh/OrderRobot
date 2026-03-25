@@ -25,3 +25,6 @@ class CoreBackendClient:
         data: dict[str, Any] = response.json()
         return CreateOrderResponse(order_id=data["order_id"])
 
+    async def aclose(self) -> None:
+        await self.client.aclose()
+

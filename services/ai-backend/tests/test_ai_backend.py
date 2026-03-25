@@ -8,7 +8,7 @@ import pytest
 
 from app.config import Settings
 from app.models import CreateOrderResponse, MenuItem
-from app.services.conversation_engine import ConversationEngine
+from app.services.conversation_engine import ConversationEngine, render_fallback_reply
 
 
 class FakeCoreBackendClient:
@@ -45,6 +45,15 @@ class FakeCoreBackendClient:
             )
         )
         return CreateOrderResponse(order_id="ORD-TEST")
+
+
+class FakeSpeechService:
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    async def synthesize_stream(self, text: str):
+        self.calls.append(text)
+        yield b"audio-chunk"
 
 
 @pytest.mark.anyio
@@ -244,7 +253,7 @@ async def test_save_feedback_writes_to_backend_data_dir() -> None:
     core_client = FakeCoreBackendClient()
     engine = ConversationEngine(settings, core_client)
 
-    log_path = Path("data/feedback.jsonl")
+    log_path = Path(__file__).resolve().parents[1] / "data" / "feedback.jsonl"
     existing = log_path.read_text(encoding="utf-8") if log_path.exists() else None
 
     try:
@@ -261,3 +270,131 @@ async def test_save_feedback_writes_to_backend_data_dir() -> None:
                 log_path.unlink()
         else:
             log_path.write_text(existing, encoding="utf-8")
+
+
+@pytest.mark.anyio
+async def test_handle_turn_stream_uses_injected_speech_service() -> None:
+    settings = Settings(
+        ai_base_url="",
+        ai_api_key="",
+        ai_model="",
+        core_backend_url="http://127.0.0.1:8001",
+        voice_lang="vi-VN",
+        voice_style="cute_friendly",
+        tts_voice="vietnam",
+        tts_rate="165",
+        stt_model="small",
+        stt_device="cpu",
+        stt_compute_type="int8",
+    )
+    core_client = FakeCoreBackendClient()
+    speech_service = FakeSpeechService()
+    engine = ConversationEngine(settings, core_client, speech_service)
+
+    start = await engine.start_session()
+    chunks = [chunk async for chunk in engine.handle_turn_stream(start.session_id, "cho minh 1 tra dao cam sa")]
+
+    assert any(chunk["type"] == "text" for chunk in chunks)
+    assert any(chunk["type"] == "audio" for chunk in chunks)
+    assert speech_service.calls
+
+
+@pytest.mark.anyio
+async def test_quantity_word_before_item_is_extracted_correctly() -> None:
+    settings = Settings(
+        ai_base_url="",
+        ai_api_key="",
+        ai_model="",
+        core_backend_url="http://127.0.0.1:8001",
+        voice_lang="vi-VN",
+        voice_style="cute_friendly",
+        tts_voice="vietnam",
+        tts_rate="165",
+        stt_model="small",
+        stt_device="cpu",
+        stt_compute_type="int8",
+    )
+    core_client = FakeCoreBackendClient()
+    engine = ConversationEngine(settings, core_client)
+
+    start = await engine.start_session()
+    added = await engine.handle_turn(start.session_id, "them hai tra dao cam sa")
+
+    assert len(added.cart) == 1
+    assert added.cart[0].quantity == 2
+
+
+@pytest.mark.anyio
+async def test_unrelated_number_before_item_does_not_become_quantity() -> None:
+    settings = Settings(
+        ai_base_url="",
+        ai_api_key="",
+        ai_model="",
+        core_backend_url="http://127.0.0.1:8001",
+        voice_lang="vi-VN",
+        voice_style="cute_friendly",
+        tts_voice="vietnam",
+        tts_rate="165",
+        stt_model="small",
+        stt_device="cpu",
+        stt_compute_type="int8",
+    )
+    core_client = FakeCoreBackendClient()
+    engine = ConversationEngine(settings, core_client)
+
+    start = await engine.start_session()
+    added = await engine.handle_turn(start.session_id, "phim 300 matcha latte")
+
+    assert len(added.cart) == 1
+    assert added.cart[0].quantity == 1
+
+
+@pytest.mark.anyio
+async def test_remove_phrase_can_decrement_quantity_instead_of_deleting_all() -> None:
+    settings = Settings(
+        ai_base_url="",
+        ai_api_key="",
+        ai_model="",
+        core_backend_url="http://127.0.0.1:8001",
+        voice_lang="vi-VN",
+        voice_style="cute_friendly",
+        tts_voice="vietnam",
+        tts_rate="165",
+        stt_model="small",
+        stt_device="cpu",
+        stt_compute_type="int8",
+    )
+    core_client = FakeCoreBackendClient()
+    engine = ConversationEngine(settings, core_client)
+
+    start = await engine.start_session()
+    await engine.handle_turn(start.session_id, "them hai tra dao cam sa")
+    removed = await engine.handle_turn(start.session_id, "bo mot tra dao cam sa")
+
+    assert len(removed.cart) == 1
+    assert removed.cart[0].quantity == 1
+
+
+def test_fallback_reply_soft_redirects_singing_request() -> None:
+    reply = render_fallback_reply(
+        {
+            "scene": "fallback",
+            "seed": "",
+            "user_text": "hat cho toi mot bai di",
+        }
+    )
+
+    assert "món" in reply or "uống" in reply
+    assert "chỉ phục vụ" not in reply
+
+
+def test_greeting_reply_can_softly_handle_heart_to_heart_chat() -> None:
+    reply = render_fallback_reply(
+        {
+            "scene": "greeting",
+            "seed": "",
+            "user_text": "hom nay toi hoi buon, cho toi tam su xiu",
+        }
+    )
+
+    assert "tâm trạng" in reply or "nói chuyện" in reply or "gợi ý món" in reply

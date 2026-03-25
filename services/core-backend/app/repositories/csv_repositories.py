@@ -60,6 +60,12 @@ class CsvMenuRepository:
     def list_menu(self) -> list[MenuItem]:
         return self._read_rows()
 
+    def get_menu_item(self, item_id: str) -> MenuItem | None:
+        for item in self._read_rows():
+            if item.item_id == item_id:
+                return item
+        return None
+
     def search_menu(self, query: str) -> list[MenuItem]:
         normalized_query = query.casefold().strip()
         if not normalized_query:
@@ -97,6 +103,34 @@ class CsvMenuRepository:
     def get_items_by_ids(self, item_ids: list[str]) -> dict[str, MenuItem]:
         item_lookup = {item.item_id: item for item in self._read_rows()}
         return {item_id: item_lookup[item_id] for item_id in item_ids if item_id in item_lookup}
+
+    def upsert_menu_item(self, item: MenuItem) -> MenuItem:
+        items = self._read_rows()
+        updated = False
+        for index, existing in enumerate(items):
+            if existing.item_id == item.item_id:
+                items[index] = item
+                updated = True
+                break
+        if not updated:
+            items.append(item)
+
+        with self.csv_path.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=MENU_HEADERS)
+            writer.writeheader()
+            for menu_item in items:
+                writer.writerow(
+                    {
+                        "item_id": menu_item.item_id,
+                        "name": menu_item.name,
+                        "category": menu_item.category,
+                        "description": menu_item.description,
+                        "price": str(menu_item.price),
+                        "available": str(menu_item.available).lower(),
+                        "tags": ",".join(menu_item.tags),
+                    }
+                )
+        return item
 
 
 class CsvOrderRepository:
@@ -136,6 +170,18 @@ class CsvOrderRepository:
                     continue
                 return self._row_to_order_record(row)
         return None
+
+    def list_orders(self, *, session_id: str | None = None, limit: int = 100) -> list[OrderRecord]:
+        records: list[OrderRecord] = []
+        with self.csv_path.open("r", newline="", encoding="utf-8") as handle:
+            reader = csv.DictReader(handle)
+            for row in reader:
+                if session_id and row.get("session_id") != session_id:
+                    continue
+                records.append(self._row_to_order_record(row))
+
+        records.sort(key=lambda record: record.created_at, reverse=True)
+        return records[:limit]
 
     @staticmethod
     def _row_to_order_record(row: dict[str, str]) -> OrderRecord:
