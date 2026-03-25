@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import pytest
+
 from app.config import Settings
+from app.models import MenuItem
 from app.services.speech_service import (
     SpeechNotHeardError,
     SpeechService,
@@ -153,6 +156,42 @@ def test_low_information_short_noise_is_not_actionable() -> None:
 
     assert service._looks_actionable("Bui") is False
     assert service._looks_actionable("Matcha") is True
+
+
+@pytest.mark.anyio
+async def test_preload_stt_fetches_menu_items_once_for_sync_caches() -> None:
+    class FakeCoreClient:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def list_menu(self) -> list[MenuItem]:
+            self.calls += 1
+            return [
+                MenuItem(
+                    item_id="matcha",
+                    name="Matcha latte",
+                    category="Latte",
+                    description="",
+                    price=0,
+                    available=True,
+                    tags=["it-ngot"],
+                )
+            ]
+
+    core_client = FakeCoreClient()
+    service = SpeechService(build_settings(), core_client)
+
+    await service.preload_stt()
+
+    assert core_client.calls == 1
+    assert "Latte" in (service._build_stt_hotwords() or "")
+    assert ("it ngot" in dict(service._get_ordering_lexicon())) is True
+
+
+def test_is_actionable_transcript_reuses_post_processing() -> None:
+    service = SpeechService(build_settings())
+
+    assert service.is_actionable_transcript("cafe mui") is True
 
 
 def test_best_lexicon_match_handles_vietnamese_normalization() -> None:

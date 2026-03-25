@@ -155,22 +155,22 @@ async def transcribe_speech_ws(websocket: WebSocket) -> None:
     await websocket.accept()
 
     filename = "speech.webm"
-    audio_chunks: list[bytes] = []
+    audio_buffer = bytearray()
     partial_task: asyncio.Task[str] | None = None
     last_partial = ""
     last_partial_at = 0.0
     last_partial_size = 0
-    min_partial_interval_sec = 0.55
-    min_partial_delta_bytes = 12_000
+    min_partial_interval_sec = 0.32
+    min_partial_delta_bytes = 6_000
 
     async def flush_partial(*, force: bool = False) -> None:
         nonlocal partial_task, last_partial, last_partial_at, last_partial_size
         if partial_task is not None and not partial_task.done():
             return
-        if not audio_chunks:
+        if not audio_buffer:
             return
 
-        snapshot = b"".join(audio_chunks)
+        snapshot = bytes(audio_buffer)
         snapshot_size = len(snapshot)
         now = time.monotonic()
         if (
@@ -202,7 +202,7 @@ async def transcribe_speech_ws(websocket: WebSocket) -> None:
                 break
 
             if message.get("bytes") is not None:
-                audio_chunks.append(message["bytes"])
+                audio_buffer.extend(message["bytes"])
                 continue
 
             payload = message.get("text")
@@ -211,7 +211,7 @@ async def transcribe_speech_ws(websocket: WebSocket) -> None:
 
             if payload.startswith("start:"):
                 filename = payload.split(":", 1)[1] or "speech.webm"
-                audio_chunks.clear()
+                audio_buffer.clear()
                 last_partial = ""
                 last_partial_at = 0.0
                 last_partial_size = 0
@@ -227,7 +227,7 @@ async def transcribe_speech_ws(websocket: WebSocket) -> None:
                     partial_task = None
 
                 try:
-                    snapshot = b"".join(audio_chunks)
+                    snapshot = bytes(audio_buffer)
                     if not snapshot:
                         await websocket.send_json(
                             {
@@ -240,9 +240,12 @@ async def transcribe_speech_ws(websocket: WebSocket) -> None:
                         continue
 
                     await flush_partial(force=True)
-                    transcript = last_partial or await speech_service.transcribe_partial(snapshot, filename)
-                    if transcript and transcript != last_partial:
-                        await websocket.send_json({"type": "partial", "transcript": transcript})
+                    if last_partial and speech_service.is_actionable_transcript(last_partial):
+                        await websocket.send_json(
+                            {"type": "final", "status": "ok", "transcript": last_partial},
+                        )
+                        audio_buffer.clear()
+                        continue
 
                     final_transcript = await speech_service.transcribe_bytes(snapshot, filename)
                     await websocket.send_json(
@@ -256,6 +259,8 @@ async def transcribe_speech_ws(websocket: WebSocket) -> None:
                     await websocket.send_json(
                         {"type": "final", "status": "error", "message": str(exc), "transcript": ""},
                     )
+                finally:
+                    audio_buffer.clear()
                 continue
     except WebSocketDisconnect:
         return

@@ -655,11 +655,9 @@ function App() {
               void submitIntent('xác nhận')
             }}
             onManualListen={() => {
-              console.log('[App] onManualListen called')
               void startListening()
             }}
             onStopListening={() => {
-              console.log('[App] onStopListening called')
               stopListening()
             }}
             onManualStart={() => {

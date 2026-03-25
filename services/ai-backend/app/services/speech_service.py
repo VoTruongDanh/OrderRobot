@@ -20,6 +20,7 @@ from fastapi import UploadFile
 from faster_whisper import WhisperModel
 
 from app.config import Settings
+from app.models import MenuItem
 from app.services.core_backend_client import CoreBackendClient
 
 logger = logging.getLogger(__name__)
@@ -105,6 +106,7 @@ class SpeechService:
         self._stt_prompt_cache: str | None = None
         self._stt_hotwords_cache: str | None = None
         self._lexicon_cache: list[tuple[str, str]] | None = None
+        self._menu_items_cache: list[MenuItem] | None = None
 
     async def synthesize(self, text: str) -> SynthesizedAudio:
         return await self._synthesize_async(text)
@@ -142,22 +144,40 @@ class SpeechService:
             raise ValueError("Audio upload trong.")
 
         filename = file.filename or "speech.webm"
+        await self._ensure_menu_items_loaded()
         return await asyncio.to_thread(self._transcribe_sync, content, filename)
 
     async def transcribe_partial(self, content: bytes, filename: str = "speech.webm") -> str:
         if not content:
             return ""
 
+        await self._ensure_menu_items_loaded()
         return await asyncio.to_thread(self._transcribe_partial_sync, content, filename)
 
     async def transcribe_bytes(self, content: bytes, filename: str = "speech.webm") -> str:
         if not content:
             raise ValueError("Audio upload trong.")
 
+        await self._ensure_menu_items_loaded()
         return await asyncio.to_thread(self._transcribe_sync, content, filename)
 
     async def preload_stt(self) -> None:
+        await self._ensure_menu_items_loaded()
         await asyncio.to_thread(self._preload_stt_assets)
+
+    async def _ensure_menu_items_loaded(self) -> None:
+        if self._menu_items_cache is not None or self.core_client is None:
+            return
+
+        try:
+            self._set_menu_items_cache(await self.core_client.list_menu())
+        except Exception:
+            logger.debug("Unable to preload menu items for STT lexicon.", exc_info=True)
+
+    def _set_menu_items_cache(self, items: list[MenuItem]) -> None:
+        self._menu_items_cache = list(items)
+        self._stt_hotwords_cache = None
+        self._lexicon_cache = None
 
     def _preload_stt_assets(self) -> None:
         self._get_stt_model()
@@ -414,14 +434,10 @@ $synth.Dispose()
             return self._stt_hotwords_cache
 
         hotword_values = list(COMMON_ORDERING_PHRASES.values())
-        if self.core_client is not None:
-            try:
-                for item in self.core_client.list_menu():
-                    hotword_values.append(item.name)
-                    hotword_values.append(item.category)
-                    hotword_values.extend(tag.replace("-", " ") for tag in item.tags)
-            except Exception:
-                pass
+        for item in self._menu_items_cache or []:
+            hotword_values.append(item.name)
+            hotword_values.append(item.category)
+            hotword_values.extend(tag.replace("-", " ") for tag in item.tags)
 
         normalized_unique: list[str] = []
         seen: set[str] = set()
@@ -477,6 +493,9 @@ $synth.Dispose()
 
         return len(normalized) >= 6
 
+    def is_actionable_transcript(self, transcript: str) -> bool:
+        return self._looks_actionable(self._post_process_transcript(transcript))
+
     def _get_ordering_lexicon(self) -> list[tuple[str, str]]:
         if self._lexicon_cache is not None:
             return self._lexicon_cache
@@ -484,16 +503,12 @@ $synth.Dispose()
         lexicon_map: dict[str, str] = {
             normalize_vietnamese_text(display): display for display in COMMON_ORDERING_PHRASES.values()
         }
-        if self.core_client is not None:
-            try:
-                for item in self.core_client.list_menu():
-                    lexicon_map[normalize_vietnamese_text(item.name)] = item.name
-                    lexicon_map[normalize_vietnamese_text(item.category)] = item.category
-                    for tag in item.tags:
-                        display_tag = tag.replace("-", " ")
-                        lexicon_map[normalize_vietnamese_text(display_tag)] = display_tag
-            except Exception:
-                pass
+        for item in self._menu_items_cache or []:
+            lexicon_map[normalize_vietnamese_text(item.name)] = item.name
+            lexicon_map[normalize_vietnamese_text(item.category)] = item.category
+            for tag in item.tags:
+                display_tag = tag.replace("-", " ")
+                lexicon_map[normalize_vietnamese_text(display_tag)] = display_tag
 
         self._lexicon_cache = list(lexicon_map.items())
         return self._lexicon_cache

@@ -107,7 +107,8 @@ async def test_conversation_engine_can_add_multiple_items_in_one_turn() -> None:
     assert {item.item_id for item in added.cart} == {"tra-dao", "matcha"}
 
 
-def test_conversation_engine_checkout_keywords_support_voice_only_flow() -> None:
+@pytest.mark.anyio
+async def test_conversation_engine_checkout_keywords_support_voice_only_flow() -> None:
     settings = Settings(
         ai_base_url="",
         ai_api_key="",
@@ -125,13 +126,13 @@ def test_conversation_engine_checkout_keywords_support_voice_only_flow() -> None
     core_client = FakeCoreBackendClient()
     engine = ConversationEngine(settings, core_client)
 
-    start = engine.start_session()
-    added = engine.handle_turn(start.session_id, "cho minh 1 tra dao cam sa")
+    start = await engine.start_session()
+    added = await engine.handle_turn(start.session_id, "cho minh 1 tra dao cam sa")
     assert len(added.cart) == 1
 
-    ask_confirmation = engine.handle_turn(start.session_id, "dat luon")
+    ask_confirmation = await engine.handle_turn(start.session_id, "dat luon")
     assert ask_confirmation.needs_confirmation is True
 
-    created = engine.handle_turn(start.session_id, "xac nhan")
+    created = await engine.handle_turn(start.session_id, "xac nhan")
     assert created.order_created is True
     assert created.order_id == "ORD-TEST"

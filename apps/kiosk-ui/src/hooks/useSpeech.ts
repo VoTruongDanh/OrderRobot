@@ -18,15 +18,15 @@ type UseSpeechOptions = {
 
 export type SpeechCapturePhase = 'idle' | 'listening' | 'processing'
 
-const MAX_RECORDING_MS = 8000
-const RECORDER_CHUNK_MS = 300
+const MAX_RECORDING_MS = 15000
+const RECORDER_CHUNK_MS = 180
 const MIN_SPEECH_CAPTURE_MS = 350
 const SILENCE_STOP_MS = 520
 const SILENCE_RMS_THRESHOLD = 0.02
 const BROWSER_FINAL_WAIT_MS = 600
 const STREAMING_FINAL_WAIT_MS = 3200
 const STREAMING_READY_WAIT_MS = 1400
-const STREAMING_FLUSH_INTERVAL_MS = 420
+const STREAMING_FLUSH_INTERVAL_MS = 220
 const REPEATED_TRANSCRIPT_WINDOW_MS = 15000
 
 const AMBIENT_WATERMARK_PATTERNS = [
@@ -205,7 +205,7 @@ export function useSpeech({ lang, onTranscript, onPartialTranscript, onNotice }:
       if (browserSupportsSpeechRecognition && isMicrophoneAvailable) {
         try {
           await SpeechRecognition.startListening({
-            continuous: false,
+            continuous: true,
             interimResults: true,
             language: lang,
           })
