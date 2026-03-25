@@ -424,7 +424,13 @@ class ConversationEngine:
         # For complex decisions, fall back to regular response
         if decision is None:
             response = await self.handle_turn(session_id, transcript)
-            yield {"type": "text", "content": response.reply_text, "cart": [item.model_dump() for item in response.cart]}
+            
+            # Send cart data with first text chunk
+            yield {
+                "type": "text", 
+                "content": response.reply_text,
+                "cart": [item.model_dump() for item in response.cart]
+            }
             
             from app.services.speech_service import SpeechService
             speech_service = SpeechService(self.settings, self.core_client)
@@ -437,6 +443,10 @@ class ConversationEngine:
 
         # Stream the decision response
         cart = build_cart_items(state.cart, menu)
+        
+        # Send cart data with first chunk
+        first_chunk_sent = False
+        
         prompt_payload = {
             "scene": decision.scene,
             "seed": decision.reply_seed,
@@ -456,14 +466,21 @@ class ConversationEngine:
         try:
             # Stream from LLM sentence by sentence
             async for sentence in self.provider_client.compose_reply_stream(prompt_payload):
-                yield {"type": "text", "content": sentence}
+                chunk = {"type": "text", "content": sentence}
+                if not first_chunk_sent:
+                    chunk["cart"] = [item.model_dump() for item in cart]
+                    first_chunk_sent = True
+                yield chunk
                 
                 # Immediately stream audio for this sentence
                 async for audio_chunk in speech_service.synthesize_stream(sentence):
                     yield {"type": "audio", "content": base64.b64encode(audio_chunk).decode("ascii")}
         except Exception:
             # Fallback to seed text
-            yield {"type": "text", "content": decision.reply_seed}
+            chunk = {"type": "text", "content": decision.reply_seed}
+            if not first_chunk_sent:
+                chunk["cart"] = [item.model_dump() for item in cart]
+            yield chunk
             async for audio_chunk in speech_service.synthesize_stream(decision.reply_seed):
                 yield {"type": "audio", "content": base64.b64encode(audio_chunk).decode("ascii")}
 

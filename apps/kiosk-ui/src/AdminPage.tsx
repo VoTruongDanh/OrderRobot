@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import './admin.css'
 import { useLiveCaption } from './hooks/useLiveCaption'
 import { useSpeech } from './hooks/useSpeech'
@@ -73,21 +73,18 @@ export default function AdminPage() {
   const [envFields, setEnvFields] = useState<EnvField[]>(() => loadSavedEnv())
   const [copied, setCopied] = useState(false)
   const [speechNotices, setSpeechNotices] = useState<Array<{ text: string; level: 'warning' | 'info' }>>([])
+  const [ttsVoice, setTtsVoice] = useState('vi-VN-HoaiMyNeural')
+  const [ttsRate, setTtsRate] = useState('200')
+  const [ttsTestText, setTtsTestText] = useState('Xin chào! Mình là robot đặt món. Bạn muốn gọi gì hôm nay?')
+  const [ttsTestStatus, setTtsTestStatus] = useState<'idle' | 'playing' | 'error'>('idle')
   const liveCaption = useLiveCaption({ lang: 'vi-VN' })
 
-  const { listening, capturePhase, recognitionSupported, startListening, stopListening } = useSpeech({
+  const { listening, interimTranscript, recognitionSupported, startListening, stopListening } = useSpeech({
     lang: 'vi-VN',
     onTranscript: (transcript) => {
       setSttFinalText(transcript)
       setMicState('ok')
       setMicDetail('STT da nhan duoc transcript tu luong kiosk hien tai.')
-    },
-    onPartialTranscript: (transcript) => {
-      setSttPartialText(transcript)
-      if (transcript.trim()) {
-        setMicState('ok')
-        setMicDetail('Dang nhan partial transcript...')
-      }
     },
     onNotice: (message, level = 'warning') => {
       setSpeechNotices((current) => {
@@ -102,6 +99,15 @@ export default function AdminPage() {
       setMicDetail(message)
     },
   })
+
+  // Update partial transcript from interimTranscript
+  useEffect(() => {
+    setSttPartialText(interimTranscript)
+    if (interimTranscript.trim()) {
+      setMicState('ok')
+      setMicDetail('Dang nhan partial transcript...')
+    }
+  }, [interimTranscript])
 
   const checkService = useCallback(async (service: ServiceStatus) => {
     const startedAt = performance.now()
@@ -194,6 +200,78 @@ export default function AdminPage() {
     window.setTimeout(() => setCopied(false), 1500)
   }, [envText])
 
+  const testTtsVoice = useCallback(async () => {
+    setTtsTestStatus('playing')
+    try {
+      const response = await fetch(`${AI_API_URL}/speech/synthesize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: ttsTestText,
+          voice: ttsVoice,
+          rate: parseInt(ttsRate, 10),
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`)
+      }
+
+      const audioBlob = await response.blob()
+      const audioUrl = URL.createObjectURL(audioBlob)
+      const audio = new Audio(audioUrl)
+
+      await new Promise<void>((resolve, reject) => {
+        audio.onended = () => {
+          URL.revokeObjectURL(audioUrl)
+          resolve()
+        }
+        audio.onerror = () => {
+          URL.revokeObjectURL(audioUrl)
+          reject(new Error('Audio playback failed'))
+        }
+        audio.play().catch(reject)
+      })
+
+      setTtsTestStatus('idle')
+    } catch (error) {
+      setTtsTestStatus('error')
+      console.error('TTS test failed:', error)
+      setTimeout(() => setTtsTestStatus('idle'), 2000)
+    }
+  }, [ttsTestText, ttsVoice, ttsRate])
+
+  const applyTtsConfig = useCallback(async () => {
+    try {
+      // Update backend runtime config
+      const response = await fetch(`${AI_API_URL}/config/tts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          voice: ttsVoice,
+          rate: parseInt(ttsRate, 10),
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`)
+      }
+
+      // Also update env fields for .env export
+      setEnvFields((current) =>
+        current.map((item) => {
+          if (item.key === 'TTS_VOICE') return { ...item, value: ttsVoice }
+          if (item.key === 'TTS_RATE') return { ...item, value: ttsRate }
+          return item
+        }),
+      )
+
+      alert('✅ Đã apply TTS config vào backend! Trang chính sẽ dùng giọng mới ngay.')
+    } catch (error) {
+      alert('❌ Không thể apply config: ' + (error instanceof Error ? error.message : 'Unknown error'))
+    }
+  }, [ttsVoice, ttsRate])
+
   return (
     <main className="admin-page">
       <header className="admin-header">
@@ -212,8 +290,8 @@ export default function AdminPage() {
           <div>
             <h2>Alternative Live Caption</h2>
             <p className="admin-hint">
-              Recommended cho nhu cau realtime lien tuc. Mode nay dung browser native SpeechRecognition,
-              khong doi silence-stop va khong cho backend STT chot tung luot.
+              Uu tien backend streaming STT de test caption on dinh truoc. Neu backend audio capture
+              khong kha dung thi moi thu native SpeechRecognition cua browser.
             </p>
           </div>
           <div className="admin-actions">
@@ -240,6 +318,13 @@ export default function AdminPage() {
         </p>
         <p>
           Support native SpeechRecognition: <strong>{liveCaption.supported ? 'yes' : 'no'}</strong>
+        </p>
+        <p>
+          Active engine: <strong>{liveCaption.engine ?? 'none'}</strong> | Backend live caption:{' '}
+          <strong>{liveCaption.backendSupported ? 'yes' : 'no'}</strong>
+        </p>
+        <p>
+          Native SpeechRecognition available: <strong>{liveCaption.supported ? 'yes' : 'no'}</strong>
         </p>
         <div className="admin-stt">
           <label>
@@ -313,7 +398,7 @@ export default function AdminPage() {
         <p className={`admin-badge admin-badge--${micState}`}>{micState}</p>
         <p>{micDetail || 'Not checked yet'}</p>
         <p>
-          Capture phase: <strong>{capturePhase}</strong> | Capture supported:{' '}
+          Listening: <strong>{listening ? 'yes' : 'no'}</strong> | Recognition supported:{' '}
           <strong>{recognitionSupported ? 'yes' : 'no'}</strong>
         </p>
         <div className="admin-stt">
@@ -335,6 +420,71 @@ export default function AdminPage() {
             ))}
           </div>
         ) : null}
+      </section>
+
+      <section className="admin-card">
+        <div className="admin-card__head">
+          <h2>TTS Voice Testing</h2>
+          <p className="admin-hint">
+            Test các giọng TTS khác nhau với tốc độ khác nhau. Chọn giọng và rate rồi bấm "Đọc thử" để nghe.
+          </p>
+        </div>
+
+        <div className="admin-fields">
+          <label className="admin-field">
+            <span>TTS Voice</span>
+            <select value={ttsVoice} onChange={(e) => setTtsVoice(e.target.value)}>
+              <option value="vi-VN-HoaiMyNeural">vi-VN-HoaiMyNeural (Nữ, Neural)</option>
+              <option value="vi-VN-NamMinhNeural">vi-VN-NamMinhNeural (Nam, Neural)</option>
+              <option value="vi-VN-An">vi-VN-An (Nam, Standard)</option>
+              <option value="vi-VN-HoaiMy">vi-VN-HoaiMy (Nữ, Standard)</option>
+            </select>
+          </label>
+
+          <label className="admin-field">
+            <span>TTS Rate (tốc độ: 100-300, mặc định 165)</span>
+            <input
+              type="number"
+              min="100"
+              max="300"
+              step="5"
+              value={ttsRate}
+              onChange={(e) => setTtsRate(e.target.value)}
+            />
+          </label>
+
+          <label className="admin-field">
+            <span>Text để test</span>
+            <textarea
+              value={ttsTestText}
+              onChange={(e) => setTtsTestText(e.target.value)}
+              placeholder="Nhập text để test giọng đọc..."
+              rows={3}
+            />
+          </label>
+        </div>
+
+        <div className="admin-actions">
+          <button
+            className="admin-btn"
+            type="button"
+            onClick={() => void testTtsVoice()}
+            disabled={ttsTestStatus === 'playing'}
+          >
+            {ttsTestStatus === 'playing' ? 'Đang đọc...' : ttsTestStatus === 'error' ? 'Lỗi!' : 'Đọc thử'}
+          </button>
+          <button
+            className="admin-btn admin-btn--ghost"
+            type="button"
+            onClick={() => void applyTtsConfig()}
+          >
+            Apply ngay
+          </button>
+        </div>
+
+        <p className="admin-hint">
+          Sau khi test xong, bấm "Apply ngay" để backend dùng giọng mới. Trang chính sẽ thấy thay đổi ngay lập tức.
+        </p>
       </section>
 
       <section className="admin-card">

@@ -1271,3 +1271,97 @@ code {
     font-size: 1.9rem;
   }
 }
+
+/* Thank You Screen Styles */
+.order-success-card--thanking {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+}
+
+.thank-you-content {
+  text-align: center;
+  padding: 3rem 2rem;
+}
+
+.thank-you-content h2 {
+  font-size: 2.5rem;
+  margin: 1.5rem 0 1rem;
+  color: var(--color-primary);
+}
+
+.thank-you-content p {
+  font-size: 1.125rem;
+  color: var(--color-text-secondary);
+  margin: 0.5rem 0;
+}
+
+.thank-you-order-id {
+  font-weight: 600;
+  color: var(--color-primary);
+  margin-top: 1rem !important;
+}
+
+/* Checkmark Animation */
+.checkmark-animation {
+  width: 120px;
+  height: 120px;
+  margin: 0 auto;
+}
+
+.checkmark-svg {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  display: block;
+  stroke-width: 3;
+  stroke: #4caf50;
+  stroke-miterlimit: 10;
+  box-shadow: inset 0px 0px 0px #4caf50;
+  animation: fill-checkmark 0.4s ease-in-out 0.4s forwards, scale-checkmark 0.3s ease-in-out 0.9s both;
+}
+
+.checkmark-circle {
+  stroke-dasharray: 166;
+  stroke-dashoffset: 166;
+  stroke-width: 3;
+  stroke-miterlimit: 10;
+  stroke: #4caf50;
+  fill: none;
+  animation: stroke-checkmark 0.6s cubic-bezier(0.65, 0, 0.45, 1) forwards;
+}
+
+.checkmark-check {
+  transform-origin: 50% 50%;
+  stroke-dasharray: 48;
+  stroke-dashoffset: 48;
+  stroke: #4caf50;
+  animation: stroke-checkmark 0.3s cubic-bezier(0.65, 0, 0.45, 1) 0.8s forwards;
+}
+
+@keyframes stroke-checkmark {
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes scale-checkmark {
+  0%, 100% {
+    transform: none;
+  }
+  50% {
+    transform: scale3d(1.1, 1.1, 1);
+  }
+}
+
+@keyframes fill-checkmark {
+  100% {
+    box-shadow: inset 0px 0px 0px 60px #4caf50;
+  }
+}
+
+/* Smooth countdown transition */
+.order-success-card__countdown-fill {
+  transition: width 1s linear;
+}

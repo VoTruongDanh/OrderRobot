@@ -29,7 +29,6 @@ function App() {
   const [invoice, setInvoice] = useState<InvoiceSnapshot | null>(null)
   const [successModalInvoice, setSuccessModalInvoice] = useState<InvoiceSnapshot | null>(null)
   const [successCountdown, setSuccessCountdown] = useState(6)
-  const [liveTranscript, setLiveTranscript] = useState('')
   const [robotMode, setRobotMode] = useState<RobotMode>('detecting')
   const [notices, setNotices] = useState<AppNotice[]>([])
   const [statusMessage, setStatusMessage] = useState(
@@ -44,6 +43,19 @@ function App() {
   >(async () => {})
   const handleTranscriptRef = useRef<(transcript: string) => Promise<void>>(async () => {})
 
+  // Random greeting messages for faster initial response
+  const greetingMessages = [
+    'Xin chào! Mình là robot đặt món. Bạn muốn gọi gì hôm nay?',
+    'Chào bạn! Hôm nay bạn muốn thử món gì nhỉ?',
+    'Xin chào! Mình sẵn sàng nhận order rồi. Bạn gọi món gì nào?',
+    'Chào bạn! Bạn muốn uống gì hôm nay?',
+    'Xin chào! Mình có thể giúp bạn đặt món ngay. Bạn muốn gọi gì?',
+  ]
+
+  const getRandomGreeting = useCallback(() => {
+    return greetingMessages[Math.floor(Math.random() * greetingMessages.length)]
+  }, [])
+
   useEffect(() => {
     sessionIdRef.current = sessionId
   }, [sessionId])
@@ -57,7 +69,6 @@ function App() {
     setAwaitingConfirmation(false)
     setInvoice(null)
     setNotices([])
-    setLiveTranscript('')
     setRobotMode('detecting')
     setStatusMessage(
       waitForVacancy
@@ -130,21 +141,17 @@ function App() {
   }, [])
 
   const {
-    capturePhase,
+    interimTranscript,
     recognitionSupported,
     synthesisSupported,
     speak,
     startListening,
     stopListening,
+    listening,
   } = useSpeech({
     lang: 'vi-VN',
     onTranscript: (transcript) => {
-      setLiveTranscript('')
       void handleTranscriptRef.current(transcript)
-    },
-    onPartialTranscript: (transcript) => {
-      setLiveTranscript(transcript)
-      setStatusMessage(`Robot đang nghe: "${transcript}"`)
     },
     onNotice: addNotice,
   })
@@ -158,22 +165,13 @@ function App() {
       return
     }
 
-    if (capturePhase === 'processing') {
-      setStatusMessage('Robot đã ghi âm xong và đang nhận dạng giọng nói...')
+    if (interimTranscript) {
+      setStatusMessage(`Robot đang nghe: "${interimTranscript}"`)
       return
     }
 
-    if (capturePhase === 'listening') {
-      setStatusMessage(
-        liveTranscript
-          ? `Robot đang nghe: "${liveTranscript}"`
-          : 'Robot đang nghe, bạn nói tên món hoặc yêu cầu thêm nhé.',
-      )
-      return
-    }
-
-    setStatusMessage('Robot đang chờ yêu cầu tiếp theo để tiếp tục đặt món.')
-  }, [capturePhase, liveTranscript, robotMode])
+    setStatusMessage('Robot đang nghe, bạn nói tên món hoặc yêu cầu thêm nhé.')
+  }, [interimTranscript, robotMode])
 
   useEffect(() => {
     if (!recognitionSupported) {
@@ -269,7 +267,12 @@ function App() {
       if (recognitionSupported && autoListen) {
         setRobotMode('listening')
         setStatusMessage('Robot đang nghe yêu cầu tiếp theo để tiếp tục đặt món.')
-        void startListening()
+        try {
+          await startListening()
+        } catch (error) {
+          console.error('[handleAssistantResponse] Failed to auto-listen:', error)
+          setRobotMode('idle')
+        }
       } else {
         setRobotMode('idle')
       }
@@ -292,9 +295,10 @@ function App() {
       })
     }, 1000)
 
+    // Close after 8s total (6s invoice + 2s thank you)
     const closeTimer = window.setTimeout(() => {
       closeSuccessModal()
-    }, 6000)
+    }, 8000)
 
     return () => {
       window.clearInterval(countdownInterval)
@@ -323,7 +327,6 @@ function App() {
 
       stopListening()
       isBusyRef.current = true
-      setLiveTranscript('')
       appendTranscript('user', transcript)
       setRobotMode('thinking')
       setStatusMessage('Robot đang đối chiếu yêu cầu với menu và giỏ hàng...')
@@ -342,6 +345,8 @@ function App() {
         let fullText = ''
         const audioChunks: Uint8Array[] = []
         let cartData: ConversationResponse['cart'] = []
+        let orderCreatedDetected = false
+        let detectedOrderId: string | null = null
 
         setRobotMode('speaking')
         setStatusMessage('Robot đang phản hồi...')
@@ -354,6 +359,48 @@ function App() {
             if (chunk.cart) {
               cartData = chunk.cart
               setCart(cartData)
+            }
+            
+            // Detect order creation early to show popup immediately
+            if (!orderCreatedDetected && (fullText.includes('đã lên đơn thành công') || fullText.includes('mã đơn'))) {
+              orderCreatedDetected = true
+              const orderIdMatch = fullText.match(/mã\s+([A-Z0-9-]+)/i)
+              detectedOrderId = orderIdMatch?.[1] ?? null
+              
+              // Show popup immediately when order is detected
+              if (detectedOrderId) {
+                const fallbackInvoice = buildLocalInvoiceSnapshot({
+                  orderId: detectedOrderId,
+                  createdAt: new Date(),
+                  items: cartData,
+                  totalAmount: cartData.reduce((sum, item) => sum + Number(item.line_total), 0),
+                })
+
+                setInvoice(fallbackInvoice)
+                setSuccessModalInvoice(fallbackInvoice)
+                setSuccessCountdown(6)
+                setStatusMessage('Đơn đã được xác nhận. Kiosk đang hiển thị mã QR cho khách.')
+                setCart([])
+                setAwaitingConfirmation(false)
+                setSessionId(null)
+                setAwaitingVacancy(false)
+
+                // Fetch real order data in background
+                void (async () => {
+                  try {
+                    const order = await fetchOrder(detectedOrderId!)
+                    const completedInvoice = buildInvoiceSnapshot(order)
+                    setInvoice(completedInvoice)
+                    setSuccessModalInvoice(completedInvoice)
+                  } catch (error) {
+                    const message =
+                      error instanceof Error
+                        ? `Đã tạo đơn nhưng không tải được hóa đơn: ${error.message}`
+                        : 'Đã tạo đơn nhưng không tải được hóa đơn.'
+                    addNotice(message, 'info')
+                  }
+                })()
+              }
             }
             
             // Show progressive text in transcript
@@ -406,6 +453,7 @@ function App() {
         })
 
         // Play complete audio using speak() from useSpeech hook
+        // Audio plays in parallel with popup display for order completion
         if (audioChunks.length > 0) {
           try {
             // Combine all audio chunks into single blob
@@ -438,47 +486,8 @@ function App() {
           }
         }
 
-        // Check if order was created (detect from response text)
-        const orderCreated = fullText.includes('đã lên đơn thành công') || fullText.includes('mã đơn')
-        
-        if (orderCreated) {
-          // Extract order ID from text if possible
-          const orderIdMatch = fullText.match(/mã\s+([A-Z0-9-]+)/i)
-          const orderId = orderIdMatch?.[1]
-          
-          if (orderId) {
-            const fallbackInvoice = buildLocalInvoiceSnapshot({
-              orderId,
-              createdAt: new Date(),
-              items: cartData,
-              totalAmount: cartData.reduce((sum, item) => sum + Number(item.line_total), 0),
-            })
-
-            setInvoice(fallbackInvoice)
-            setSuccessModalInvoice(fallbackInvoice)
-            setSuccessCountdown(6)
-            setStatusMessage('Đơn đã được xác nhận. Kiosk đang hiển thị mã QR cho khách.')
-            setCart([])
-            setAwaitingConfirmation(false)
-            setSessionId(null)
-            setAwaitingVacancy(false)
-
-            void (async () => {
-              try {
-                const order = await fetchOrder(orderId)
-                const completedInvoice = buildInvoiceSnapshot(order)
-                setInvoice(completedInvoice)
-                setSuccessModalInvoice(completedInvoice)
-              } catch (error) {
-                const message =
-                  error instanceof Error
-                    ? `Đã tạo đơn nhưng không tải được hóa đơn: ${error.message}`
-                    : 'Đã tạo đơn nhưng không tải được hóa đơn.'
-                addNotice(message, 'info')
-              }
-            })()
-          }
-          
+        // If order was created, we're done (popup already shown)
+        if (orderCreatedDetected) {
           setRobotMode('idle')
           return
         }
@@ -487,9 +496,16 @@ function App() {
         if (recognitionSupported) {
           setRobotMode('listening')
           setStatusMessage('Robot đang nghe yêu cầu tiếp theo để tiếp tục đặt món.')
-          // Add small delay to ensure audio playback is fully complete
+          // Longer delay to ensure audio context is fully cleaned up
           await new Promise(resolve => setTimeout(resolve, 300))
-          void startListening()
+          try {
+            await startListening()
+            console.log('[Auto-listen] Successfully started listening after response')
+          } catch (error) {
+            console.error('[Auto-listen] Failed to start listening:', error)
+            addNotice('Không thể tự động bật mic. Vui lòng nhấn nút "Nói với robot".', 'warning')
+            setRobotMode('idle')
+          }
         } else {
           setRobotMode('idle')
         }
@@ -503,7 +519,6 @@ function App() {
         setCart([])
         setRecommendedItemIds([])
         setAwaitingConfirmation(false)
-        setLiveTranscript('')
       } finally {
         isBusyRef.current = false
       }
@@ -541,20 +556,63 @@ function App() {
 
       isBusyRef.current = true
       stopListening()
-      setRobotMode('thinking')
-      setStatusMessage('Robot đang mở phiên mới và chuẩn bị chào khách...')
+      setRobotMode('speaking')
+      
+      // Get random greeting and play immediately for faster response
+      const greetingText = getRandomGreeting()
+      setStatusMessage('Robot đang chào khách...')
+      appendTranscript('assistant', greetingText)
 
       try {
-        const response = await startSession(source)
-        setTranscriptEntries([])
+        // Play greeting audio immediately without waiting for backend session
+        const speakPromise = speak(greetingText).catch((error) => {
+          const message =
+            error instanceof Error
+              ? `Không phát được audio chào: ${error.message}`
+              : 'Không phát được audio chào.'
+          addNotice(message, 'info')
+        })
+
+        // Start backend session in parallel
+        const sessionPromise = startSession(source)
+
+        // Wait for both to complete
+        const [, response] = await Promise.all([speakPromise, sessionPromise])
+
+        setSessionId(response.session_id)
+        setTranscriptEntries((current) => [
+          ...current,
+          {
+            id: `assistant-${crypto.randomUUID()}`,
+            speaker: 'assistant',
+            text: greetingText,
+            timestamp: new Date().toLocaleTimeString('vi-VN', {
+              hour: '2-digit',
+              minute: '2-digit',
+            }),
+          },
+        ])
         setRecommendedItemIds([])
         setAwaitingConfirmation(false)
         setInvoice(null)
         setSuccessModalInvoice(null)
         setSuccessCountdown(6)
-        setLiveTranscript('')
         setAwaitingVacancy(false)
-        await handleAssistantResponseRef.current(response)
+
+        // Auto-listen after greeting
+        if (recognitionSupported) {
+          setRobotMode('listening')
+          setStatusMessage('Robot đang nghe yêu cầu tiếp theo để tiếp tục đặt món.')
+          try {
+            await startListening()
+            console.log('[beginSession] Successfully started listening after greeting')
+          } catch (error) {
+            console.error('[beginSession] Failed to start listening:', error)
+            setRobotMode('idle')
+          }
+        } else {
+          setRobotMode('idle')
+        }
       } catch (error) {
         const message =
           error instanceof Error ? `Không thể mở phiên AI: ${error.message}` : 'Không thể mở phiên AI.'
@@ -564,7 +622,7 @@ function App() {
         isBusyRef.current = false
       }
     },
-    [handleUiError, stopListening],
+    [addNotice, appendTranscript, getRandomGreeting, handleUiError, recognitionSupported, speak, startListening, stopListening],
   )
 
   useEffect(() => {
@@ -591,7 +649,6 @@ function App() {
     setInvoice(null)
     setSuccessModalInvoice(null)
     setSuccessCountdown(6)
-    setLiveTranscript('')
     if (!sessionIdRef.current) {
       setTranscriptEntries([])
       setCart([])
@@ -648,14 +705,18 @@ function App() {
             detectorSupported={detectorSupported}
             entries={transcriptEntries}
             invoice={invoice}
-            liveTranscript={liveTranscript}
+            liveTranscript={interimTranscript}
             notices={notices}
-            speechPhase={capturePhase}
+            speechPhase={listening ? 'listening' : 'idle'}
             onConfirmOrder={() => {
               void submitIntent('xác nhận')
             }}
-            onManualListen={() => {
-              void startListening()
+            onManualListen={async () => {
+              try {
+                await startListening()
+              } catch (error) {
+                console.error('[Manual listen] Failed:', error)
+              }
             }}
             onStopListening={() => {
               stopListening()

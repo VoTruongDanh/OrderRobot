@@ -24,6 +24,13 @@ class CartItem(BaseModel):
     quantity: int = Field(gt=0)
     unit_price: Decimal = Field(ge=0)
     line_total: Decimal = Field(ge=0)
+    
+    def model_dump(self, **kwargs):
+        """Override to convert Decimal to float for JSON serialization."""
+        data = super().model_dump(**kwargs)
+        data["unit_price"] = float(data["unit_price"])
+        data["line_total"] = float(data["line_total"])
+        return data
 
 
 class SessionStartRequest(BaseModel):
@@ -36,6 +43,8 @@ class TurnRequest(BaseModel):
 
 class SpeechSynthesisRequest(BaseModel):
     text: str = Field(min_length=1, max_length=1200)
+    voice: str | None = None
+    rate: int | None = Field(default=None, ge=100, le=300)
 
 
 class SpeechTranscriptionResponse(BaseModel):

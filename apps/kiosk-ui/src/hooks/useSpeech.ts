@@ -1,34 +1,15 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import SpeechRecognition, { useSpeechRecognition } from 'react-speech-recognition'
+import { synthesizeSpeech, synthesizeSpeechStream } from '../api'
 
-import {
-  type StreamingSpeechEvent,
-  type StreamingSpeechFinalEvent,
-  StreamingSpeechClient,
-  synthesizeSpeech,
-  transcribeSpeech,
-} from '../api'
-
+// onPartialTranscript removed — caller reads interimTranscript directly from return value
 type UseSpeechOptions = {
   lang: string
   onTranscript: (transcript: string) => void
-  onPartialTranscript?: (transcript: string) => void
   onNotice: (message: string, level?: 'warning' | 'info') => void
 }
 
-export type SpeechCapturePhase = 'idle' | 'listening' | 'processing'
-
-const MAX_RECORDING_MS = 15000
-const RECORDER_CHUNK_MS = 180
-const MIN_SPEECH_CAPTURE_MS = 350
-const SILENCE_STOP_MS = 520
-const SILENCE_RMS_THRESHOLD = 0.02
-const BROWSER_FINAL_WAIT_MS = 600
-const STREAMING_FINAL_WAIT_MS = 3200
-const STREAMING_READY_WAIT_MS = 1400
-const STREAMING_FLUSH_INTERVAL_MS = 220
 const REPEATED_TRANSCRIPT_WINDOW_MS = 15000
-
 const AMBIENT_WATERMARK_PATTERNS = [
   /subscribe/,
   /kenh/,
@@ -39,42 +20,30 @@ const AMBIENT_WATERMARK_PATTERNS = [
   /like va share/,
 ]
 
-export function useSpeech({ lang, onTranscript, onPartialTranscript, onNotice }: UseSpeechOptions) {
+// How long speech must be silent before we fire onTranscript.
+// Shorter = more responsive but may cut off slow speakers.
+const SUBMIT_SILENCE_MS = 600
+
+export function useSpeech({ lang, onTranscript, onNotice }: UseSpeechOptions) {
   const transcriptHandlerRef = useRef(onTranscript)
-  const partialTranscriptHandlerRef = useRef(onPartialTranscript)
   const noticeHandlerRef = useRef(onNotice)
   const notifiedKeysRef = useRef<Set<string>>(new Set())
-
-  const recorderRef = useRef<MediaRecorder | null>(null)
-  const streamRef = useRef<MediaStream | null>(null)
-  const chunksRef = useRef<Blob[]>([])
-  const stopTimerRef = useRef<number | null>(null)
-  const silenceCheckFrameRef = useRef<number | null>(null)
-  const speechStartedAtRef = useRef<number | null>(null)
-  const silenceStartedAtRef = useRef<number | null>(null)
-  const audioContextRef = useRef<AudioContext | null>(null)
-  const analyserRef = useRef<AnalyserNode | null>(null)
-  const mediaSourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
-  const analysisBufferRef = useRef<Uint8Array<ArrayBuffer> | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
-
-  const streamingClientRef = useRef<StreamingSpeechClient | null>(null)
-  const streamingReadyPromiseRef = useRef<Promise<boolean> | null>(null)
-  const streamingFinalPromiseRef = useRef<Promise<StreamingSpeechFinalEvent | null> | null>(null)
-  const resolveStreamingFinalRef = useRef<((value: StreamingSpeechFinalEvent | null) => void) | null>(null)
-  const latestStreamingPartialRef = useRef('')
-  const lastStreamingFlushAtRef = useRef(0)
-
   const lastAcceptedTranscriptRef = useRef<{ text: string; at: number } | null>(null)
-  const latestBrowserTranscriptRef = useRef('')
-  const latestBrowserFinalTranscriptRef = useRef('')
 
-  const [listening, setListening] = useState(false)
-  const [capturePhase, setCapturePhase] = useState<SpeechCapturePhase>('idle')
+  // === Pipeline B state ===
+  // These refs manage the "process after silence" gate.
+  // They are intentionally NOT React state — updates here must not trigger re-renders.
+  const submitTimerRef = useRef<number | null>(null)
+  const pendingSubmitTextRef = useRef('')
+  const accumulatedFinalRef = useRef('')
+  const lastInterimTextRef = useRef('')
+  const interimSubmitTimerRef = useRef<number | null>(null)
 
   const {
-    transcript,
+    interimTranscript,
     finalTranscript,
+    listening,
     resetTranscript,
     browserSupportsSpeechRecognition,
     isMicrophoneAvailable,
@@ -82,516 +51,265 @@ export function useSpeech({ lang, onTranscript, onPartialTranscript, onNotice }:
     clearTranscriptOnListen: true,
   })
 
-  const captureSupported =
-    typeof window !== 'undefined' &&
-    typeof MediaRecorder !== 'undefined' &&
-    Boolean(navigator.mediaDevices?.getUserMedia)
-  const recognitionSupported = captureSupported
+  const recognitionSupported =
+    typeof window !== 'undefined' && browserSupportsSpeechRecognition && isMicrophoneAvailable
   const synthesisSupported = typeof window !== 'undefined' && typeof Audio !== 'undefined'
 
   useEffect(() => {
     transcriptHandlerRef.current = onTranscript
-    partialTranscriptHandlerRef.current = onPartialTranscript
     noticeHandlerRef.current = onNotice
-  }, [onNotice, onPartialTranscript, onTranscript])
-
-  useEffect(() => {
-    latestBrowserTranscriptRef.current = transcript.trim()
-    if (listening && latestBrowserTranscriptRef.current) {
-      partialTranscriptHandlerRef.current?.(latestBrowserTranscriptRef.current)
-    }
-  }, [listening, transcript])
-
-  useEffect(() => {
-    latestBrowserFinalTranscriptRef.current = finalTranscript.trim()
-  }, [finalTranscript])
+  }, [onNotice, onTranscript])
 
   useEffect(() => {
     return () => {
-      if (recorderRef.current && recorderRef.current.state !== 'inactive') {
-        recorderRef.current.stop()
-      }
-      if (stopTimerRef.current) {
-        window.clearTimeout(stopTimerRef.current)
-      }
-      stopSilenceDetection()
-      streamRef.current?.getTracks().forEach((track) => track.stop())
-      closeStreamingClient()
       void SpeechRecognition.abortListening()
       stopAudioPlayback()
+      clearSubmitTimer()
+      clearInterimSubmitTimer()
     }
   }, [])
 
-  async function startListening() {
-    if (capturePhase === 'processing') {
-      notifyOnce(
-        'stt-processing',
-        'Robot dang nhan dang cau vua noi, vui long cho them mot chut.',
-        'info',
-      )
+  // === Pipeline A: display ===
+  // interimTranscript is returned directly from this hook (see return statement).
+  // There is NO effect here for display — the value flows straight out.
+  // React's own diffing handles re-renders only when it actually changes.
+
+  // === Pipeline B: process ===
+  // Part 1 — new final text arrives → schedule a submit after silence
+  useEffect(() => {
+    const committed = finalTranscript.trim()
+    if (!committed) return
+
+    // Extract only new content since the last time we scheduled a submit
+    const newPart = committed.startsWith(accumulatedFinalRef.current)
+      ? committed.slice(accumulatedFinalRef.current.length).trim()
+      : committed
+
+    if (!newPart) return
+
+    accumulatedFinalRef.current = committed
+    pendingSubmitTextRef.current = newPart
+
+    // Reset the gate — user may still be speaking
+    clearSubmitTimer()
+    submitTimerRef.current = window.setTimeout(() => {
+      submitTimerRef.current = null
+      const text = pendingSubmitTextRef.current
+      pendingSubmitTextRef.current = ''
+
+      if (!text) return
+
+      if (shouldIgnoreTranscript(text, lastAcceptedTranscriptRef.current)) {
+        noticeHandlerRef.current(
+          'Mình vừa bỏ qua âm thanh nền, không giống yêu cầu gọi món.',
+          'info',
+        )
+        return
+      }
+
+      lastAcceptedTranscriptRef.current = { text, at: Date.now() }
+      transcriptHandlerRef.current(text)
+    }, SUBMIT_SILENCE_MS)
+  }, [finalTranscript])
+
+  // Part 2 — user is still speaking → cancel the pending submit
+  useEffect(() => {
+    if (interimTranscript.trim() && submitTimerRef.current !== null) {
+      clearSubmitTimer()
+    }
+  }, [interimTranscript])
+
+  // Part 3 — Fallback: if interimTranscript stops changing, submit it
+  // This handles browsers that don't emit finalTranscript in continuous mode
+  useEffect(() => {
+    const trimmed = interimTranscript.trim()
+    
+    // Clear any existing interim timer
+    clearInterimSubmitTimer()
+    
+    if (!trimmed || !listening) {
+      lastInterimTextRef.current = ''
       return
     }
-
-    if (listening) {
-      stopListening()
-      return
-    }
-
-    if (!captureSupported) {
-      notifyOnce(
-        'stt-unsupported',
-        'Trinh duyet hien tai khong ho tro thu am on dinh de nhan giong noi.',
-      )
-      return
-    }
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          channelCount: 1,
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      })
-
-      streamRef.current = stream
-      chunksRef.current = []
-      speechStartedAtRef.current = null
-      silenceStartedAtRef.current = null
-      latestBrowserTranscriptRef.current = ''
-      latestBrowserFinalTranscriptRef.current = ''
-      latestStreamingPartialRef.current = ''
-      lastStreamingFlushAtRef.current = 0
-      partialTranscriptHandlerRef.current?.('')
-      resetTranscript()
-      initStreamingClient('speech.webm')
-
-      const mimeType = pickRecorderMimeType()
-      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
-      recorderRef.current = recorder
-
-      recorder.ondataavailable = (event) => {
-        if (event.data.size <= 0) {
+    
+    // If interim text changed, reset the timer
+    if (trimmed !== lastInterimTextRef.current) {
+      lastInterimTextRef.current = trimmed
+      
+      // Start a timer to submit if text stops changing
+      interimSubmitTimerRef.current = window.setTimeout(() => {
+        const textToSubmit = lastInterimTextRef.current
+        
+        if (!textToSubmit) return
+        
+        if (shouldIgnoreTranscript(textToSubmit, lastAcceptedTranscriptRef.current)) {
+          noticeHandlerRef.current(
+            'Mình vừa bỏ qua âm thanh nền, không giống yêu cầu gọi món.',
+            'info',
+          )
           return
         }
+        
+        lastAcceptedTranscriptRef.current = { text: textToSubmit, at: Date.now() }
+        lastInterimTextRef.current = ''
+        transcriptHandlerRef.current(textToSubmit)
+      }, SUBMIT_SILENCE_MS)
+    }
+  }, [interimTranscript, listening])
 
-        chunksRef.current.push(event.data)
-        const streamingClient = streamingClientRef.current
-        if (streamingClient) {
-          streamingClient.sendChunk(event.data)
-          const now = Date.now()
-          if (now - lastStreamingFlushAtRef.current >= STREAMING_FLUSH_INTERVAL_MS) {
-            streamingClient.flush()
-            lastStreamingFlushAtRef.current = now
-          }
-        }
-      }
+  // Clean up gate when listening stops externally (e.g. robot starts speaking)
+  useEffect(() => {
+    if (!listening) {
+      clearSubmitTimer()
+      clearInterimSubmitTimer()
+      lastInterimTextRef.current = ''
+    }
+  }, [listening])
 
-      recorder.onerror = () => {
-        notifyOnce('stt-recorder-error', 'Khong the thu am tu microphone luc nay.')
-        void finalizeRecording()
-      }
+  function clearSubmitTimer() {
+    if (submitTimerRef.current !== null) {
+      window.clearTimeout(submitTimerRef.current)
+      submitTimerRef.current = null
+    }
+  }
 
-      recorder.onstop = () => {
-        void finalizeRecording()
-      }
+  function clearInterimSubmitTimer() {
+    if (interimSubmitTimerRef.current !== null) {
+      window.clearTimeout(interimSubmitTimerRef.current)
+      interimSubmitTimerRef.current = null
+    }
+  }
 
-      recorder.start(RECORDER_CHUNK_MS)
-      startSilenceDetection(stream)
-      setListening(true)
-      setCapturePhase('listening')
+  async function startListening() {
+    if (!browserSupportsSpeechRecognition) {
+      const error = new Error('Browser không hỗ trợ nhận giọng nói')
+      notifyOnce(
+        'stt-unsupported',
+        'Trình duyệt không hỗ trợ nhận giọng nói. Dùng Chrome hoặc Edge mới nhé.',
+      )
+      throw error
+    }
 
-      if (browserSupportsSpeechRecognition && isMicrophoneAvailable) {
-        try {
-          await SpeechRecognition.startListening({
-            continuous: true,
-            interimResults: true,
-            language: lang,
-          })
-        } catch {
-          // Keep backend streaming STT active even if browser STT fails.
-        }
-      }
-
-      stopTimerRef.current = window.setTimeout(() => {
-        stopListening()
-      }, MAX_RECORDING_MS)
-    } catch {
+    if (!isMicrophoneAvailable) {
+      const error = new Error('Microphone không khả dụng')
       notifyOnce(
         'stt-mic-permission',
-        'Microphone chua duoc cap quyen hoac dang ban, vui long thu lai.',
+        'Microphone chưa được cấp quyền hoặc đang bận.',
       )
-      setCapturePhase('idle')
-      void finalizeRecording()
+      throw error
+    }
+
+    stopAudioPlayback()
+
+    // Reset Pipeline B state for clean turn
+    clearSubmitTimer()
+    clearInterimSubmitTimer()
+    pendingSubmitTextRef.current = ''
+    accumulatedFinalRef.current = ''
+    lastInterimTextRef.current = ''
+    resetTranscript()
+
+    try {
+      await SpeechRecognition.startListening({
+        continuous: true,
+        interimResults: true,
+        language: lang,
+      })
+      console.log('[useSpeech] Successfully started listening')
+    } catch (error) {
+      console.error('[useSpeech] Failed to start listening:', error)
+      notifyOnce('stt-start-error', 'Không thể bật nhận giọng nói từ trình duyệt lúc này.')
+      throw error
     }
   }
 
   function stopListening() {
-    if (listening) {
-      setCapturePhase('processing')
-    }
-
-    if (recorderRef.current && recorderRef.current.state !== 'inactive') {
-      recorderRef.current.stop()
-    }
-    void SpeechRecognition.stopListening().catch(() => undefined)
+    clearSubmitTimer()
+    void SpeechRecognition.stopListening()
   }
 
   async function speak(text: string) {
     if (!synthesisSupported) {
-      throw new Error('Trinh duyet hien tai khong ho tro phat audio.')
+      throw new Error('Trình duyệt hiện tại không hỗ trợ phát audio.')
     }
 
     stopAudioPlayback()
-    const audioBlob = await synthesizeSpeech(text)
-    const audioUrl = URL.createObjectURL(audioBlob)
+
+    try {
+      const stream = await synthesizeSpeechStream(text)
+      const reader = stream.getReader()
+      const chunks: Uint8Array[] = []
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        if (value) chunks.push(value)
+      }
+
+      if (chunks.length === 0) throw new Error('Không nhận được audio từ backend.')
+
+      const totalLength = chunks.reduce((sum, c) => sum + c.length, 0)
+      const combined = new Uint8Array(totalLength)
+      let offset = 0
+      for (const c of chunks) { combined.set(c, offset); offset += c.length }
+
+      return playAudioBlob(new Blob([combined], { type: 'audio/mpeg' }))
+    } catch {
+      const audioBlob = await synthesizeSpeech(text)
+      return playAudioBlob(audioBlob)
+    }
+  }
+
+  function playAudioBlob(blob: Blob): Promise<void> {
+    const audioUrl = URL.createObjectURL(blob)
     const audio = new Audio(audioUrl)
     audioRef.current = audio
 
     return new Promise<void>((resolve, reject) => {
       audio.onended = () => {
         URL.revokeObjectURL(audioUrl)
-        if (audioRef.current === audio) {
-          audioRef.current = null
-        }
+        if (audioRef.current === audio) audioRef.current = null
         resolve()
       }
       audio.onerror = () => {
         URL.revokeObjectURL(audioUrl)
-        if (audioRef.current === audio) {
-          audioRef.current = null
-        }
-        reject(new Error('Khong the phat audio tu backend.'))
+        if (audioRef.current === audio) audioRef.current = null
+        reject(new Error('Không thể phát audio từ backend.'))
       }
       void audio.play().catch(() => {
         URL.revokeObjectURL(audioUrl)
-        if (audioRef.current === audio) {
-          audioRef.current = null
-        }
-        reject(new Error('Trinh duyet chan phat audio tu dong.'))
+        if (audioRef.current === audio) audioRef.current = null
+        reject(new Error('Trình duyệt chặn phát audio tự động.'))
       })
     })
-  }
-
-  async function finalizeRecording() {
-    if (stopTimerRef.current) {
-      window.clearTimeout(stopTimerRef.current)
-      stopTimerRef.current = null
-    }
-
-    stopSilenceDetection()
-
-    const stream = streamRef.current
-    if (stream) {
-      stream.getTracks().forEach((track) => track.stop())
-      streamRef.current = null
-    }
-
-    const recorder = recorderRef.current
-    recorderRef.current = null
-    if (recorder) {
-      recorder.ondataavailable = null
-      recorder.onstop = null
-      recorder.onerror = null
-    }
-
-    const hasSpeechData =
-      chunksRef.current.length > 0 ||
-      Boolean(latestBrowserTranscriptRef.current) ||
-      Boolean(latestBrowserFinalTranscriptRef.current) ||
-      Boolean(latestStreamingPartialRef.current)
-
-    setListening(false)
-    setCapturePhase(hasSpeechData ? 'processing' : 'idle')
-
-    const mimeType = chunksRef.current[0]?.type || pickRecorderMimeType() || 'audio/webm'
-    const audioBlob = chunksRef.current.length > 0 ? new Blob(chunksRef.current, { type: mimeType }) : null
-    chunksRef.current = []
-
-    try {
-      const streamingFinal = await requestStreamingFinal()
-      let transcript = ''
-      let fallbackMessage: string | null = null
-
-      if (streamingFinal?.status === 'ok' && streamingFinal.transcript.trim()) {
-        transcript = streamingFinal.transcript.trim()
-      } else if (streamingFinal?.status === 'retry') {
-        fallbackMessage = streamingFinal.message ?? 'Minh nghe chua ro, ban noi lai giup minh nhe.'
-      } else if (streamingFinal?.status === 'error') {
-        fallbackMessage = streamingFinal.message ?? 'Streaming STT dang gap loi tam thoi.'
-      }
-
-      const browserTranscript = await waitForBrowserTranscript()
-      const shouldFallbackToBackend =
-        !transcript &&
-        (!browserTranscript || shouldIgnoreTranscript(browserTranscript, lastAcceptedTranscriptRef.current))
-
-      if (
-        !transcript &&
-        browserTranscript &&
-        !shouldIgnoreTranscript(browserTranscript, lastAcceptedTranscriptRef.current)
-      ) {
-        transcript = browserTranscript
-      }
-
-      if (!transcript && shouldFallbackToBackend && audioBlob) {
-        const result = await transcribeSpeech(audioBlob)
-        transcript = result.transcript.trim()
-        if (result.status === 'retry' || !transcript) {
-          fallbackMessage = result.message ?? 'Minh nghe chua ro, ban noi lai giup minh nhe.'
-        }
-      }
-
-      partialTranscriptHandlerRef.current?.('')
-      resetTranscript()
-      latestBrowserTranscriptRef.current = ''
-      latestBrowserFinalTranscriptRef.current = ''
-      latestStreamingPartialRef.current = ''
-
-      if (!transcript) {
-        if (fallbackMessage) {
-          noticeHandlerRef.current(fallbackMessage, 'info')
-        }
-        return
-      }
-
-      if (shouldIgnoreTranscript(transcript, lastAcceptedTranscriptRef.current)) {
-        noticeHandlerRef.current('Minh vua bo qua mot am thanh nen khong giong yeu cau goi mon.', 'info')
-        return
-      }
-
-      lastAcceptedTranscriptRef.current = {
-        text: transcript,
-        at: Date.now(),
-      }
-      transcriptHandlerRef.current(transcript)
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? `Backend speech-to-text loi: ${error.message}`
-          : 'Backend speech-to-text dang gap loi.'
-      notifyOnce('stt-backend-error', message)
-    } finally {
-      closeStreamingClient()
-      setCapturePhase('idle')
-    }
-  }
-
-  function initStreamingClient(filename: string) {
-    closeStreamingClient()
-
-    streamingFinalPromiseRef.current = new Promise<StreamingSpeechFinalEvent | null>((resolve) => {
-      resolveStreamingFinalRef.current = resolve
-    })
-
-    const client = new StreamingSpeechClient(handleStreamingEvent, () => undefined)
-    streamingClientRef.current = client
-    streamingReadyPromiseRef.current = client
-      .waitUntilOpen(STREAMING_READY_WAIT_MS)
-      .then(() => {
-        client.start(filename)
-        return true
-      })
-      .catch(() => false)
-  }
-
-  function closeStreamingClient() {
-    const resolver = resolveStreamingFinalRef.current
-    if (resolver) {
-      resolver(null)
-    }
-    resolveStreamingFinalRef.current = null
-    streamingFinalPromiseRef.current = null
-    streamingReadyPromiseRef.current = null
-    latestStreamingPartialRef.current = ''
-
-    if (streamingClientRef.current) {
-      streamingClientRef.current.close()
-      streamingClientRef.current = null
-    }
-  }
-
-  function handleStreamingEvent(event: StreamingSpeechEvent) {
-    if (event.type === 'partial') {
-      const cleaned = event.transcript.trim()
-      if (!cleaned || cleaned === latestStreamingPartialRef.current) {
-        return
-      }
-
-      latestStreamingPartialRef.current = cleaned
-      partialTranscriptHandlerRef.current?.(cleaned)
-      return
-    }
-
-    const resolver = resolveStreamingFinalRef.current
-    resolveStreamingFinalRef.current = null
-    if (resolver) {
-      resolver(event)
-    }
-  }
-
-  async function requestStreamingFinal() {
-    const streamingClient = streamingClientRef.current
-    if (!streamingClient) {
-      return null
-    }
-
-    const readyPromise = streamingReadyPromiseRef.current ?? Promise.resolve(false)
-    const ready = await Promise.race([readyPromise, delay(STREAMING_READY_WAIT_MS).then(() => false)])
-    if (!ready) {
-      return null
-    }
-
-    streamingClient.flush()
-    streamingClient.finalize()
-    const finalPromise = streamingFinalPromiseRef.current
-    if (!finalPromise) {
-      return null
-    }
-
-    return (await Promise.race([
-      finalPromise,
-      delay(STREAMING_FINAL_WAIT_MS).then(() => null),
-    ])) as StreamingSpeechFinalEvent | null
-  }
-
-  function startSilenceDetection(stream: MediaStream) {
-    stopSilenceDetection()
-
-    const AudioContextCtor =
-      window.AudioContext ??
-      (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
-    if (!AudioContextCtor) {
-      return
-    }
-
-    try {
-      const audioContext = new AudioContextCtor()
-      const analyser = audioContext.createAnalyser()
-      analyser.fftSize = 2048
-      analyser.smoothingTimeConstant = 0.2
-
-      const mediaSource = audioContext.createMediaStreamSource(stream)
-      mediaSource.connect(analyser)
-
-      audioContextRef.current = audioContext
-      analyserRef.current = analyser
-      mediaSourceRef.current = mediaSource
-      analysisBufferRef.current = new Uint8Array(analyser.fftSize)
-
-      const tick = () => {
-        const recorder = recorderRef.current
-        const analyserNode = analyserRef.current
-        const buffer = analysisBufferRef.current
-
-        if (!recorder || recorder.state === 'inactive' || !analyserNode || !buffer) {
-          silenceCheckFrameRef.current = null
-          return
-        }
-
-        analyserNode.getByteTimeDomainData(buffer)
-        const rms = calculateRms(buffer)
-        const now = Date.now()
-
-        if (rms >= SILENCE_RMS_THRESHOLD) {
-          speechStartedAtRef.current ??= now
-          silenceStartedAtRef.current = null
-        } else if (speechStartedAtRef.current !== null) {
-          if (silenceStartedAtRef.current === null) {
-            silenceStartedAtRef.current = now
-          } else if (
-            now - speechStartedAtRef.current >= MIN_SPEECH_CAPTURE_MS &&
-            now - silenceStartedAtRef.current >= SILENCE_STOP_MS
-          ) {
-            stopListening()
-            silenceCheckFrameRef.current = null
-            return
-          }
-        }
-
-        silenceCheckFrameRef.current = window.requestAnimationFrame(tick)
-      }
-
-      silenceCheckFrameRef.current = window.requestAnimationFrame(tick)
-    } catch {
-      stopSilenceDetection()
-    }
-  }
-
-  function stopSilenceDetection() {
-    if (silenceCheckFrameRef.current) {
-      window.cancelAnimationFrame(silenceCheckFrameRef.current)
-      silenceCheckFrameRef.current = null
-    }
-
-    silenceStartedAtRef.current = null
-    speechStartedAtRef.current = null
-    analysisBufferRef.current = null
-
-    if (mediaSourceRef.current) {
-      mediaSourceRef.current.disconnect()
-      mediaSourceRef.current = null
-    }
-
-    if (analyserRef.current) {
-      analyserRef.current.disconnect()
-      analyserRef.current = null
-    }
-
-    const audioContext = audioContextRef.current
-    audioContextRef.current = null
-    if (audioContext) {
-      void audioContext.close().catch(() => undefined)
-    }
-  }
-
-  async function waitForBrowserTranscript() {
-    const startedAt = Date.now()
-    while (Date.now() - startedAt < BROWSER_FINAL_WAIT_MS) {
-      const transcriptCandidate = latestBrowserFinalTranscriptRef.current || latestBrowserTranscriptRef.current
-      if (transcriptCandidate) {
-        return transcriptCandidate.trim()
-      }
-      await delay(50)
-    }
-
-    return (latestBrowserFinalTranscriptRef.current || latestBrowserTranscriptRef.current).trim()
   }
 
   function stopAudioPlayback() {
-    if (!audioRef.current) {
-      return
-    }
-
-    const currentAudio = audioRef.current
+    if (!audioRef.current) return
+    const a = audioRef.current
     audioRef.current = null
-    currentAudio.pause()
-    currentAudio.currentTime = 0
+    a.pause()
+    a.currentTime = 0
+  }
+
+  function notifyOnce(key: string, message: string, level: 'warning' | 'info' = 'warning') {
+    if (notifiedKeysRef.current.has(key)) return
+    notifiedKeysRef.current.add(key)
+    noticeHandlerRef.current(message, level)
   }
 
   return {
+    // Pipeline A — live caption, direct passthrough, zero overhead
+    interimTranscript,
+    // Core state
     listening,
-    capturePhase,
     recognitionSupported,
     synthesisSupported,
+    // Controls
     startListening,
     stopListening,
     speak,
   }
-
-  function notifyOnce(key: string, message: string, level: 'warning' | 'info' = 'warning') {
-    if (notifiedKeysRef.current.has(key)) {
-      return
-    }
-    notifiedKeysRef.current.add(key)
-    noticeHandlerRef.current(message, level)
-  }
-}
-
-function pickRecorderMimeType() {
-  const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4']
-  return candidates.find((candidate) => MediaRecorder.isTypeSupported(candidate)) ?? ''
 }
 
 function shouldIgnoreTranscript(
@@ -599,21 +317,15 @@ function shouldIgnoreTranscript(
   lastAccepted: { text: string; at: number } | null,
 ) {
   const normalized = normalizeTranscript(transcript)
-  if (!normalized) {
-    return true
-  }
+  if (!normalized) return true
 
-  if (AMBIENT_WATERMARK_PATTERNS.some((pattern) => pattern.test(normalized))) {
-    return true
-  }
+  if (AMBIENT_WATERMARK_PATTERNS.some((p) => p.test(normalized))) return true
 
   if (
     lastAccepted &&
     normalized === normalizeTranscript(lastAccepted.text) &&
     Date.now() - lastAccepted.at < REPEATED_TRANSCRIPT_WINDOW_MS
-  ) {
-    return true
-  }
+  ) return true
 
   return false
 }
@@ -626,17 +338,4 @@ function normalizeTranscript(text: string) {
     .replace(/[^a-z0-9\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
-}
-
-function calculateRms(buffer: Uint8Array<ArrayBuffer>) {
-  let sum = 0
-  for (const value of buffer) {
-    const normalized = (value - 128) / 128
-    sum += normalized * normalized
-  }
-  return Math.sqrt(sum / buffer.length)
-}
-
-function delay(ms: number) {
-  return new Promise((resolve) => window.setTimeout(resolve, ms))
 }

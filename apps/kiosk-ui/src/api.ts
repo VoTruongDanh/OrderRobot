@@ -157,6 +157,7 @@ export type StreamingSpeechFinalEvent = {
   message?: string | null
 }
 export type StreamingSpeechEvent = StreamingSpeechPartialEvent | StreamingSpeechFinalEvent
+export type StreamingSpeechMode = 'order' | 'caption'
 
 export class StreamingSpeechClient {
   private socket: WebSocket
@@ -215,11 +216,11 @@ export class StreamingSpeechClient {
     })
   }
 
-  start(filename = 'speech.webm') {
+  start(filename = 'speech.webm', mode: StreamingSpeechMode = 'order') {
     if (!this.isOpen) {
       return
     }
-    this.socket.send(`start:${filename}`)
+    this.socket.send(`start:${mode}:${filename}`)
   }
 
   sendChunk(chunk: Blob) {

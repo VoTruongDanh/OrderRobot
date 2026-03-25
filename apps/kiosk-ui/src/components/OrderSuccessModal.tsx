@@ -17,6 +17,7 @@ const currency = new Intl.NumberFormat('vi-VN', {
 
 export function OrderSuccessModal({ invoice, countdown, onClose }: OrderSuccessModalProps) {
   const [qrDataUrl, setQrDataUrl] = useState('')
+  const [showThankYou, setShowThankYou] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -46,6 +47,34 @@ export function OrderSuccessModal({ invoice, countdown, onClose }: OrderSuccessM
       cancelled = true
     }
   }, [invoice.qrValue])
+
+  // Show thank you screen when countdown reaches 0
+  useEffect(() => {
+    if (countdown === 0 && !showThankYou) {
+      setShowThankYou(true)
+    }
+  }, [countdown, showThankYou])
+
+  if (showThankYou) {
+    return (
+      <div className="order-success-modal" role="dialog" aria-modal="true" aria-labelledby="thank-you-title">
+        <div className="order-success-modal__backdrop" />
+        <section className="order-success-card order-success-card--thanking">
+          <div className="thank-you-content">
+            <div className="checkmark-animation">
+              <svg viewBox="0 0 52 52" className="checkmark-svg">
+                <circle className="checkmark-circle" cx="26" cy="26" r="25" fill="none"/>
+                <path className="checkmark-check" fill="none" d="M14.1 27.2l7.1 7.2 16.7-16.8"/>
+              </svg>
+            </div>
+            <h2 id="thank-you-title">Cảm ơn quý khách!</h2>
+            <p>Đơn hàng đã được xác nhận thành công</p>
+            <p className="thank-you-order-id">Mã đơn: {invoice.orderId}</p>
+          </div>
+        </section>
+      </div>
+    )
+  }
 
   return (
     <div className="order-success-modal" role="dialog" aria-modal="true" aria-labelledby="order-success-title">
@@ -113,7 +142,10 @@ export function OrderSuccessModal({ invoice, countdown, onClose }: OrderSuccessM
             <div aria-hidden="true" className="order-success-card__countdown-bar">
               <div
                 className="order-success-card__countdown-fill"
-                style={{ width: `${(countdown / 6) * 100}%` }}
+                style={{ 
+                  width: `${(countdown / 6) * 100}%`,
+                  transition: 'width 1s linear'
+                }}
               />
             </div>
           </div>

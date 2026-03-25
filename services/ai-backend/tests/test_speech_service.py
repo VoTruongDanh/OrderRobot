@@ -45,15 +45,23 @@ def test_transcribe_retries_without_vad_when_first_pass_is_empty(tmp_path, monke
 
     monkeypatch.setattr(service, "_get_stt_model", lambda: object())
 
-    def fake_run_transcription_pass(_model, _content, _filename, _language, *, vad_filter: bool) -> str:
+    def fake_run_transcription_pass(
+        _model,
+        _content,
+        _filename,
+        _language,
+        *,
+        vad_filter: bool,
+        mode: str = "order",
+    ) -> str:
         attempts.append(vad_filter)
-        return "" if vad_filter else "cho mình 1 trà đào"
+        return "" if vad_filter else "cho minh 1 tra dao"
 
     monkeypatch.setattr(service, "_run_transcription_pass", fake_run_transcription_pass)
 
     transcript = service._transcribe_sync(b"fake-audio", "sample.webm")
 
-    assert transcript == "cho mình 1 trà đào"
+    assert transcript == "cho minh 1 tra dao"
     assert attempts == [True, False]
 
 
@@ -63,12 +71,8 @@ def test_transcribe_raises_soft_retry_error_when_both_passes_are_empty(monkeypat
     monkeypatch.setattr(service, "_get_stt_model", lambda: object())
     monkeypatch.setattr(service, "_run_transcription_pass", lambda *_args, **_kwargs: "")
 
-    try:
+    with pytest.raises(SpeechNotHeardError):
         service._transcribe_sync(b"fake-audio", "sample.webm")
-    except SpeechNotHeardError as exc:
-        assert "nói lại" in str(exc)
-    else:
-        raise AssertionError("Expected SpeechNotHeardError when transcript stays empty.")
 
 
 def test_run_transcription_pass_uses_stream_and_disables_timestamps() -> None:
@@ -95,6 +99,38 @@ def test_run_transcription_pass_uses_stream_and_disables_timestamps() -> None:
     )
 
     assert transcript == "cho minh 1 matcha"
+
+
+def test_run_transcription_pass_skips_ordering_bias_for_caption_mode() -> None:
+    service = SpeechService(build_settings())
+
+    class FakeSegment:
+        def __init__(self, text: str) -> None:
+            self.text = text
+
+    captured_kwargs: dict[str, object] = {}
+
+    class FakeModel:
+        def transcribe(self, audio, **kwargs):
+            captured_kwargs.update(kwargs)
+            assert audio.read() == b"fake-audio"
+            return [FakeSegment("alo mot hai cap dan")], None
+
+    transcript = service._run_transcription_pass(
+        FakeModel(),
+        b"fake-audio",
+        "sample.webm",
+        "vi",
+        vad_filter=True,
+        decode_mode="partial",
+        mode="caption",
+    )
+
+    assert transcript == "alo mot hai cap dan"
+    assert captured_kwargs["hotwords"] is None
+    assert captured_kwargs["initial_prompt"] is None
+    assert captured_kwargs["beam_size"] == 1
+    assert captured_kwargs["best_of"] == 1
 
 
 def test_preload_stt_assets_builds_prompt_hotwords_and_lexicon(monkeypatch) -> None:
@@ -185,13 +221,20 @@ async def test_preload_stt_fetches_menu_items_once_for_sync_caches() -> None:
 
     assert core_client.calls == 1
     assert "Latte" in (service._build_stt_hotwords() or "")
-    assert ("it ngot" in dict(service._get_ordering_lexicon())) is True
+    assert "it ngot" in dict(service._get_ordering_lexicon())
 
 
 def test_is_actionable_transcript_reuses_post_processing() -> None:
     service = SpeechService(build_settings())
 
     assert service.is_actionable_transcript("cafe mui") is True
+
+
+def test_caption_mode_keeps_generic_text_without_menu_post_processing() -> None:
+    service = SpeechService(build_settings())
+
+    assert service._finalize_transcript("cafe mui", mode="caption") == "cafe mui"
+    assert service._accept_transcript("alo", mode="caption") is True
 
 
 def test_best_lexicon_match_handles_vietnamese_normalization() -> None:

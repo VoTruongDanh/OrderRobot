@@ -13,6 +13,7 @@ import unicodedata
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 from pathlib import Path
+from typing import Literal
 
 import edge_tts
 import pyttsx3
@@ -24,6 +25,8 @@ from app.models import MenuItem
 from app.services.core_backend_client import CoreBackendClient
 
 logger = logging.getLogger(__name__)
+
+SpeechMode = Literal["order", "caption"]
 
 
 COMMON_ORDERING_PHRASES = {
@@ -108,17 +111,20 @@ class SpeechService:
         self._lexicon_cache: list[tuple[str, str]] | None = None
         self._menu_items_cache: list[MenuItem] | None = None
 
-    async def synthesize(self, text: str) -> SynthesizedAudio:
-        return await self._synthesize_async(text)
+    async def synthesize(self, text: str, voice: str | None = None, rate: int | None = None) -> SynthesizedAudio:
+        return await self._synthesize_async(text, voice, rate)
 
-    async def synthesize_stream(self, text: str):
+    async def synthesize_stream(self, text: str, voice: str | None = None, rate: int | None = None):
         """Stream audio chunks directly from Edge TTS for low latency playback."""
         normalized_text = normalize_speech_text(text)
+        actual_voice = voice or self.settings.tts_voice
+        actual_rate = rate or parse_tts_rate(self.settings.tts_rate)
+        
         try:
             communicate = edge_tts.Communicate(
                 text=normalized_text,
-                voice=pick_edge_voice(self.settings.voice_lang, self.settings.tts_voice),
-                rate=convert_rate_to_edge(parse_tts_rate(self.settings.tts_rate)),
+                voice=pick_edge_voice(self.settings.voice_lang, actual_voice),
+                rate=convert_rate_to_edge(actual_rate),
             )
             async for chunk in communicate.stream():
                 if chunk["type"] == "audio":
@@ -127,7 +133,7 @@ class SpeechService:
             # Fallback: Generate full audio synchronously and yield as single chunk
             # Cannot use asyncio.to_thread in streaming context due to executor lifecycle
             try:
-                audio = await self._synthesize_async(normalized_text)
+                audio = await self._synthesize_async(normalized_text, voice, rate)
                 yield audio.content
             except Exception as fallback_error:
                 # Log both errors but don't crash the stream
@@ -138,28 +144,38 @@ class SpeechService:
                 # Yield empty to close stream gracefully
                 return
 
-    async def transcribe(self, file: UploadFile) -> str:
+    async def transcribe(self, file: UploadFile, mode: SpeechMode = "order") -> str:
         content = await file.read()
         if not content:
             raise ValueError("Audio upload trong.")
 
         filename = file.filename or "speech.webm"
         await self._ensure_menu_items_loaded()
-        return await asyncio.to_thread(self._transcribe_sync, content, filename)
+        return await asyncio.to_thread(self._transcribe_sync, content, filename, mode)
 
-    async def transcribe_partial(self, content: bytes, filename: str = "speech.webm") -> str:
+    async def transcribe_partial(
+        self,
+        content: bytes,
+        filename: str = "speech.webm",
+        mode: SpeechMode = "order",
+    ) -> str:
         if not content:
             return ""
 
         await self._ensure_menu_items_loaded()
-        return await asyncio.to_thread(self._transcribe_partial_sync, content, filename)
+        return await asyncio.to_thread(self._transcribe_partial_sync, content, filename, mode)
 
-    async def transcribe_bytes(self, content: bytes, filename: str = "speech.webm") -> str:
+    async def transcribe_bytes(
+        self,
+        content: bytes,
+        filename: str = "speech.webm",
+        mode: SpeechMode = "order",
+    ) -> str:
         if not content:
             raise ValueError("Audio upload trong.")
 
         await self._ensure_menu_items_loaded()
-        return await asyncio.to_thread(self._transcribe_sync, content, filename)
+        return await asyncio.to_thread(self._transcribe_sync, content, filename, mode)
 
     async def preload_stt(self) -> None:
         await self._ensure_menu_items_loaded()
@@ -185,18 +201,21 @@ class SpeechService:
         self._build_stt_hotwords()
         self._get_ordering_lexicon()
 
-    async def _synthesize_async(self, text: str) -> SynthesizedAudio:
+    async def _synthesize_async(self, text: str, voice: str | None = None, rate: int | None = None) -> SynthesizedAudio:
         normalized_text = normalize_speech_text(text)
         try:
-            return await self._synthesize_with_edge_tts(normalized_text)
+            return await self._synthesize_with_edge_tts(normalized_text, voice, rate)
         except Exception:
             return await asyncio.to_thread(self._synthesize_sync, normalized_text)
 
-    async def _synthesize_with_edge_tts(self, text: str) -> SynthesizedAudio:
+    async def _synthesize_with_edge_tts(self, text: str, voice: str | None = None, rate: int | None = None) -> SynthesizedAudio:
+        actual_voice = voice or self.settings.tts_voice
+        actual_rate = rate or parse_tts_rate(self.settings.tts_rate)
+        
         communicate = edge_tts.Communicate(
             text=text,
-            voice=pick_edge_voice(self.settings.voice_lang, self.settings.tts_voice),
-            rate=convert_rate_to_edge(parse_tts_rate(self.settings.tts_rate)),
+            voice=pick_edge_voice(self.settings.voice_lang, actual_voice),
+            rate=convert_rate_to_edge(actual_rate),
         )
         audio_chunks: list[bytes] = []
         async for chunk in communicate.stream():
@@ -274,28 +293,49 @@ $synth.Dispose()
             error_text = (completed.stderr or completed.stdout or "").strip()
             raise RuntimeError(error_text or "Windows TTS fallback khong tao duoc audio.")
 
-    def _transcribe_sync(self, content: bytes, filename: str) -> str:
+    def _transcribe_sync(self, content: bytes, filename: str, mode: SpeechMode = "order") -> str:
         model = self._get_stt_model()
         language = self.settings.voice_lang.split("-", 1)[0].lower()
 
-        transcript = self._post_process_transcript(
-            self._run_transcription_pass(model, content, filename, language, vad_filter=True),
+        transcript = self._finalize_transcript(
+            self._run_transcription_pass(
+                model,
+                content,
+                filename,
+                language,
+                vad_filter=True,
+                mode=mode,
+            ),
+            mode=mode,
         )
-        if self._looks_actionable(transcript):
+        if self._accept_transcript(transcript, mode=mode):
             return transcript
 
-        transcript = self._post_process_transcript(
-            self._run_transcription_pass(model, content, filename, language, vad_filter=False),
+        transcript = self._finalize_transcript(
+            self._run_transcription_pass(
+                model,
+                content,
+                filename,
+                language,
+                vad_filter=False,
+                mode=mode,
+            ),
+            mode=mode,
         )
-        if self._looks_actionable(transcript):
+        if self._accept_transcript(transcript, mode=mode):
             return transcript
 
         raise SpeechNotHeardError("Mình nghe chưa rõ, bạn nói lại giúp mình nhé.")
 
-    def _transcribe_partial_sync(self, content: bytes, filename: str) -> str:
+    def _transcribe_partial_sync(
+        self,
+        content: bytes,
+        filename: str,
+        mode: SpeechMode = "order",
+    ) -> str:
         model = self._get_stt_model()
         language = self.settings.voice_lang.split("-", 1)[0].lower()
-        transcript = self._post_process_transcript(
+        transcript = self._finalize_transcript(
             self._run_transcription_pass(
                 model,
                 content,
@@ -303,7 +343,9 @@ $synth.Dispose()
                 language,
                 vad_filter=True,
                 decode_mode="partial",
+                mode=mode,
             ),
+            mode=mode,
         )
         normalized = normalize_vietnamese_text(transcript)
         if len(normalized) < 3:
@@ -319,14 +361,19 @@ $synth.Dispose()
         *,
         vad_filter: bool,
         decode_mode: str = "final",
+        mode: SpeechMode = "order",
     ) -> str:
         partial_mode = decode_mode == "partial"
-        beam_size = (
-            self.settings.stt_partial_beam_size if partial_mode else self.settings.stt_beam_size
-        )
-        best_of = (
-            self.settings.stt_partial_best_of if partial_mode else self.settings.stt_best_of
-        )
+        if mode == "caption" and partial_mode:
+            beam_size = 1
+            best_of = 1
+        else:
+            beam_size = (
+                self.settings.stt_partial_beam_size if partial_mode else self.settings.stt_beam_size
+            )
+            best_of = (
+                self.settings.stt_partial_best_of if partial_mode else self.settings.stt_best_of
+            )
         silence_ms = (
             max(220, self.settings.stt_vad_min_silence_ms - 160)
             if partial_mode
@@ -348,8 +395,8 @@ $synth.Dispose()
             log_prob_threshold=-1.0,
             no_speech_threshold=0.45,
             vad_parameters={"min_silence_duration_ms": silence_ms},
-            initial_prompt=None if partial_mode else self._build_stt_prompt(),
-            hotwords=self._build_stt_hotwords(),
+            initial_prompt=None if partial_mode or mode == "caption" else self._build_stt_prompt(),
+            hotwords=None if mode == "caption" else self._build_stt_hotwords(),
         )
         return clean_spacing(" ".join(segment.text.strip() for segment in segments).strip())
 
@@ -495,6 +542,16 @@ $synth.Dispose()
 
     def is_actionable_transcript(self, transcript: str) -> bool:
         return self._looks_actionable(self._post_process_transcript(transcript))
+
+    def _finalize_transcript(self, transcript: str, *, mode: SpeechMode) -> str:
+        if mode == "caption":
+            return clean_spacing(transcript)
+        return self._post_process_transcript(transcript)
+
+    def _accept_transcript(self, transcript: str, *, mode: SpeechMode) -> bool:
+        if mode == "caption":
+            return len(normalize_vietnamese_text(transcript)) >= 2
+        return self._looks_actionable(transcript)
 
     def _get_ordering_lexicon(self) -> list[tuple[str, str]]:
         if self._lexicon_cache is not None:

@@ -66,7 +66,23 @@ def health() -> dict[str, object]:
         "voice_style": settings.voice_style,
         "stt_model": settings.stt_model,
         "tts_voice": settings.tts_voice,
+        "tts_rate": settings.tts_rate,
         "active_sessions": conversation_engine.active_session_count(),
+    }
+
+
+@app.post("/config/tts")
+async def update_tts_config(voice: str | None = None, rate: int | None = None) -> dict[str, str]:
+    """Update TTS voice and rate at runtime without restarting backend."""
+    if voice is not None:
+        settings.tts_voice = voice
+    if rate is not None:
+        settings.tts_rate = str(rate)
+    
+    return {
+        "status": "ok",
+        "tts_voice": settings.tts_voice,
+        "tts_rate": settings.tts_rate,
     }
 
 
@@ -120,7 +136,7 @@ async def reset_session(session_id: str) -> ConversationResponse:
 @app.post("/speech/synthesize")
 async def synthesize_speech(payload: SpeechSynthesisRequest) -> Response:
     try:
-        audio = await speech_service.synthesize(payload.text)
+        audio = await speech_service.synthesize(payload.text, payload.voice, payload.rate)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Khong the tao giong noi: {exc}") from exc
 
@@ -131,7 +147,7 @@ async def synthesize_speech(payload: SpeechSynthesisRequest) -> Response:
 async def synthesize_speech_stream(payload: SpeechSynthesisRequest) -> StreamingResponse:
     try:
         async def audio_stream():
-            async for chunk in speech_service.synthesize_stream(payload.text):
+            async for chunk in speech_service.synthesize_stream(payload.text, payload.voice, payload.rate):
                 yield chunk
 
         return StreamingResponse(audio_stream(), media_type="audio/mpeg")
@@ -155,6 +171,7 @@ async def transcribe_speech_ws(websocket: WebSocket) -> None:
     await websocket.accept()
 
     filename = "speech.webm"
+    stream_mode = "order"
     audio_buffer = bytearray()
     partial_task: asyncio.Task[str] | None = None
     last_partial = ""
@@ -162,6 +179,16 @@ async def transcribe_speech_ws(websocket: WebSocket) -> None:
     last_partial_size = 0
     min_partial_interval_sec = 0.32
     min_partial_delta_bytes = 6_000
+
+    def configure_stream_mode(mode: str) -> None:
+        nonlocal stream_mode, min_partial_interval_sec, min_partial_delta_bytes
+        stream_mode = "caption" if mode == "caption" else "order"
+        if stream_mode == "caption":
+            min_partial_interval_sec = 0.22
+            min_partial_delta_bytes = 3_000
+        else:
+            min_partial_interval_sec = 0.32
+            min_partial_delta_bytes = 6_000
 
     async def flush_partial(*, force: bool = False) -> None:
         nonlocal partial_task, last_partial, last_partial_at, last_partial_size
@@ -180,7 +207,9 @@ async def transcribe_speech_ws(websocket: WebSocket) -> None:
         ):
             return
 
-        partial_task = asyncio.create_task(speech_service.transcribe_partial(snapshot, filename))
+        partial_task = asyncio.create_task(
+            speech_service.transcribe_partial(snapshot, filename, mode=stream_mode)
+        )
         try:
             transcript = await partial_task
         except Exception:
@@ -210,7 +239,13 @@ async def transcribe_speech_ws(websocket: WebSocket) -> None:
                 continue
 
             if payload.startswith("start:"):
-                filename = payload.split(":", 1)[1] or "speech.webm"
+                parts = payload.split(":", 2)
+                if len(parts) >= 3:
+                    configure_stream_mode(parts[1])
+                    filename = parts[2] or "speech.webm"
+                else:
+                    configure_stream_mode("order")
+                    filename = parts[1] if len(parts) == 2 and parts[1] else "speech.webm"
                 audio_buffer.clear()
                 last_partial = ""
                 last_partial_at = 0.0
@@ -240,14 +275,18 @@ async def transcribe_speech_ws(websocket: WebSocket) -> None:
                         continue
 
                     await flush_partial(force=True)
-                    if last_partial and speech_service.is_actionable_transcript(last_partial):
+                    if stream_mode == "order" and last_partial and speech_service.is_actionable_transcript(last_partial):
                         await websocket.send_json(
                             {"type": "final", "status": "ok", "transcript": last_partial},
                         )
                         audio_buffer.clear()
                         continue
 
-                    final_transcript = await speech_service.transcribe_bytes(snapshot, filename)
+                    final_transcript = await speech_service.transcribe_bytes(
+                        snapshot,
+                        filename,
+                        mode=stream_mode,
+                    )
                     await websocket.send_json(
                         {"type": "final", "status": "ok", "transcript": final_transcript},
                     )
