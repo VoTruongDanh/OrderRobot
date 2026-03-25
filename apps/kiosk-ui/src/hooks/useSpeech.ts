@@ -7,6 +7,7 @@ type UseSpeechOptions = {
   lang: string
   onTranscript: (transcript: string) => void
   onNotice: (message: string, level?: 'warning' | 'info') => void
+  onBargeIn?: () => void  // called when user interrupts bot mid-speech
 }
 
 const REPEATED_TRANSCRIPT_WINDOW_MS = 15000
@@ -24,16 +25,29 @@ const AMBIENT_WATERMARK_PATTERNS = [
 // Shorter = more responsive but may cut off slow speakers.
 const SUBMIT_SILENCE_MS = 600
 
-export function useSpeech({ lang, onTranscript, onNotice }: UseSpeechOptions) {
+// How long to keep the echo gate closed after bot audio ends.
+// This catches residual mic echo from speaker output.
+const ECHO_COOLDOWN_MS = 500
+
+// Minimum interim transcript length to consider as real user speech (barge-in)
+const BARGE_IN_MIN_CHARS = 4
+
+export function useSpeech({ lang, onTranscript, onNotice, onBargeIn }: UseSpeechOptions) {
   const transcriptHandlerRef = useRef(onTranscript)
   const noticeHandlerRef = useRef(onNotice)
+  const bargeInHandlerRef = useRef(onBargeIn)
   const notifiedKeysRef = useRef<Set<string>>(new Set())
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const lastAcceptedTranscriptRef = useRef<{ text: string; at: number } | null>(null)
 
+  // === Echo cancellation state ===
+  // When bot is speaking, we gate all incoming transcripts to avoid
+  // the microphone picking up the speaker output as user input.
+  const isSpeakingRef = useRef(false)
+  const echoCooldownTimerRef = useRef<number | null>(null)
+  const echoGateOpenRef = useRef(true)  // false = gate closed, reject transcripts
+
   // === Pipeline B state ===
-  // These refs manage the "process after silence" gate.
-  // They are intentionally NOT React state — updates here must not trigger re-renders.
   const submitTimerRef = useRef<number | null>(null)
   const pendingSubmitTextRef = useRef('')
   const accumulatedFinalRef = useRef('')
@@ -58,7 +72,8 @@ export function useSpeech({ lang, onTranscript, onNotice }: UseSpeechOptions) {
   useEffect(() => {
     transcriptHandlerRef.current = onTranscript
     noticeHandlerRef.current = onNotice
-  }, [onNotice, onTranscript])
+    bargeInHandlerRef.current = onBargeIn
+  }, [onNotice, onTranscript, onBargeIn])
 
   useEffect(() => {
     return () => {
@@ -66,6 +81,7 @@ export function useSpeech({ lang, onTranscript, onNotice }: UseSpeechOptions) {
       stopAudioPlayback()
       clearSubmitTimer()
       clearInterimSubmitTimer()
+      clearEchoCooldown()
     }
   }, [])
 
@@ -79,6 +95,12 @@ export function useSpeech({ lang, onTranscript, onNotice }: UseSpeechOptions) {
   useEffect(() => {
     const committed = finalTranscript.trim()
     if (!committed) return
+
+    // === Echo gate: reject transcripts while bot is speaking ===
+    if (!echoGateOpenRef.current) {
+      console.log('[useSpeech] Echo gate CLOSED — dropping final transcript:', committed.slice(0, 40))
+      return
+    }
 
     // Extract only new content since the last time we scheduled a submit
     const newPart = committed.startsWith(accumulatedFinalRef.current)
@@ -131,6 +153,18 @@ export function useSpeech({ lang, onTranscript, onNotice }: UseSpeechOptions) {
       lastInterimTextRef.current = ''
       return
     }
+
+    // === Barge-in detection ===
+    // If bot is speaking and user says something substantial, interrupt the bot
+    if (isSpeakingRef.current && trimmed.length >= BARGE_IN_MIN_CHARS) {
+      console.log('[useSpeech] BARGE-IN detected:', trimmed.slice(0, 30))
+      stopAudioPlayback()
+      openEchoGate()  // user is talking — open the gate
+      bargeInHandlerRef.current?.()
+    }
+
+    // Don't process if echo gate is closed
+    if (!echoGateOpenRef.current) return
     
     // If interim text changed, reset the timer
     if (trimmed !== lastInterimTextRef.current) {
@@ -180,6 +214,30 @@ export function useSpeech({ lang, onTranscript, onNotice }: UseSpeechOptions) {
     }
   }
 
+  function clearEchoCooldown() {
+    if (echoCooldownTimerRef.current !== null) {
+      window.clearTimeout(echoCooldownTimerRef.current)
+      echoCooldownTimerRef.current = null
+    }
+  }
+
+  function closeEchoGate() {
+    echoGateOpenRef.current = false
+    isSpeakingRef.current = true
+    clearEchoCooldown()
+  }
+
+  function openEchoGate() {
+    isSpeakingRef.current = false
+    // Delay opening the gate to catch residual speaker echo
+    clearEchoCooldown()
+    echoCooldownTimerRef.current = window.setTimeout(() => {
+      echoGateOpenRef.current = true
+      echoCooldownTimerRef.current = null
+      console.log('[useSpeech] Echo gate OPENED after cooldown')
+    }, ECHO_COOLDOWN_MS)
+  }
+
   async function startListening() {
     if (!browserSupportsSpeechRecognition) {
       const error = new Error('Browser không hỗ trợ nhận giọng nói')
@@ -199,7 +257,8 @@ export function useSpeech({ lang, onTranscript, onNotice }: UseSpeechOptions) {
       throw error
     }
 
-    stopAudioPlayback()
+    // Don't stop playback here — allow barge-in scenario
+    // stopAudioPlayback() is now only called on explicit user action or barge-in
 
     // Reset Pipeline B state for clean turn
     clearSubmitTimer()
@@ -264,21 +323,25 @@ export function useSpeech({ lang, onTranscript, onNotice }: UseSpeechOptions) {
     const audioUrl = URL.createObjectURL(blob)
     const audio = new Audio(audioUrl)
     audioRef.current = audio
+    closeEchoGate()  // prevent mic from hearing speaker output
 
     return new Promise<void>((resolve, reject) => {
       audio.onended = () => {
         URL.revokeObjectURL(audioUrl)
         if (audioRef.current === audio) audioRef.current = null
+        openEchoGate()  // re-open gate after speech ends (with cooldown)
         resolve()
       }
       audio.onerror = () => {
         URL.revokeObjectURL(audioUrl)
         if (audioRef.current === audio) audioRef.current = null
+        openEchoGate()
         reject(new Error('Không thể phát audio từ backend.'))
       }
       void audio.play().catch(() => {
         URL.revokeObjectURL(audioUrl)
         if (audioRef.current === audio) audioRef.current = null
+        openEchoGate()
         reject(new Error('Trình duyệt chặn phát audio tự động.'))
       })
     })
@@ -290,12 +353,75 @@ export function useSpeech({ lang, onTranscript, onNotice }: UseSpeechOptions) {
     audioRef.current = null
     a.pause()
     a.currentTime = 0
+    openEchoGate()  // immediately re-open gate on manual stop
   }
 
   function notifyOnce(key: string, message: string, level: 'warning' | 'info' = 'warning') {
     if (notifiedKeysRef.current.has(key)) return
     notifiedKeysRef.current.add(key)
     noticeHandlerRef.current(message, level)
+  }
+
+  /** Speak text while simultaneously listening for user input (barge-in enabled).
+   * If the user starts speaking, bot audio is cut and their input is processed. */
+  async function speakWithBargeIn(text: string): Promise<void> {
+    if (!synthesisSupported) {
+      throw new Error('Trình duyệt hiện tại không hỗ trợ phát audio.')
+    }
+
+    stopAudioPlayback()
+
+    // Reset Pipeline B state for a clean concurrent listen
+    clearSubmitTimer()
+    clearInterimSubmitTimer()
+    pendingSubmitTextRef.current = ''
+    accumulatedFinalRef.current = ''
+    lastInterimTextRef.current = ''
+    resetTranscript()
+
+    // Start listening concurrently — echo gate prevents bot audio being processed
+    if (recognitionSupported) {
+      try {
+        await SpeechRecognition.startListening({
+          continuous: true,
+          interimResults: true,
+          language: lang,
+        })
+        console.log('[useSpeech] Barge-in listener active during speech')
+      } catch (error) {
+        console.warn('[useSpeech] Could not start barge-in listener:', error)
+      }
+    }
+
+    // Now speak (echo gate activates inside playAudioBlob)
+    try {
+      const stream = await synthesizeSpeechStream(text)
+      const reader = stream.getReader()
+      const chunks: Uint8Array[] = []
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        if (value) chunks.push(value)
+      }
+
+      if (chunks.length === 0) throw new Error('Không nhận được audio từ backend.')
+
+      const totalLength = chunks.reduce((sum, c) => sum + c.length, 0)
+      const combined = new Uint8Array(totalLength)
+      let offset = 0
+      for (const c of chunks) { combined.set(c, offset); offset += c.length }
+
+      await playAudioBlob(new Blob([combined], { type: 'audio/mpeg' }))
+    } catch {
+      // Fallback to non-streaming
+      try {
+        const audioBlob = await synthesizeSpeech(text)
+        await playAudioBlob(audioBlob)
+      } catch {
+        console.warn('[useSpeech] Both streaming and fallback TTS failed')
+      }
+    }
   }
 
   return {
@@ -305,10 +431,13 @@ export function useSpeech({ lang, onTranscript, onNotice }: UseSpeechOptions) {
     listening,
     recognitionSupported,
     synthesisSupported,
+    isSpeaking: isSpeakingRef.current,
     // Controls
     startListening,
     stopListening,
     speak,
+    speakWithBargeIn,
+    stopAudioPlayback,
   }
 }
 

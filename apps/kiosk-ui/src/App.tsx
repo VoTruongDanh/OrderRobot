@@ -145,8 +145,10 @@ function App() {
     recognitionSupported,
     synthesisSupported,
     speak,
+    speakWithBargeIn,
     startListening,
     stopListening,
+    stopAudioPlayback: _stopAudioPlayback,
     listening,
   } = useSpeech({
     lang: 'vi-VN',
@@ -154,6 +156,11 @@ function App() {
       void handleTranscriptRef.current(transcript)
     },
     onNotice: addNotice,
+    onBargeIn: () => {
+      console.log('[App] User barged in — switching to listening mode')
+      setRobotMode('listening')
+      setStatusMessage('Robot đã ngừng nói và đang nghe mình...')
+    },
   })
 
   const { videoRef, cameraReady, detectorSupported, presenceDetected } = usePresenceDetection({
@@ -255,7 +262,7 @@ function App() {
       }
 
       try {
-        await speak(response.reply_text)
+        await speakWithBargeIn(response.reply_text)
       } catch (error) {
         const message =
           error instanceof Error
@@ -264,20 +271,15 @@ function App() {
         addNotice(message, 'info')
       }
 
+      // Mic is already open from speakWithBargeIn, just update mode
       if (recognitionSupported && autoListen) {
         setRobotMode('listening')
         setStatusMessage('Robot đang nghe yêu cầu tiếp theo để tiếp tục đặt món.')
-        try {
-          await startListening()
-        } catch (error) {
-          console.error('[handleAssistantResponse] Failed to auto-listen:', error)
-          setRobotMode('idle')
-        }
       } else {
         setRobotMode('idle')
       }
     }
-  }, [addNotice, appendTranscript, recognitionSupported, speak, startListening])
+  }, [addNotice, appendTranscript, recognitionSupported, speakWithBargeIn])
 
   useEffect(() => {
     if (!successModalInvoice) {
@@ -452,11 +454,9 @@ function App() {
           return current
         })
 
-        // Play complete audio using speak() from useSpeech hook
-        // Audio plays in parallel with popup display for order completion
-        if (audioChunks.length > 0) {
+        // Play complete audio using speak() from useSpeech hook (respects echo gate)
+        if (audioChunks.length > 0 && !orderCreatedDetected) {
           try {
-            // Combine all audio chunks into single blob
             const totalLength = audioChunks.reduce((sum, chunk) => sum + chunk.length, 0)
             const combinedAudio = new Uint8Array(totalLength)
             let offset = 0
@@ -464,7 +464,7 @@ function App() {
               combinedAudio.set(chunk, offset)
               offset += chunk.length
             }
-            
+            // Use speak() which goes through the hook's echo gate + audio management
             const audioBlob = new Blob([combinedAudio], { type: 'audio/mpeg' })
             const audioUrl = URL.createObjectURL(audioBlob)
             const audio = new Audio(audioUrl)
@@ -484,6 +484,24 @@ function App() {
             console.warn('Failed to play streaming audio:', error)
             addNotice('Không thể phát audio từ backend.', 'info')
           }
+        } else if (audioChunks.length > 0 && orderCreatedDetected) {
+          // For order completion, just play audio without restarting mic
+          try {
+            const totalLength = audioChunks.reduce((sum, chunk) => sum + chunk.length, 0)
+            const combinedAudio = new Uint8Array(totalLength)
+            let offset = 0
+            for (const chunk of audioChunks) {
+              combinedAudio.set(chunk, offset)
+              offset += chunk.length
+            }
+            const audioBlob = new Blob([combinedAudio], { type: 'audio/mpeg' })
+            const audioUrl = URL.createObjectURL(audioBlob)
+            const audio = new Audio(audioUrl)
+            audio.onended = () => URL.revokeObjectURL(audioUrl)
+            void audio.play()
+          } catch {
+            // Ignore audio errors on order completion — popup is the priority
+          }
         }
 
         // If order was created, we're done (popup already shown)
@@ -492,18 +510,15 @@ function App() {
           return
         }
 
-        // Auto-listen for next turn if not order completion
+        // Restart listening after streaming response
         if (recognitionSupported) {
           setRobotMode('listening')
           setStatusMessage('Robot đang nghe yêu cầu tiếp theo để tiếp tục đặt món.')
-          // Longer delay to ensure audio context is fully cleaned up
-          await new Promise(resolve => setTimeout(resolve, 300))
           try {
             await startListening()
-            console.log('[Auto-listen] Successfully started listening after response')
+            console.log('[submitIntent] Successfully restarted listening after streaming')
           } catch (error) {
-            console.error('[Auto-listen] Failed to start listening:', error)
-            addNotice('Không thể tự động bật mic. Vui lòng nhấn nút "Nói với robot".', 'warning')
+            console.error('[submitIntent] Failed to restart listening:', error)
             setRobotMode('idle')
           }
         } else {

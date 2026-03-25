@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import difflib
 import logging
 import random
 import re
@@ -35,13 +36,64 @@ QUANTITY_WORDS = {
     "ba": 3,
     "bon": 4,
     "nam": 5,
+    "sau": 6,
+    "bay": 7,
+    "tam": 8,
+    "chin": 9,
+    "muoi": 10,
 }
-CONFIRM_KEYWORDS = {"xac nhan", "dong y", "ok", "oke", "dat di", "chot don"}
+CONFIRM_KEYWORDS = {"xac nhan", "dong y", "ok", "oke", "dat di", "chot don", "xac nhan don", "len don di"}
 RESET_KEYWORDS = {"huy", "lam lai", "dat lai", "bo het"}
-REMOVE_KEYWORDS = {"bo", "xoa", "huy mon", "khong lay"}
-RECOMMEND_KEYWORDS = {"goi y", "tu van", "nen uong", "nen an", "de uong", "it ngot", "mon nao"}
-CHECKOUT_KEYWORDS = {"xong", "dat luon", "len don", "chot don", "thanh toan"}
+REMOVE_KEYWORDS = {"bo", "xoa", "huy mon", "khong lay", "bo di", "xoa di", "xoa mon", "bo mon"}
+RECOMMEND_KEYWORDS = {"goi y", "tu van", "nen uong", "nen an", "de uong", "it ngot", "mon nao", "co gi ngon", "ngon", "gioi thieu"}
+CHECKOUT_KEYWORDS = {"xong", "dat luon", "len don", "chot don", "thanh toan", "xong roi", "het roi"}
 SEGMENT_SPLIT_PATTERN = re.compile(r"\s*(?:,|\bva\b|\bvoi\b|\bcung\b|\bthem\b)\s*")
+
+# Vietnamese STT common misrecognitions and aliases
+# Maps normalized (diacritics-stripped) words to their correct forms
+_STT_ALIASES: dict[str, str] = {
+    # Diacritics confusion
+    "da xay": "da xay",
+    "da xai": "da xay",
+    "da xuy": "da xay",
+    "day xay": "da xay",
+    # Socola variants
+    "so co la": "socola",
+    "chocolate": "socola",
+    "choco": "socola",
+    "socolate": "socola",
+    # Vowel confusion by STT
+    "kim sua": "kem sua",
+    "kin sua": "kem sua",
+    # Common homophones / STT errors (only compound phrases to avoid false positives)
+    "cho vai": "tra vai",   # "chợ vải" misheard → "trà vải"
+    "cha sua": "tra sua",
+    "ba xi u": "bac xiu",
+    "bac siu": "bac xiu",
+    "bax xiu": "bac xiu",
+    "cap phe": "ca phe",
+    "cafe": "ca phe",
+    "coffee": "ca phe",
+    "cofe": "ca phe",
+    "mat cha": "matcha",
+    "mat tra": "matcha",
+    "mac cha": "matcha",
+    "flan": "flan",
+    "plan": "flan",
+    "phan": "flan",
+    # Fruit/flavor confusion
+    "trao": "tra dao",
+    "chanh day": "chanh day",
+    "chan day": "chanh day",
+    "vai": "vai",
+    "vay": "vai",
+    # Action confusion
+    "cho em": "cho",
+    "gui em": "cho",
+}
+
+# Minimum similarity ratio for fuzzy matching (0.0 - 1.0)
+_FUZZY_THRESHOLD = 0.65
 
 # Scenes that can be handled entirely locally without LLM
 SIMPLE_SCENES = {"greeting", "reset", "cart_updated", "remove_item",
@@ -298,15 +350,37 @@ class ConversationEngine:
         )
 
     def _match_explicit_items(self, normalized_transcript: str, menu: list[MenuItem]) -> list[MenuItem]:
+        """Match menu items using exact, token-based, and fuzzy matching."""
         matches: list[MenuItem] = []
+        matched_ids: set[str] = set()
+        
+        # Apply STT alias corrections to the transcript
+        corrected = _apply_stt_aliases(normalized_transcript)
+        
         for item in menu:
-            normalized_name = normalize_text(item.name)
-            if normalized_name in normalized_transcript:
-                matches.append(item)
+            if item.item_id in matched_ids:
                 continue
-            name_tokens = [token for token in normalized_name.split() if len(token) > 2]
-            if name_tokens and all(token in normalized_transcript for token in name_tokens):
+            normalized_name = normalize_text(item.name)
+            
+            # 1. Exact substring match
+            if normalized_name in corrected:
                 matches.append(item)
+                matched_ids.add(item.item_id)
+                continue
+            
+            # 2. Token-based match (all significant tokens present)
+            name_tokens = [token for token in normalized_name.split() if len(token) > 2]
+            if name_tokens and all(token in corrected for token in name_tokens):
+                matches.append(item)
+                matched_ids.add(item.item_id)
+                continue
+            
+            # 3. Fuzzy match — compare each word sequence in transcript
+            #    against the item name using SequenceMatcher
+            if _fuzzy_match(corrected, normalized_name):
+                matches.append(item)
+                matched_ids.add(item.item_id)
+        
         return matches
 
     def _extract_segment_matches(
@@ -341,6 +415,9 @@ class ConversationEngine:
     def _rank_items(self, normalized_transcript: str, menu: list[MenuItem]) -> list[Candidate]:
         scores: list[Candidate] = []
         tokens = [token for token in normalized_transcript.split() if token]
+        corrected = _apply_stt_aliases(normalized_transcript)
+        corrected_tokens = [token for token in corrected.split() if token]
+        
         for item in menu:
             if not item.available:
                 continue
@@ -352,14 +429,24 @@ class ConversationEngine:
                     " ".join(normalize_text(tag) for tag in item.tags),
                 ]
             )
+            normalized_name = normalize_text(item.name)
             score = 0
-            for token in tokens:
+            
+            # Score using both original and corrected tokens
+            for token in set(tokens + corrected_tokens):
+                if len(token) <= 1:
+                    continue
                 if token in haystack:
                     score += 2
-                if token in normalize_text(item.name):
+                if token in normalized_name:
                     score += 4
                 if token in " ".join(normalize_text(tag) for tag in item.tags):
                     score += 3
+            
+            # Bonus for fuzzy name match
+            if _fuzzy_match(corrected, normalized_name):
+                score += 8
+            
             score += 1
             if score > 0:
                 scores.append(Candidate(item=item, score=score))
@@ -522,6 +609,11 @@ def normalize_text(text: str) -> str:
 
 
 def extract_quantity(normalized_text: str) -> int:
+    # Pattern: "so luong X" or "X cai/ly/phan"
+    qty_pattern = re.search(r"so luong\s+(\d+)", normalized_text)
+    if qty_pattern:
+        return max(1, min(int(qty_pattern.group(1)), 20))
+    
     digit_match = re.search(r"\b(\d+)\b", normalized_text)
     if digit_match:
         return max(1, min(int(digit_match.group(1)), 20))
@@ -530,6 +622,44 @@ def extract_quantity(normalized_text: str) -> int:
         if word in normalized_text:
             return value
     return 1
+
+
+def _apply_stt_aliases(text: str) -> str:
+    """Apply STT alias corrections to normalized text."""
+    result = text
+    # Sort by longest key first to avoid partial replacements
+    for alias, replacement in sorted(_STT_ALIASES.items(), key=lambda x: -len(x[0])):
+        if alias in result:
+            result = result.replace(alias, replacement)
+    return result
+
+
+def _fuzzy_match(transcript: str, item_name: str) -> bool:
+    """Check if transcript fuzzy-matches the item name using SequenceMatcher.
+    
+    Returns True if similarity is above threshold.
+    Handles cases like 'socola' matching 'socola da xay',
+    'tra vai hoa hong' matching imprecise STT output, etc.
+    """
+    # Short item names need higher precision
+    name_words = item_name.split()
+    name_len = len(name_words)
+    if name_len == 0:
+        return False
+    
+    # Try sliding window of item name length across transcript
+    transcript_words = transcript.split()
+    if len(transcript_words) < 1:
+        return False
+    
+    best_ratio = 0.0
+    for start in range(len(transcript_words)):
+        for end in range(start + max(1, name_len - 1), min(start + name_len + 2, len(transcript_words) + 1)):
+            window = " ".join(transcript_words[start:end])
+            ratio = difflib.SequenceMatcher(None, window, item_name).ratio()
+            best_ratio = max(best_ratio, ratio)
+    
+    return best_ratio >= _FUZZY_THRESHOLD
 
 
 _GREETING_REPLIES = [
