@@ -3,7 +3,9 @@ from __future__ import annotations
 import asyncio
 import base64
 import difflib
+import json
 import logging
+from pathlib import Path
 import random
 import re
 import time
@@ -581,14 +583,10 @@ class ConversationEngine:
             "created_at": datetime.now(UTC).isoformat()
         }
 
-        # Fire and forget write to log file
-        import os
-        import json
-        cur_dir = os.path.dirname(os.path.abspath(__file__))
-        # go from app/services/ -> app/ -> ai-backend/ -> data/
-        log_dir = os.path.join(os.path.dirname(os.path.dirname(cur_dir)), "data")
-        os.makedirs(log_dir, exist_ok=True)
-        with open(os.path.join(log_dir, "feedback.jsonl"), "a", encoding="utf-8") as f:
+        backend_root = Path(__file__).resolve().parents[2]
+        log_path = backend_root / "data" / "feedback.jsonl"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with log_path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(feedback_data, ensure_ascii=False) + "\n")
 
     def active_session_count(self) -> int:

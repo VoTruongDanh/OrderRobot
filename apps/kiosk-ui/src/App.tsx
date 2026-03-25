@@ -28,6 +28,7 @@ function App() {
   const [awaitingConfirmation, setAwaitingConfirmation] = useState(false)
   const [invoice, setInvoice] = useState<InvoiceSnapshot | null>(null)
   const [successModalInvoice, setSuccessModalInvoice] = useState<InvoiceSnapshot | null>(null)
+  const [feedbackSessionId, setFeedbackSessionId] = useState<string | null>(null)
   const [successCountdown, setSuccessCountdown] = useState(6)
   const [robotMode, setRobotMode] = useState<RobotMode>('detecting')
   const [notices, setNotices] = useState<AppNotice[]>([])
@@ -63,6 +64,7 @@ function App() {
   const resetToWelcomeState = useCallback((options?: { waitForVacancy?: boolean }) => {
     const waitForVacancy = options?.waitForVacancy ?? false
     setSessionId(null)
+    setFeedbackSessionId(null)
     setTranscriptEntries([])
     setCart([])
     setRecommendedItemIds([])
@@ -228,6 +230,7 @@ function App() {
         setStatusMessage('Đơn đã được xác nhận. Kiosk đang hiển thị mã QR cho khách.')
         setCart([])
         setAwaitingConfirmation(false)
+        setFeedbackSessionId(response.session_id)
         setSessionId(null)
         setAwaitingVacancy(false)
 
@@ -317,6 +320,7 @@ function App() {
     setAwaitingConfirmation(false)
     setInvoice(null)
     setSuccessModalInvoice(null)
+    setFeedbackSessionId(null)
     setSuccessCountdown(6)
     setAwaitingVacancy(false)
     return response.session_id
@@ -385,6 +389,7 @@ function App() {
                 setStatusMessage('Đơn đã được xác nhận. Kiosk đang hiển thị mã QR cho khách.')
                 setCart([])
                 setAwaitingConfirmation(false)
+                setFeedbackSessionId(activeSessionId)
                 setSessionId(null)
                 setAwaitingVacancy(false)
 
@@ -621,6 +626,7 @@ function App() {
         setAwaitingConfirmation(false)
         setInvoice(null)
         setSuccessModalInvoice(null)
+        setFeedbackSessionId(null)
         setSuccessCountdown(6)
         setAwaitingVacancy(false)
 
@@ -780,9 +786,9 @@ function App() {
           invoice={successModalInvoice}
           onClose={closeSuccessModal}
           onFeedbackSubmit={(rating, comment) => {
-            if (sessionIdRef.current) {
+            if (feedbackSessionId) {
               void saveFeedback(
-                sessionIdRef.current,
+                feedbackSessionId,
                 rating,
                 comment,
                 transcriptEntries.map((e) => `${e.speaker}: ${e.text}`)

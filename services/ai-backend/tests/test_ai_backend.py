@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
@@ -222,3 +224,40 @@ async def test_menu_cache_avoids_repeated_calls() -> None:
     assert list_menu_call_count == 1, (
         f"Expected 1 menu fetch (cached), got {list_menu_call_count}"
     )
+
+
+@pytest.mark.anyio
+async def test_save_feedback_writes_to_backend_data_dir() -> None:
+    settings = Settings(
+        ai_base_url="",
+        ai_api_key="",
+        ai_model="",
+        core_backend_url="http://127.0.0.1:8001",
+        voice_lang="vi-VN",
+        voice_style="cute_friendly",
+        tts_voice="vietnam",
+        tts_rate="165",
+        stt_model="small",
+        stt_device="cpu",
+        stt_compute_type="int8",
+    )
+    core_client = FakeCoreBackendClient()
+    engine = ConversationEngine(settings, core_client)
+
+    log_path = Path("data/feedback.jsonl")
+    existing = log_path.read_text(encoding="utf-8") if log_path.exists() else None
+
+    try:
+        await engine.save_feedback("SES-TEST", 5, "tot", ["user: xin chao", "assistant: chao ban"])
+
+        assert log_path.exists()
+        payload = json.loads(log_path.read_text(encoding="utf-8").splitlines()[-1])
+        assert payload["session_id"] == "SES-TEST"
+        assert payload["rating"] == 5
+        assert payload["transcript_history"] == ["user: xin chao", "assistant: chao ban"]
+    finally:
+        if existing is None:
+            if log_path.exists():
+                log_path.unlink()
+        else:
+            log_path.write_text(existing, encoding="utf-8")
