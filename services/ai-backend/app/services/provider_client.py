@@ -96,16 +96,37 @@ class ProviderClient:
                             content = delta.get("content", "")
                             if content:
                                 buffer += content
-                                # Yield complete sentences for TTS
-                                while any(punct in buffer for punct in [".", "!", "?", "。", "！", "？"]):
+                                # Yield at sentence boundaries AND commas for faster TTS start
+                                # This reduces perceived latency by breaking long sentences into smaller chunks
+                                while any(punct in buffer for punct in [".", "!", "?", ",", "。", "！", "？", "，"]):
+                                    # Prioritize sentence endings over commas
+                                    found_punct = None
+                                    found_idx = -1
                                     for punct in [".", "!", "?", "。", "！", "？"]:
                                         if punct in buffer:
                                             idx = buffer.index(punct)
-                                            sentence = buffer[:idx + 1].strip()
-                                            buffer = buffer[idx + 1:].strip()
-                                            if sentence:
-                                                yield sentence
-                                            break
+                                            if found_idx == -1 or idx < found_idx:
+                                                found_punct = punct
+                                                found_idx = idx
+                                    
+                                    # If no sentence ending found, look for comma
+                                    if found_punct is None:
+                                        for punct in [",", "，"]:
+                                            if punct in buffer:
+                                                idx = buffer.index(punct)
+                                                # Only break at comma if we have enough content (>15 chars)
+                                                if idx > 15:
+                                                    found_punct = punct
+                                                    found_idx = idx
+                                                    break
+                                    
+                                    if found_punct is not None:
+                                        chunk = buffer[:found_idx + 1].strip()
+                                        buffer = buffer[found_idx + 1:].strip()
+                                        if chunk:
+                                            yield chunk
+                                    else:
+                                        break
                         except (json.JSONDecodeError, KeyError, IndexError):
                             continue
                 # Yield remaining buffer

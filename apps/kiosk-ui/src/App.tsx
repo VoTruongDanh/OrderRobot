@@ -465,6 +465,8 @@ function App() {
         if (recognitionSupported) {
           setRobotMode('listening')
           setStatusMessage('Robot đang nghe yêu cầu tiếp theo để tiếp tục đặt món.')
+          // Add small delay to ensure audio playback is fully complete
+          await new Promise(resolve => setTimeout(resolve, 300))
           void startListening()
         } else {
           setRobotMode('idle')
@@ -631,7 +633,12 @@ function App() {
               void submitIntent('xác nhận')
             }}
             onManualListen={() => {
+              console.log('[App] onManualListen called')
               void startListening()
+            }}
+            onStopListening={() => {
+              console.log('[App] onStopListening called')
+              stopListening()
             }}
             onManualStart={() => {
               void beginSession('manual')

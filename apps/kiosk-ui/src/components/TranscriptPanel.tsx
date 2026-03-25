@@ -15,6 +15,7 @@ type TranscriptPanelProps = {
   notices: AppNotice[]
   onManualStart: () => void
   onManualListen: () => void
+  onStopListening: () => void
   onReset: () => void
   onConfirmOrder: () => void
 }
@@ -40,6 +41,7 @@ export function TranscriptPanel({
   notices,
   onManualStart,
   onManualListen,
+  onStopListening,
   onReset,
   onConfirmOrder,
 }: TranscriptPanelProps) {
@@ -80,11 +82,17 @@ export function TranscriptPanel({
       <div className="side-panel__cta">
         <button
           className={`action-button ${listening ? 'action-button--listening' : 'action-button--secondary'}`}
-          onClick={onManualListen}
+          onClick={() => {
+            if (listening) {
+              onStopListening()
+            } else {
+              onManualListen()
+            }
+          }}
           type="button"
           disabled={!canListen}
         >
-          {listening ? '🎤 Đang nghe bạn nói...' : '🎤 Nói với robot'}
+          {listening ? '⏹️ Dừng nghe' : '🎤 Nói với robot'}
         </button>
         <p className="side-panel__hint">
           {listening 

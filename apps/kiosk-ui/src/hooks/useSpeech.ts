@@ -29,6 +29,7 @@ export function useSpeech({ lang, onTranscript, onPartialTranscript, onNotice }:
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const lastAcceptedTranscriptRef = useRef<{ text: string; at: number } | null>(null)
   const lastDispatchedFinalRef = useRef('')
+  const silenceTimerRef = useRef<number | null>(null)
 
   const {
     transcript,
@@ -52,14 +53,28 @@ export function useSpeech({ lang, onTranscript, onPartialTranscript, onNotice }:
   }, [onNotice, onPartialTranscript, onTranscript])
 
   useEffect(() => {
+    console.log('[useSpeech] listening state changed:', listening)
+  }, [listening])
+
+  useEffect(() => {
     return () => {
       void SpeechRecognition.abortListening()
       stopAudioPlayback()
+      if (silenceTimerRef.current !== null) {
+        window.clearTimeout(silenceTimerRef.current)
+      }
     }
   }, [])
 
   useEffect(() => {
     const liveTranscript = transcript.trim()
+    
+    // Clear any existing silence timer
+    if (silenceTimerRef.current !== null) {
+      window.clearTimeout(silenceTimerRef.current)
+      silenceTimerRef.current = null
+    }
+    
     if (!listening || !liveTranscript) {
       return
     }
@@ -69,6 +84,13 @@ export function useSpeech({ lang, onTranscript, onPartialTranscript, onNotice }:
     }
 
     partialTranscriptHandlerRef.current?.(liveTranscript)
+    
+    // Set a silence timer - if no new transcript comes in 1.5 seconds, stop listening
+    silenceTimerRef.current = window.setTimeout(() => {
+      if (listening && liveTranscript) {
+        void SpeechRecognition.stopListening()
+      }
+    }, 1500)
   }, [listening, transcript])
 
   useEffect(() => {
@@ -78,10 +100,14 @@ export function useSpeech({ lang, onTranscript, onPartialTranscript, onNotice }:
     }
 
     lastDispatchedFinalRef.current = transcript
-    resetTranscript()
+    
+    // Don't reset transcript immediately - let it stay visible
+    // resetTranscript() will be called when starting next listening session
 
     if (shouldIgnoreTranscript(transcript, lastAcceptedTranscriptRef.current)) {
       noticeHandlerRef.current('Mình vừa bỏ qua một âm thanh nền không giống yêu cầu gọi món.', 'info')
+      // Reset for next attempt
+      setTimeout(() => resetTranscript(), 100)
       return
     }
 
@@ -89,10 +115,20 @@ export function useSpeech({ lang, onTranscript, onPartialTranscript, onNotice }:
       text: transcript,
       at: Date.now(),
     }
+    
+    // Stop listening before processing transcript to prevent auto-restart
+    void SpeechRecognition.stopListening()
+    
     transcriptHandlerRef.current(transcript)
   }, [finalTranscript, resetTranscript])
 
   async function startListening() {
+    console.log('[useSpeech] startListening called', {
+      browserSupported: browserSupportsSpeechRecognition,
+      micAvailable: isMicrophoneAvailable,
+      currentlyListening: listening,
+    })
+
     if (!browserSupportsSpeechRecognition) {
       notifyOnce(
         'stt-unsupported',
@@ -109,21 +145,33 @@ export function useSpeech({ lang, onTranscript, onPartialTranscript, onNotice }:
       return
     }
 
+    // Stop any ongoing audio playback before starting to listen
+    stopAudioPlayback()
+
     lastDispatchedFinalRef.current = ''
     resetTranscript()
 
     try {
+      console.log('[useSpeech] Calling SpeechRecognition.startListening...')
       await SpeechRecognition.startListening({
-        continuous: false,
+        continuous: true, // Changed to true for continuous listening
         interimResults: true,
         language: lang,
       })
-    } catch {
+      console.log('[useSpeech] SpeechRecognition.startListening succeeded')
+    } catch (error) {
+      console.error('[useSpeech] Failed to start listening:', error)
       notifyOnce('stt-start-error', 'Không thể bật nhận giọng nói từ trình duyệt lúc này.')
     }
   }
 
   function stopListening() {
+    console.log('[useSpeech] stopListening called')
+    // Clear silence timer when manually stopping
+    if (silenceTimerRef.current !== null) {
+      window.clearTimeout(silenceTimerRef.current)
+      silenceTimerRef.current = null
+    }
     void SpeechRecognition.stopListening()
   }
 
@@ -134,92 +182,63 @@ export function useSpeech({ lang, onTranscript, onPartialTranscript, onNotice }:
 
     stopAudioPlayback()
 
-    // Try streaming first for lower latency
+    // Collect all chunks first, then play complete audio
+    // Note: MP3 chunks cannot be played individually - they need to be combined first
     try {
       const stream = await synthesizeSpeechStream(text)
       const reader = stream.getReader()
-      const chunks: BlobPart[] = []
-
-      // Collect chunks and play as soon as we have enough data
-      let totalBytes = 0
-      const minBytesForPlayback = 8192 // Start playback after 8KB
+      const chunks: Uint8Array[] = []
 
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
-
         if (value) {
-          // Convert to regular ArrayBuffer if needed
-          const buffer = value.buffer instanceof ArrayBuffer 
-            ? value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength)
-            : new Uint8Array(value).buffer
-          chunks.push(buffer)
-          totalBytes += value.length
-
-          // Start playback as soon as we have minimum data
-          if (totalBytes >= minBytesForPlayback && !audioRef.current) {
-            const initialBlob = new Blob(chunks, { type: 'audio/mpeg' })
-            const audioUrl = URL.createObjectURL(initialBlob)
-            const audio = new Audio(audioUrl)
-            audioRef.current = audio
-
-            audio.onended = () => {
-              URL.revokeObjectURL(audioUrl)
-              if (audioRef.current === audio) {
-                audioRef.current = null
-              }
-            }
-
-            audio.onerror = () => {
-              URL.revokeObjectURL(audioUrl)
-              if (audioRef.current === audio) {
-                audioRef.current = null
-              }
-            }
-
-            void audio.play().catch(() => {
-              URL.revokeObjectURL(audioUrl)
-              if (audioRef.current === audio) {
-                audioRef.current = null
-              }
-            })
-          }
+          chunks.push(value)
         }
       }
 
-      // If we haven't started playback yet (very short audio), play now
-      if (!audioRef.current && chunks.length > 0) {
-        const audioBlob = new Blob(chunks, { type: 'audio/mpeg' })
-        const audioUrl = URL.createObjectURL(audioBlob)
-        const audio = new Audio(audioUrl)
-        audioRef.current = audio
-
-        return new Promise<void>((resolve, reject) => {
-          audio.onended = () => {
-            URL.revokeObjectURL(audioUrl)
-            if (audioRef.current === audio) {
-              audioRef.current = null
-            }
-            resolve()
-          }
-          audio.onerror = () => {
-            URL.revokeObjectURL(audioUrl)
-            if (audioRef.current === audio) {
-              audioRef.current = null
-            }
-            reject(new Error('Không thể phát audio từ backend.'))
-          }
-          void audio.play().catch(() => {
-            URL.revokeObjectURL(audioUrl)
-            if (audioRef.current === audio) {
-              audioRef.current = null
-            }
-            reject(new Error('Trình duyệt chặn phát audio tự động.'))
-          })
-        })
+      if (chunks.length === 0) {
+        throw new Error('Không nhận được audio từ backend.')
       }
 
-      return Promise.resolve()
+      // Combine all chunks into single Uint8Array
+      const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0)
+      const combined = new Uint8Array(totalLength)
+      let offset = 0
+      for (const chunk of chunks) {
+        combined.set(chunk, offset)
+        offset += chunk.length
+      }
+
+      // Create blob and play
+      const audioBlob = new Blob([combined], { type: 'audio/mpeg' })
+      const audioUrl = URL.createObjectURL(audioBlob)
+      const audio = new Audio(audioUrl)
+      audioRef.current = audio
+
+      return new Promise<void>((resolve, reject) => {
+        audio.onended = () => {
+          URL.revokeObjectURL(audioUrl)
+          if (audioRef.current === audio) {
+            audioRef.current = null
+          }
+          resolve()
+        }
+        audio.onerror = () => {
+          URL.revokeObjectURL(audioUrl)
+          if (audioRef.current === audio) {
+            audioRef.current = null
+          }
+          reject(new Error('Không thể phát audio từ backend.'))
+        }
+        void audio.play().catch(() => {
+          URL.revokeObjectURL(audioUrl)
+          if (audioRef.current === audio) {
+            audioRef.current = null
+          }
+          reject(new Error('Trình duyệt chặn phát audio tự động.'))
+        })
+      })
     } catch (streamError) {
       // Fallback to non-streaming if streaming fails
       console.warn('Streaming TTS failed, falling back to blob:', streamError)
