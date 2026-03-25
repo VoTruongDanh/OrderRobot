@@ -41,6 +41,19 @@ class TurnRequest(BaseModel):
     transcript: str = Field(min_length=1, max_length=500)
 
 
+class BridgeDebugChatRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=2000)
+    rule: str | None = Field(default=None, max_length=500)
+
+
+class BridgeDebugChatResponse(BaseModel):
+    reply_text: str
+    source: Literal["bridge", "fallback"]
+    bridge_enabled: bool
+    latency_ms: int = Field(ge=0)
+    detail: str | None = None
+
+
 class FeedbackRequest(BaseModel):
     rating: int = Field(ge=1, le=5)
     comment: str | None = None

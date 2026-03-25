@@ -325,9 +325,14 @@ export default function AdminPage() {
           <h1>Health, Microphone, and .env Config</h1>
           <p>Use this page to validate runtime connections and prepare a full `.env` quickly.</p>
         </div>
-        <a className="admin-back" href="/">
-          Back to Kiosk
-        </a>
+        <div className="admin-actions">
+          <a className="admin-back" href="/debug">
+            Bridge Debug
+          </a>
+          <a className="admin-back" href="/">
+            Back to Kiosk
+          </a>
+        </div>
       </header>
 
       <section className="admin-card">

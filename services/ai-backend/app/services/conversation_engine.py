@@ -175,7 +175,7 @@ class ConversationEngine:
         self.settings = settings
         self.core_client = core_client
         self.speech_service = speech_service
-        self.provider_client = ProviderClient(settings) if settings.provider_enabled else None
+        self.provider_client = ProviderClient(settings) if settings.bridge_enabled else None
         self.sessions: dict[str, SessionState] = {}
         self.lock = asyncio.Lock()
         self._menu_cache: list[MenuItem] | None = None
@@ -667,19 +667,25 @@ class ConversationEngine:
         if decision.user_text:
             prompt_payload["user_text"] = decision.user_text
 
-        # Only call LLM for complex scenes; simple scenes use local templates
+        reply_source = "local_rule"
+
+        # Only call bridge provider for complex scenes; simple scenes use local templates.
         if self.provider_client is not None and decision.scene in COMPLEX_SCENES:
             try:
                 provider_reply = await self.provider_client.compose_reply(prompt_payload)
                 reply_text = provider_reply["reply_text"]
                 voice_style = provider_reply.get("voice_style", self.settings.voice_style)
+                reply_source = "bridge"
             except Exception as exc:
-                logger.warning("LLM call failed for scene '%s': %s — using local fallback", decision.scene, exc)
+                logger.warning("Bridge call failed for scene '%s': %s - using local fallback", decision.scene, exc)
                 reply_text = render_fallback_reply(prompt_payload)
                 voice_style = self.settings.voice_style
+                reply_source = "fallback"
         else:
             reply_text = render_fallback_reply(prompt_payload)
             voice_style = self.settings.voice_style
+
+        logger.info("reply_source=%s scene=%s session_id=%s", reply_source, decision.scene, session_id)
 
         return ConversationResponse(
             session_id=session_id,

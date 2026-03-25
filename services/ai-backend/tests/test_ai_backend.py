@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from app.config import Settings
+from app.config import Settings, get_settings
 from app.models import CreateOrderResponse, MenuItem
 from app.services.conversation_engine import ConversationEngine, render_fallback_reply
 
@@ -54,6 +54,20 @@ class FakeSpeechService:
     async def synthesize_stream(self, text: str):
         self.calls.append(text)
         yield b"audio-chunk"
+
+
+def test_get_settings_migrates_legacy_bridge_url_in_bridge_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LLM_MODE", "bridge_only")
+    monkeypatch.setenv("BRIDGE_BASE_URL", "http://127.0.0.1:1111")
+    settings = get_settings()
+    assert settings.bridge_base_url == "http://127.0.0.1:1122"
+
+
+def test_get_settings_keeps_custom_bridge_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LLM_MODE", "bridge_only")
+    monkeypatch.setenv("BRIDGE_BASE_URL", "http://10.0.0.8:9000")
+    settings = get_settings()
+    assert settings.bridge_base_url == "http://10.0.0.8:9000"
 
 
 @pytest.mark.anyio
@@ -156,6 +170,8 @@ async def test_simple_scenes_skip_llm_call() -> None:
         ai_api_key="fake-key",
         ai_model="gpt-4o-mini",
         core_backend_url="http://127.0.0.1:8001",
+        bridge_base_url="http://127.0.0.1:1111",
+        llm_mode="bridge_only",
         voice_lang="vi-VN",
         voice_style="cute_friendly",
         tts_voice="vietnam",
@@ -166,15 +182,14 @@ async def test_simple_scenes_skip_llm_call() -> None:
     )
     core_client = FakeCoreBackendClient()
     engine = ConversationEngine(settings, core_client)
+    assert engine.provider_client is not None
 
     # Override provider_client with a mock that tracks calls
     call_count = 0
-    original_compose = engine.provider_client.compose_reply
-
-    async def tracked_compose(payload):
+    async def tracked_compose(_payload):
         nonlocal call_count
         call_count += 1
-        return await original_compose(payload)
+        return {"reply_text": "mock bridge reply", "voice_style": "cute_friendly"}
 
     engine.provider_client.compose_reply = tracked_compose
 
@@ -397,4 +412,4 @@ def test_greeting_reply_can_softly_handle_heart_to_heart_chat() -> None:
         }
     )
 
-    assert "tâm trạng" in reply or "nói chuyện" in reply or "gợi ý món" in reply
+    assert any(keyword in reply for keyword in ("tâm trạng", "nói chuyện", "gợi ý món", "hợp gu"))

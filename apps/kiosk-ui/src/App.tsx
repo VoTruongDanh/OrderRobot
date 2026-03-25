@@ -155,7 +155,6 @@ function App() {
     createStreamingAudioPlayer,
     startListening,
     stopListening,
-    stopAudioPlayback: _stopAudioPlayback,
     ensureAudioWakeLock,
     listening,
   } = useSpeech({

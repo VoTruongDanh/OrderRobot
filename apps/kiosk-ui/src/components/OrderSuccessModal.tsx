@@ -18,8 +18,8 @@ const currency = new Intl.NumberFormat('vi-VN', {
 
 export function OrderSuccessModal({ invoice, countdown, onClose, onFeedbackSubmit }: OrderSuccessModalProps) {
   const [qrDataUrl, setQrDataUrl] = useState('')
-  const [showThankYou, setShowThankYou] = useState(false)
   const [rating, setRating] = useState(0)
+  const showThankYou = countdown === 0
 
   useEffect(() => {
     let cancelled = false
@@ -49,13 +49,6 @@ export function OrderSuccessModal({ invoice, countdown, onClose, onFeedbackSubmi
       cancelled = true
     }
   }, [invoice.qrValue])
-
-  // Show thank you screen when countdown reaches 0
-  useEffect(() => {
-    if (countdown === 0 && !showThankYou) {
-      setShowThankYou(true)
-    }
-  }, [countdown, showThankYou])
 
   if (showThankYou) {
     return (

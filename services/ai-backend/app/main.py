@@ -13,6 +13,8 @@ from fastapi.responses import Response, StreamingResponse
 
 from app.config import get_settings
 from app.models import (
+    BridgeDebugChatRequest,
+    BridgeDebugChatResponse,
     ConversationResponse,
     FeedbackRequest,
     SessionStartRequest,
@@ -22,6 +24,7 @@ from app.models import (
     TurnRequest,
 )
 from app.services.conversation_engine import ConversationEngine
+from app.services.conversation_engine import render_fallback_reply
 from app.services.core_backend_client import CoreBackendClient
 from app.services.provider_client import ProviderError
 from app.services.speech_service import SpeechNotHeardError, SpeechService
@@ -72,12 +75,67 @@ async def health() -> dict[str, object]:
     return {
         "status": "ok",
         "provider_enabled": settings.provider_enabled,
+        "llm_mode": settings.llm_mode,
+        "bridge_base_url": settings.bridge_base_url,
         "voice_style": settings.voice_style,
         "stt_model": settings.stt_model,
         "tts_voice": settings.tts_voice,
         "tts_rate": settings.tts_rate,
         "active_sessions": await conversation_engine.active_session_count(),
     }
+
+
+@app.post("/debug/bridge-chat", response_model=BridgeDebugChatResponse)
+async def debug_bridge_chat(payload: BridgeDebugChatRequest) -> BridgeDebugChatResponse:
+    started_at = time.perf_counter()
+    user_text = payload.text.strip()
+    debug_rule = payload.rule.strip() if payload.rule else None
+
+    prompt_payload: dict[str, object] = {
+        "scene": "fallback",
+        "seed": "Day la luong debug de kiem tra bridge web.",
+        "cart_summary": [],
+        "recommended_items": [],
+        "needs_confirmation": False,
+        "order_created": False,
+        "voice_style": settings.voice_style,
+        "user_text": user_text,
+    }
+    if debug_rule:
+        prompt_payload["debug_rule"] = debug_rule
+
+    provider_client = conversation_engine.provider_client
+    if provider_client is None:
+        fallback_text = render_fallback_reply(prompt_payload)
+        latency_ms = int((time.perf_counter() - started_at) * 1000)
+        return BridgeDebugChatResponse(
+            reply_text=fallback_text,
+            source="fallback",
+            bridge_enabled=False,
+            latency_ms=latency_ms,
+            detail="Bridge provider is disabled (LLM_MODE != bridge_only).",
+        )
+
+    try:
+        bridge_reply = await provider_client.compose_reply(prompt_payload)
+        latency_ms = int((time.perf_counter() - started_at) * 1000)
+        return BridgeDebugChatResponse(
+            reply_text=bridge_reply.get("reply_text", "").strip(),
+            source="bridge",
+            bridge_enabled=True,
+            latency_ms=latency_ms,
+            detail=None,
+        )
+    except ProviderError as exc:
+        fallback_text = render_fallback_reply(prompt_payload)
+        latency_ms = int((time.perf_counter() - started_at) * 1000)
+        return BridgeDebugChatResponse(
+            reply_text=fallback_text,
+            source="fallback",
+            bridge_enabled=True,
+            latency_ms=latency_ms,
+            detail=str(exc),
+        )
 
 
 @app.post("/config/tts")

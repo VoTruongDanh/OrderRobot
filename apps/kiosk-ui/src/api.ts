@@ -1,5 +1,5 @@
 import { getAiApiUrl, getMenuApiUrl, getOrdersApiUrl } from './config'
-import type { ConversationResponse, MenuItem, OrderRecord } from './types'
+import type { BridgeDebugChatResult, ConversationResponse, MenuItem, OrderRecord } from './types'
 
 async function readJson<T>(response: Response): Promise<T> {
   if (!response.ok) {
@@ -33,6 +33,15 @@ export async function startSession(source: 'camera' | 'manual'): Promise<Convers
     body: JSON.stringify({ source }),
   })
   return readJson<ConversationResponse>(response)
+}
+
+export async function debugBridgeChat(text: string, rule: string): Promise<BridgeDebugChatResult> {
+  const response = await fetch(`${getAiApiUrl()}/debug/bridge-chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text, rule }),
+  })
+  return readJson<BridgeDebugChatResult>(response)
 }
 
 export async function sendTurn(

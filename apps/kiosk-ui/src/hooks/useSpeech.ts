@@ -560,12 +560,13 @@ export function useSpeech({ lang, onTranscript, onNotice, onBargeIn }: UseSpeech
 
 // Global wake lock state to completely prevent Bluetooth/OS audio truncation
 let wakeLockAudioContext: AudioContext | null = null
+type AudioWindow = Window & { webkitAudioContext?: typeof AudioContext }
 
 function ensureAudioWakeLock() {
   if (typeof window === 'undefined') return
   if (!wakeLockAudioContext) {
     try {
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext
+      const AudioCtx = window.AudioContext || (window as AudioWindow).webkitAudioContext
       if (!AudioCtx) return
       
       const ctx = new AudioCtx()

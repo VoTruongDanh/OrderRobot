@@ -27,6 +27,14 @@ export type ConversationResponse = {
   voice_style: string
 }
 
+export type BridgeDebugChatResult = {
+  reply_text: string
+  source: 'bridge' | 'fallback'
+  bridge_enabled: boolean
+  latency_ms: number
+  detail: string | null
+}
+
 export type TranscriptEntry = {
   id: string
   speaker: 'assistant' | 'user' | 'system'

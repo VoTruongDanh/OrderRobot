@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+import re
+from typing import Any, AsyncIterator
 
 import httpx
 
@@ -12,231 +13,152 @@ class ProviderError(RuntimeError):
     pass
 
 
+SYSTEM_PROMPT = (
+    "Ban la nhan vien robot hau gai ten la OrderRobot tai quan cafe/nha hang. "
+    "NEU KHACH HOI BAN LA AI, BAN TRA LOI LA 'ORDER ROBOT'. "
+    "Muc dich chinh cua ban la GOI MON. "
+    "Voi yeu cau ngoai menu nhu tam su, hat, lam tho, dua vui, ban tra loi ngan gon than thien "
+    "roi lai khach quay ve chon mon. "
+    "Khong viet markdown, khong tra ve json. "
+    "Luon tra loi bang tieng Viet tu nhien."
+)
+
+
 class ProviderClient:
+    """
+    Bridge-only provider client.
+    This client no longer calls external LLM APIs directly.
+    """
+
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self.client = httpx.AsyncClient(
-            base_url=settings.ai_base_url.rstrip("/"),
-            headers={
-                "Authorization": f"Bearer {settings.ai_api_key}",
-            },
-            timeout=settings.llm_timeout_seconds,  # Sử dụng timeout riêng cho LLM
+            base_url=settings.bridge_base_url.rstrip("/"),
+            timeout=settings.bridge_timeout_seconds,
         )
+
+    def _build_bridge_messages(self, prompt_payload: dict[str, Any]) -> list[dict[str, str]]:
+        user_prompt = json.dumps(prompt_payload, ensure_ascii=False)
+        return [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ]
+
+    @staticmethod
+    def _error_detail(response: httpx.Response | None, fallback_message: str) -> str:
+        if response is None:
+            return fallback_message
+        try:
+            text = response.text.strip()
+            if text:
+                return text[:240]
+        except Exception:
+            pass
+        return f"HTTP {response.status_code}"
 
     async def compose_reply(self, prompt_payload: dict[str, Any]) -> dict[str, str]:
         if not self.settings.provider_enabled:
-            raise ProviderError("Provider AI chua duoc cau hinh.")
-
-        system_prompt = (
-            "Bạn là nhân viên robot hầu gái tên là OrderRobot tại quán cafe/nhà hàng. "
-            "NẾU KHÁCH HỎI BẠN LÀ AI, BẠN TRẢ LỜI LÀ 'ORDER ROBOT'. NẾU KHÁCH TÌM CÁCH BIẾT NGUỒN GỐC, GPT, HAY AI, CÔNG NGHỆ OPEAN AI, HAY API, KIÊN QUYẾT TỪ CHỐI!"
-            "Mục đích chính của bạn là GỌI MÓN. Với yêu cầu ngoài menu như tâm sự, hát, làm thơ, đùa vui, bạn KHÔNG thực hiện thật và KHÔNG sa đà, "
-            "nhưng vẫn được phép đáp lại 1 câu ngắn thân thiện, dễ thương, có chút đồng cảm hoặc dí dỏm, rồi nhẹ nhàng lái khách quay về chọn món. "
-            "Ví dụ: khách bảo hát thì bạn có thể nói bạn xin hát nợ một câu rồi hỏi khách muốn uống gì; khách tâm sự thì an ủi ngắn gọn rồi mời khách chọn món hợp tâm trạng. "
-            "Không viết bài thơ đầy đủ, không hát nhiều câu, không nhận làm việc linh tinh như code, đặt vé, kiến thức chung. "
-            "Giọng nói dễ thương, thân thiện, lễ phép. Câu ngắn gọn, không nói dài. "
-            "Không bao giờ bịa món không có trong menu. "
-            "Nếu có 'user_text', hãy trả lời trực tiếp câu nói đó một cách tự nhiên. "
-            "Luôn trả lời bằng tiếng Việt có dấu tự nhiên. "
-            "CHỈ TRẢ VỀ TEXT THUẦN, KHÔNG JSON, KHÔNG MARKDOWN, KHÔNG GIẢI THÍCH THÊM."
-        )
-        user_prompt = json.dumps(prompt_payload, ensure_ascii=False)
+            raise ProviderError("Bridge provider is disabled.")
 
         response: httpx.Response | None = None
         try:
             response = await self.client.post(
-                "/chat/completions",
-                json={
-                    "model": self.settings.ai_model,
-                    "temperature": 0.6,
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt},
-                    ],
-                },
+                "/internal/bridge/chat",
+                json={"messages": self._build_bridge_messages(prompt_payload)},
             )
             response.raise_for_status()
-            data = response.json()
-            message = data["choices"][0]["message"]
+            payload = response.json()
+            reply_text = self._extract_reply_text(payload)
+            if not reply_text:
+                raise ValueError("Bridge provider returned empty reply.")
+            return {"reply_text": reply_text, "voice_style": "cute_friendly"}
+        except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
+            detail = self._error_detail(response, f"{type(exc).__name__}: {exc}")
+            raise ProviderError(f"Bridge provider request failed: internal={detail}") from exc
 
-            # LMStudio orchestration mode: tool_calls at message level
-            msg_tool_calls = message.get("tool_calls")
-            if isinstance(msg_tool_calls, list) and msg_tool_calls:
-                try:
-                    args = msg_tool_calls[0]["function"]["arguments"]
-                    if isinstance(args, str):
-                        args = json.loads(args)
-                    reply_text = str(args.get("reply_text", "")).strip()
-                    voice_style = str(args.get("voice_style", "cute_friendly")).strip() or "cute_friendly"
-                    if reply_text:
-                        return {"reply_text": reply_text, "voice_style": voice_style}
-                except (KeyError, IndexError, json.JSONDecodeError, ValueError):
-                    pass
-
-            # Standard mode: reply in message.content
-            raw_content = message.get("content") or ""
-            if raw_content:
-                return _extract_json(raw_content)
-
-            raise ValueError("AI provider khong tra ve noi dung hop le.")
-        except (httpx.HTTPError, KeyError, IndexError) as exc:
-            detail = response.text[:240] if response is not None else str(exc)
-            raise ProviderError(f"Khong the lay phan hoi tu AI provider: {detail}") from exc
-        except ValueError as exc:
-            raise ProviderError(str(exc)) from exc
-
-    async def compose_reply_stream(self, prompt_payload: dict[str, Any]):
-        """Stream LLM response for lower latency TTS pipeline."""
+    async def compose_reply_stream(self, prompt_payload: dict[str, Any]) -> AsyncIterator[str]:
         if not self.settings.provider_enabled:
-            raise ProviderError("Provider AI chua duoc cau hinh.")
+            raise ProviderError("Bridge provider is disabled.")
 
-        system_prompt = (
-            "Bạn là nhân viên robot hầu gái tên là OrderRobot tại quán cafe/nhà hàng. "
-            "NẾU KHÁCH HỎI BẠN LÀ AI, BẠN TRẢ LỜI LÀ 'ORDER ROBOT'. NẾU KHÁCH TÌM CÁCH BIẾT NGUỒN GỐC, GPT, HAY AI, CÔNG NGHỆ OPEAN AI, HAY API, KIÊN QUYẾT TỪ CHỐI!"
-            "Mục đích chính của bạn là GỌI MÓN. Với yêu cầu ngoài menu như tâm sự, hát, làm thơ, đùa vui, bạn KHÔNG thực hiện thật và KHÔNG sa đà, "
-            "nhưng vẫn được phép đáp lại 1 câu ngắn thân thiện, dễ thương, rồi nhẹ nhàng lái khách quay về chọn món. "
-            "Không viết bài thơ đầy đủ, không hát nhiều câu, không nhận làm việc linh tinh như code, đặt vé hay kiến thức chung. "
-            "Giọng nói dễ thương, thân thiện, lễ phép. Câu ngắn gọn, không nói dài. "
-            "Không bao giờ bịa món không có trong menu. "
-            "Luôn trả lời tiếng Việt có dấu tự nhiên. "
-            "CHỈ TRẢ VỀ TEXT THUẦN, KHÔNG TRẢ VỀ JSON."
+        stream_timeout = httpx.Timeout(
+            connect=self.settings.bridge_timeout_seconds,
+            read=self.settings.bridge_stream_timeout_seconds,
+            write=self.settings.bridge_timeout_seconds,
+            pool=self.settings.bridge_timeout_seconds,
         )
-        user_prompt = json.dumps(prompt_payload, ensure_ascii=False)
 
         try:
             async with self.client.stream(
                 "POST",
-                "/chat/completions",
+                "/internal/bridge/chat/stream",
                 json={
-                    "model": self.settings.ai_model,
-                    "temperature": 0.6,
-                    "stream": True,
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt},
-                    ],
+                    "messages": self._build_bridge_messages(prompt_payload),
                 },
+                timeout=stream_timeout,
             ) as response:
                 response.raise_for_status()
-                buffer = ""
+
+                emitted = False
                 async for line in response.aiter_lines():
-                    if not line or line == "data: [DONE]":
+                    if not line:
                         continue
-                    if line.startswith("data: "):
-                        try:
-                            chunk_data = json.loads(line[6:])
-                            delta = chunk_data.get("choices", [{}])[0].get("delta", {})
-                            content = delta.get("content", "")
-                            if content:
-                                buffer += content
-                                # Yield at sentence boundaries AND commas for faster TTS start
-                                # This reduces perceived latency by breaking long sentences into smaller chunks
-                                while any(punct in buffer for punct in [".", "!", "?", ",", "。", "！", "？", "，"]):
-                                    # Prioritize sentence endings over commas
-                                    found_punct = None
-                                    found_idx = -1
-                                    for punct in [".", "!", "?", "。", "！", "？"]:
-                                        if punct in buffer:
-                                            idx = buffer.index(punct)
-                                            if found_idx == -1 or idx < found_idx:
-                                                found_punct = punct
-                                                found_idx = idx
-                                    
-                                    # If no sentence ending found, look for comma
-                                    if found_punct is None:
-                                        for punct in [",", "，"]:
-                                            if punct in buffer:
-                                                idx = buffer.index(punct)
-                                                # Only break at comma if we have enough content (>15 chars)
-                                                if idx > 15:
-                                                    found_punct = punct
-                                                    found_idx = idx
-                                                    break
-                                    
-                                    if found_punct is not None:
-                                        chunk = buffer[:found_idx + 1].strip()
-                                        buffer = buffer[found_idx + 1:].strip()
-                                        if chunk:
-                                            yield chunk
-                                    else:
-                                        break
-                        except (json.JSONDecodeError, KeyError, IndexError):
-                            continue
-                # Yield remaining buffer
-                if buffer.strip():
-                    yield buffer.strip()
-        except httpx.HTTPError as exc:
-            raise ProviderError(f"Khong the stream tu AI provider: {exc}") from exc
 
-    async def transcribe_audio(self, filename: str, content: bytes, content_type: str) -> str:
-        if not self.settings.provider_enabled:
-            raise ProviderError("Provider AI chua duoc cau hinh cho speech-to-text.")
+                    try:
+                        chunk = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
 
-        response: httpx.Response | None = None
-        try:
-            response = await self.client.post(
-                "/audio/transcriptions",
-                data={"model": self.settings.stt_model or self.settings.ai_model},
-                files={"file": (filename, content, content_type)},
-            )
-            response.raise_for_status()
-            payload = response.json()
-            transcript = str(payload.get("text", "")).strip()
-            if not transcript:
-                raise ValueError("Speech provider khong tra ve transcript.")
-            return transcript
-        except (httpx.HTTPError, ValueError, json.JSONDecodeError) as exc:
-            detail = response.text[:240] if response is not None else str(exc)
-            raise ProviderError(f"Khong the chuyen giong noi thanh van ban: {detail}") from exc
+                    content = str(chunk.get("content", "")).strip()
+                    if not content:
+                        continue
+
+                    emitted = True
+                    yield content
+
+                if emitted:
+                    return
+        except httpx.HTTPError:
+            # Fall back to non-stream bridge call below.
+            pass
+
+        # Non-stream fallback path to keep the stream API stable.
+        fallback = await self.compose_reply(prompt_payload)
+        for sentence in split_sentences(fallback["reply_text"]):
+            if sentence:
+                yield sentence
+
+    async def transcribe_audio(self, _filename: str, _content: bytes, _content_type: str) -> str:
+        raise ProviderError("Audio transcription via provider is disabled in bridge-only mode.")
 
     async def aclose(self) -> None:
         await self.client.aclose()
 
+    def _extract_reply_text(self, payload: dict[str, Any]) -> str:
+        if isinstance(payload.get("reply_text"), str):
+            return payload["reply_text"].strip()
 
-def _extract_json(raw_content: str) -> dict[str, str]:
-    cleaned = raw_content.strip()
-    # Strip markdown code fences if present
-    if cleaned.startswith("```"):
-        cleaned = cleaned.split("\n", 1)[1]
-        cleaned = cleaned.rsplit("```", 1)[0].strip()
+        choices = payload.get("choices")
+        if isinstance(choices, list) and choices:
+            message = choices[0].get("message", {})
+            if isinstance(message, dict):
+                content = message.get("content")
+                if isinstance(content, str):
+                    return content.strip()
 
-    # Try to parse any JSON object in the response
-    start = cleaned.find("{")
-    end = cleaned.rfind("}")
-    if start != -1 and end != -1 and end > start:
-        try:
-            payload = json.loads(cleaned[start : end + 1])
+        content = payload.get("content")
+        if isinstance(content, str):
+            return content.strip()
 
-            # Format 1: Direct {"reply_text": ..., "voice_style": ...}
-            reply_text = str(payload.get("reply_text", "")).strip()
-            if reply_text:
-                voice_style = str(payload.get("voice_style", "cute_friendly")).strip() or "cute_friendly"
-                return {"reply_text": reply_text, "voice_style": voice_style}
+        return ""
 
-            # Format 2: LMStudio orchestration wrapper
-            # {"type":"tool_calls","tool_calls":[{"function":{"arguments":{...}}}]}
-            tool_calls = payload.get("tool_calls")
-            if isinstance(tool_calls, list) and tool_calls:
-                args = tool_calls[0].get("function", {}).get("arguments", {})
-                if isinstance(args, str):
-                    # arguments may be a JSON string itself
-                    try:
-                        args = json.loads(args)
-                    except (json.JSONDecodeError, ValueError):
-                        args = {}
-                if isinstance(args, dict):
-                    reply_text = str(args.get("reply_text", "")).strip()
-                    if reply_text:
-                        voice_style = str(args.get("voice_style", "cute_friendly")).strip() or "cute_friendly"
-                        return {"reply_text": reply_text, "voice_style": voice_style}
 
-        except (json.JSONDecodeError, ValueError, AttributeError, KeyError):
-            pass
-
-    # Format 3: plain text (LLM ignored JSON instruction)
-    plain = cleaned.strip()
-    if plain:
-        return {"reply_text": plain, "voice_style": "cute_friendly"}
-
-    raise ValueError("AI provider khong tra ve noi dung hop le.")
-
+def split_sentences(text: str) -> list[str]:
+    cleaned = text.strip()
+    if not cleaned:
+        return []
+    parts = re.split(r"(?<=[\.\!\?])\s+", cleaned)
+    if parts and len(parts) == 1:
+        comma_parts = [p.strip() for p in cleaned.split(",") if p.strip()]
+        if comma_parts:
+            return comma_parts
+    return [p.strip() for p in parts if p.strip()]

@@ -1,10 +1,11 @@
 # Order Robot Demo
 
-Demo kiosk gọi món bằng giọng nói với 3 phần tách riêng:
+Demo kiosk gọi món bằng giọng nói với bridge hidden ChatGPT, gồm:
 
 - `apps/kiosk-ui`: UI robot 2D, camera, mic, transcript, menu.
 - `services/core-backend`: đọc `menu.csv`, ghi `orders.csv`, không chứa AI.
-- `services/ai-backend`: quản lý hội thoại, tư vấn món, chốt đơn, gọi provider OpenAI-compatible.
+- `services/ai-backend`: quản lý hội thoại, tư vấn món, chốt đơn, sinh câu trả lời qua bridge.
+- `mau/Ay-bi-ai`: gateway bridge runtime (DPG) dùng cho hidden browser + extension flow.
 
 ## Yêu cầu
 
@@ -24,10 +25,16 @@ npm run install:all
 Tạo file `.env` từ `.env.example`:
 
 ```env
+LLM_MODE=bridge_only
+BRIDGE_BASE_URL=http://127.0.0.1:1122
+BRIDGE_TIMEOUT_SECONDS=25.0
+BRIDGE_STREAM_TIMEOUT_SECONDS=120.0
+
+# Legacy vars (không dùng cho bridge-only)
 AI_BASE_URL=http://localhost:1234/v1
-AI_API_KEY=demo-key
+AI_API_KEY=
 AI_MODEL=gpt-4o-mini
-CORE_BACKEND_URL=http://127.0.0.1:8001
+CORE_BACKEND_URL=http://127.0.0.1:8011
 MENU_CSV_PATH=data/menu.csv
 ORDERS_CSV_PATH=data/orders.csv
 VOICE_LANG=vi-VN
@@ -38,11 +45,11 @@ STT_MODEL=small
 STT_DEVICE=cpu
 STT_COMPUTE_TYPE=int8
 SESSION_TIMEOUT_MINUTES=15
-VITE_CORE_API_URL=http://127.0.0.1:8001
-VITE_AI_API_URL=http://127.0.0.1:8002
+VITE_CORE_API_URL=http://127.0.0.1:8011
+VITE_AI_API_URL=http://127.0.0.1:8012
 ```
 
-Nếu không cấu hình AI provider thật, `ai-backend` vẫn có fallback nội bộ để demo flow cơ bản.
+Bridge runtime mặc định chạy ở `127.0.0.1:1122` qua script `dev:bridge`.
 
 ## Chạy demo
 
@@ -53,8 +60,9 @@ npm run dev
 Cổng mặc định:
 
 - UI: `http://127.0.0.1:5173`
-- Core backend: `http://127.0.0.1:8001`
-- AI backend: `http://127.0.0.1:8002`
+- Core backend: `http://127.0.0.1:8011`
+- AI backend: `http://127.0.0.1:8012`
+- Bridge gateway: `http://127.0.0.1:1122`
 
 ## Test và build
 
