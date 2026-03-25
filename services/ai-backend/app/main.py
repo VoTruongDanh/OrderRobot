@@ -17,6 +17,7 @@ from app.models import (
     SessionStartRequest,
     SpeechSynthesisRequest,
     SpeechTranscriptionResponse,
+    TTSConfigRequest,
     TurnRequest,
 )
 from app.services.conversation_engine import ConversationEngine
@@ -72,12 +73,12 @@ def health() -> dict[str, object]:
 
 
 @app.post("/config/tts")
-async def update_tts_config(voice: str | None = None, rate: int | None = None) -> dict[str, str]:
+async def update_tts_config(payload: TTSConfigRequest) -> dict[str, str]:
     """Update TTS voice and rate at runtime without restarting backend."""
-    if voice is not None:
-        settings.tts_voice = voice
-    if rate is not None:
-        settings.tts_rate = str(rate)
+    if payload.voice is not None:
+        settings.tts_voice = payload.voice
+    if payload.rate is not None:
+        settings.tts_rate = str(payload.rate)
     
     return {
         "status": "ok",

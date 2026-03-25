@@ -2,13 +2,18 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import logging
+import random
 import re
+import time
 import unicodedata
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from threading import Lock
 from uuid import uuid4
+
+logger = logging.getLogger(__name__)
 
 from app.config import Settings
 from app.models import (
@@ -38,6 +43,15 @@ RECOMMEND_KEYWORDS = {"goi y", "tu van", "nen uong", "nen an", "de uong", "it ng
 CHECKOUT_KEYWORDS = {"xong", "dat luon", "len don", "chot don", "thanh toan"}
 SEGMENT_SPLIT_PATTERN = re.compile(r"\s*(?:,|\bva\b|\bvoi\b|\bcung\b|\bthem\b)\s*")
 
+# Scenes that can be handled entirely locally without LLM
+SIMPLE_SCENES = {"greeting", "reset", "cart_updated", "remove_item",
+                 "order_created", "cart_follow_up", "fallback",
+                 "ask_confirmation", "clarify_item"}
+# Only recommendation truly benefits from LLM creativity
+COMPLEX_SCENES = {"recommendation"}
+
+MENU_CACHE_TTL = 60.0  # seconds
+
 
 @dataclass(slots=True)
 class Candidate:
@@ -52,6 +66,17 @@ class ConversationEngine:
         self.provider_client = ProviderClient(settings) if settings.provider_enabled else None
         self.sessions: dict[str, SessionState] = {}
         self.lock = Lock()
+        self._menu_cache: list[MenuItem] | None = None
+        self._menu_cache_at: float = 0.0
+
+    async def _get_menu(self) -> list[MenuItem]:
+        """Get menu with caching (TTL=60s) to avoid HTTP round-trip every turn."""
+        now = time.monotonic()
+        if self._menu_cache is not None and (now - self._menu_cache_at) < MENU_CACHE_TTL:
+            return self._menu_cache
+        self._menu_cache = await self.core_client.list_menu()
+        self._menu_cache_at = now
+        return self._menu_cache
 
     async def start_session(self) -> ConversationResponse:
         session_id = f"SES-{uuid4().hex[:10]}"
@@ -90,7 +115,7 @@ class ConversationEngine:
             self._touch_state(state)
             state.history.append(transcript)
 
-        menu = await self.core_client.list_menu()
+        menu = await self._get_menu()
         normalized = normalize_text(transcript)
 
         if state.cart and contains_any(normalized, RESET_KEYWORDS):
@@ -360,129 +385,26 @@ class ConversationEngine:
     async def handle_turn_stream(self, session_id: str, transcript: str):
         """Stream conversation response with interleaved text and audio for lower latency.
         
-        This method enables progressive response delivery:
-        1. LLM streams text sentence by sentence
-        2. Each sentence is immediately sent to TTS
-        3. Audio chunks stream back as they're generated
-        
-        Result: User hears the first sentence while later sentences are still being generated.
+        Simple scenes are handled locally (instant). Complex scenes use LLM streaming.
         """
-        # Note: Streaming only provides benefit when provider is enabled and supports streaming
-        # For fallback responses, we just use regular handle_turn
-        if not self.provider_client:
-            response = await self.handle_turn(session_id, transcript)
-            yield {"type": "text", "content": response.reply_text, "cart": [item.model_dump() for item in response.cart]}
-            
-            # Stream audio for fallback response
-            from app.services.speech_service import SpeechService
-            speech_service = SpeechService(self.settings, self.core_client)
-            try:
-                async for audio_chunk in speech_service.synthesize_stream(response.reply_text):
-                    yield {"type": "audio", "content": base64.b64encode(audio_chunk).decode("ascii")}
-            except Exception:
-                pass
-            return
+        # Use handle_turn which already has smart LLM bypass
+        response = await self.handle_turn(session_id, transcript)
 
-        # For provider-enabled streaming, we need to handle the conversation logic inline
-        # to stream LLM output as it arrives
-        with self.lock:
-            self._cleanup_expired_sessions()
-            state = self.sessions.get(session_id)
-            if state is None:
-                state = SessionState(session_id=session_id)
-                self.sessions[session_id] = state
-            self._touch_state(state)
-            state.history.append(transcript)
-
-        menu = await self.core_client.list_menu()
-        normalized = normalize_text(transcript)
-
-        # Determine the decision (same logic as handle_turn)
-        decision = None
-        
-        if state.cart and contains_any(normalized, CONFIRM_KEYWORDS):
-            if state.awaiting_confirmation:
-                order = await self.core_client.create_order(
-                    CreateOrderRequest(
-                        session_id=session_id,
-                        customer_text=transcript,
-                        items=[
-                            CreateOrderLineItem(item_id=item_id, quantity=quantity)
-                            for item_id, quantity in state.cart.items()
-                        ],
-                    )
-                )
-                state.cart.clear()
-                state.awaiting_confirmation = False
-                decision = Decision(
-                    scene="order_created",
-                    reply_seed=f"Đã xong rồi ạ. Em đã lên đơn thành công với mã {order.order_id}. Cảm ơn mình nha.",
-                    order_created=True,
-                    order_id=order.order_id,
-                )
-        
-        # For complex decisions, fall back to regular response
-        if decision is None:
-            response = await self.handle_turn(session_id, transcript)
-            
-            # Send cart data with first text chunk
-            yield {
-                "type": "text", 
-                "content": response.reply_text,
-                "cart": [item.model_dump() for item in response.cart]
-            }
-            
-            from app.services.speech_service import SpeechService
-            speech_service = SpeechService(self.settings, self.core_client)
-            try:
-                async for audio_chunk in speech_service.synthesize_stream(response.reply_text):
-                    yield {"type": "audio", "content": base64.b64encode(audio_chunk).decode("ascii")}
-            except Exception:
-                pass
-            return
-
-        # Stream the decision response
-        cart = build_cart_items(state.cart, menu)
-        
-        # Send cart data with first chunk
-        first_chunk_sent = False
-        
-        prompt_payload = {
-            "scene": decision.scene,
-            "seed": decision.reply_seed,
-            "cart_summary": [
-                {"name": item.name, "quantity": item.quantity, "line_total": str(item.line_total)}
-                for item in cart
-            ],
-            "recommended_items": [],
-            "needs_confirmation": decision.needs_confirmation,
-            "order_created": decision.order_created,
-            "voice_style": self.settings.voice_style,
+        # Send text + cart as first chunk
+        yield {
+            "type": "text",
+            "content": response.reply_text,
+            "cart": [item.model_dump() for item in response.cart],
         }
 
+        # Stream audio
         from app.services.speech_service import SpeechService
         speech_service = SpeechService(self.settings, self.core_client)
-        
         try:
-            # Stream from LLM sentence by sentence
-            async for sentence in self.provider_client.compose_reply_stream(prompt_payload):
-                chunk = {"type": "text", "content": sentence}
-                if not first_chunk_sent:
-                    chunk["cart"] = [item.model_dump() for item in cart]
-                    first_chunk_sent = True
-                yield chunk
-                
-                # Immediately stream audio for this sentence
-                async for audio_chunk in speech_service.synthesize_stream(sentence):
-                    yield {"type": "audio", "content": base64.b64encode(audio_chunk).decode("ascii")}
-        except Exception:
-            # Fallback to seed text
-            chunk = {"type": "text", "content": decision.reply_seed}
-            if not first_chunk_sent:
-                chunk["cart"] = [item.model_dump() for item in cart]
-            yield chunk
-            async for audio_chunk in speech_service.synthesize_stream(decision.reply_seed):
+            async for audio_chunk in speech_service.synthesize_stream(response.reply_text):
                 yield {"type": "audio", "content": base64.b64encode(audio_chunk).decode("ascii")}
+        except Exception:
+            pass
 
     def active_session_count(self) -> int:
         with self.lock:
@@ -511,7 +433,7 @@ class ConversationEngine:
         menu: list[MenuItem] | None = None,
     ) -> ConversationResponse:
         state = self.sessions[session_id]
-        menu = menu or await self.core_client.list_menu()
+        menu = menu or await self._get_menu()
         cart = build_cart_items(state.cart, menu)
         prompt_payload = {
             "scene": decision.scene,
@@ -534,10 +456,16 @@ class ConversationEngine:
             "voice_style": self.settings.voice_style,
         }
 
-        if self.provider_client is not None:
-            provider_reply = await self.provider_client.compose_reply(prompt_payload)
-            reply_text = provider_reply["reply_text"]
-            voice_style = provider_reply["voice_style"]
+        # Only call LLM for complex scenes; simple scenes use local templates
+        if self.provider_client is not None and decision.scene in COMPLEX_SCENES:
+            try:
+                provider_reply = await self.provider_client.compose_reply(prompt_payload)
+                reply_text = provider_reply["reply_text"]
+                voice_style = provider_reply["voice_style"]
+            except Exception:
+                logger.warning("LLM call failed for scene '%s', using local fallback", decision.scene)
+                reply_text = render_fallback_reply(prompt_payload)
+                voice_style = self.settings.voice_style
         else:
             reply_text = render_fallback_reply(prompt_payload)
             voice_style = self.settings.voice_style
@@ -604,6 +532,40 @@ def extract_quantity(normalized_text: str) -> int:
     return 1
 
 
+_GREETING_REPLIES = [
+    "Chào mình ạ! Hôm nay mình muốn thử món nào để em tư vấn nhé?",
+    "Xin chào mình ạ. Em sẵn sàng phục vụ, mình muốn gọi gì nè?",
+    "Chào mừng mình! Mình muốn uống gì hôm nay để em gợi ý nhé?",
+    "Hi mình ạ! Em là robot gọi món. Mình cần em giúp gì nha?",
+]
+
+_CART_UPDATED_SUFFIXES = [
+    " Mình muốn gọi thêm gì không ạ?",
+    " Mình cần gì thêm không nè?",
+    " Mình muốn order thêm không ạ?",
+    "",
+]
+
+_RESET_REPLIES = [
+    "Em đã xóa giỏ hàng rồi ạ. Mình muốn gọi món nào tiếp không?",
+    "Giỏ hàng đã được làm mới. Mình chọn lại món nào nhé?",
+    "Em đã reset giỏ hàng rồi ạ. Mình bắt đầu lại nha!",
+]
+
+_FALLBACK_REPLIES = [
+    "Em nghe chưa rõ lắm. Mình có thể nói tên món hoặc bảo em tư vấn nhé.",
+    "Em chưa hiểu ý mình. Mình thử nói tên món cụ thể giúp em nha.",
+    "Em xin lỗi, nghe không rõ ạ. Mình nói lại tên món hoặc hỏi em gợi ý nhé.",
+]
+
+_ORDER_CREATED_SUFFIXES = [
+    " Hẹn gặp lại mình ạ!",
+    " Chúc mình ngon miệng nha!",
+    " Cảm ơn mình nhiều ạ!",
+    "",
+]
+
+
 def render_fallback_reply(payload: dict[str, object]) -> str:
     scene = str(payload["scene"])
     seed = str(payload["seed"])
@@ -611,11 +573,20 @@ def render_fallback_reply(payload: dict[str, object]) -> str:
     recommended_items = payload.get("recommended_items", [])
 
     if scene == "greeting":
-        return "Xin chào mình ạ. Em là robot gọi món, mình muốn uống gì hôm nay để em tư vấn nhé?"
-    if scene in {"cart_updated", "remove_item", "reset", "fallback"}:
+        return random.choice(_GREETING_REPLIES)
+    if scene == "cart_updated":
+        return seed + random.choice(_CART_UPDATED_SUFFIXES)
+    if scene == "remove_item":
         return seed
+    if scene == "reset":
+        return random.choice(_RESET_REPLIES)
+    if scene == "fallback":
+        return random.choice(_FALLBACK_REPLIES)
     if scene == "clarify_item":
-        return f"{seed} Em đang thấy vài lựa chọn gần đúng cho mình đây."
+        if recommended_items:
+            names = ", ".join(item["name"] for item in recommended_items[:3])
+            return f"Em thấy có mấy món gần giống: {names}. Mình muốn gọi món nào ạ?"
+        return f"{seed} Mình nói rõ tên món giúp em nhé."
     if scene == "recommendation":
         item_names = (
             ", ".join(item["name"] for item in recommended_items[:3])
@@ -625,11 +596,20 @@ def render_fallback_reply(payload: dict[str, object]) -> str:
         return f"{seed} Em gợi ý {item_names}. Mình ưng ý món nào để em thêm vào giỏ nhé?"
     if scene == "ask_confirmation":
         if cart_summary:
-            details = ", ".join(f"{item['quantity']} {item['name']}" for item in cart_summary)
-            return f"{seed} Hiện giờ mình đang có {details}. Nếu đúng rồi mình nói 'xác nhận' giúp em nha."
+            details = ", ".join(
+                f"{item['quantity']} {item['name']} ({item['line_total']}đ)"
+                for item in cart_summary
+            )
+            total = sum(int(item['line_total']) for item in cart_summary)
+            return (
+                f"Em đọc lại giỏ hàng nhé: {details}. "
+                f"Tổng cộng {total:,}đ ạ. "
+                f"Mình nói 'xác nhận' để em lên đơn, "
+                f"hoặc nói tên món để thêm nha."
+            )
         return f"{seed} Mình nói 'xác nhận' giúp em nhé."
     if scene == "order_created":
-        return seed
+        return seed + random.choice(_ORDER_CREATED_SUFFIXES)
     if scene == "cart_follow_up":
         if cart_summary:
             details = ", ".join(f"{item['quantity']} {item['name']}" for item in cart_summary)

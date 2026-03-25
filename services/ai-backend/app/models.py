@@ -41,6 +41,11 @@ class TurnRequest(BaseModel):
     transcript: str = Field(min_length=1, max_length=500)
 
 
+class TTSConfigRequest(BaseModel):
+    voice: str | None = None
+    rate: int | None = Field(default=None, ge=100, le=300)
+
+
 class SpeechSynthesisRequest(BaseModel):
     text: str = Field(min_length=1, max_length=1200)
     voice: str | None = None

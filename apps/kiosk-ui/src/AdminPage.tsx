@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import './admin.css'
+import { getAiApiUrl, getCoreApiUrl } from './config'
 import { useLiveCaption } from './hooks/useLiveCaption'
 import { useSpeech } from './hooks/useSpeech'
 
@@ -17,14 +18,12 @@ type EnvField = {
   value: string
 }
 
-const CORE_API_URL = import.meta.env.VITE_CORE_API_URL ?? 'http://127.0.0.1:8001'
-const AI_API_URL = import.meta.env.VITE_AI_API_URL ?? 'http://127.0.0.1:8002'
 
 const ENV_TEMPLATE: EnvField[] = [
   { key: 'AI_BASE_URL', label: 'AI Base URL', value: 'http://127.0.0.1:11434/v1' },
   { key: 'AI_API_KEY', label: 'AI API Key', value: '' },
   { key: 'AI_MODEL', label: 'AI Model', value: 'gpt-4o-mini' },
-  { key: 'CORE_BACKEND_URL', label: 'Core Backend URL', value: CORE_API_URL },
+  { key: 'CORE_BACKEND_URL', label: 'Core Backend URL', value: getCoreApiUrl() },
   { key: 'VOICE_LANG', label: 'Voice Lang', value: 'vi-VN' },
   { key: 'VOICE_STYLE', label: 'Voice Style', value: 'cute_friendly' },
   { key: 'TTS_VOICE', label: 'TTS Voice', value: 'vi-VN-HoaiMyNeural' },
@@ -41,8 +40,8 @@ const ENV_TEMPLATE: EnvField[] = [
   { key: 'STT_CPU_THREADS', label: 'STT CPU Threads', value: '8' },
   { key: 'STT_NUM_WORKERS', label: 'STT Num Workers', value: '1' },
   { key: 'SESSION_TIMEOUT_MINUTES', label: 'Session Timeout Minutes', value: '15' },
-  { key: 'VITE_CORE_API_URL', label: 'VITE Core URL', value: CORE_API_URL },
-  { key: 'VITE_AI_API_URL', label: 'VITE AI URL', value: AI_API_URL },
+  { key: 'VITE_CORE_API_URL', label: 'VITE Core URL', value: getCoreApiUrl() },
+  { key: 'VITE_AI_API_URL', label: 'VITE AI URL', value: getAiApiUrl() },
 ]
 
 function loadSavedEnv(): EnvField[] {
@@ -63,8 +62,8 @@ function loadSavedEnv(): EnvField[] {
 
 export default function AdminPage() {
   const [services, setServices] = useState<ServiceStatus[]>([
-    { name: 'Core Backend', url: `${CORE_API_URL}/health`, status: 'idle', latencyMs: null, detail: '' },
-    { name: 'AI Backend', url: `${AI_API_URL}/health`, status: 'idle', latencyMs: null, detail: '' },
+    { name: 'Core Backend', url: `${getCoreApiUrl()}/health`, status: 'idle', latencyMs: null, detail: '' },
+    { name: 'AI Backend', url: `${getAiApiUrl()}/health`, status: 'idle', latencyMs: null, detail: '' },
   ])
   const [micState, setMicState] = useState<'idle' | 'checking' | 'ok' | 'error'>('idle')
   const [micDetail, setMicDetail] = useState('')
@@ -203,7 +202,7 @@ export default function AdminPage() {
   const testTtsVoice = useCallback(async () => {
     setTtsTestStatus('playing')
     try {
-      const response = await fetch(`${AI_API_URL}/speech/synthesize`, {
+      const response = await fetch(`${getAiApiUrl()}/speech/synthesize`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -244,7 +243,7 @@ export default function AdminPage() {
   const applyTtsConfig = useCallback(async () => {
     try {
       // Update backend runtime config
-      const response = await fetch(`${AI_API_URL}/config/tts`, {
+      const response = await fetch(`${getAiApiUrl()}/config/tts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
