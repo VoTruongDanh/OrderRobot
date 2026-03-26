@@ -15,6 +15,7 @@ from app.config import get_settings
 from app.models import (
     BridgeDebugChatRequest,
     BridgeDebugChatResponse,
+    BridgeTemporaryChatResetResponse,
     ConversationResponse,
     FeedbackRequest,
     SessionStartRequest,
@@ -198,6 +199,34 @@ async def handle_turn_stream(session_id: str, payload: TurnRequest) -> Streaming
 @app.post("/sessions/{session_id}/reset", response_model=ConversationResponse)
 async def reset_session(session_id: str) -> ConversationResponse:
     return await conversation_engine.reset_session(session_id)
+
+
+@app.post(
+    "/sessions/{session_id}/bridge/reset-temp-chat",
+    response_model=BridgeTemporaryChatResetResponse,
+)
+async def reset_bridge_temporary_chat(session_id: str) -> BridgeTemporaryChatResetResponse:
+    provider_client = conversation_engine.provider_client
+    if provider_client is None:
+        return BridgeTemporaryChatResetResponse(
+            ok=False,
+            source="fallback",
+            detail="Bridge provider is disabled (LLM_MODE != bridge_only).",
+        )
+
+    try:
+        result = await provider_client.reset_temporary_chat(session_id)
+        return BridgeTemporaryChatResetResponse(
+            ok=bool(result.get("ok", False)),
+            source="bridge",
+            detail=str(result.get("detail") or "Bridge temporary chat reset completed."),
+        )
+    except ProviderError as exc:
+        return BridgeTemporaryChatResetResponse(
+            ok=False,
+            source="fallback",
+            detail=str(exc),
+        )
 
 
 @app.post("/sessions/{session_id}/feedback")

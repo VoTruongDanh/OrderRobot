@@ -23,6 +23,8 @@ $env:NODE_ENV = 'development'
 $env:BRIDGE_AUTOSTART_ON_DEMAND = 'true'
 $env:BRIDGE_LAUNCH_MINIMIZED = if ($env:BRIDGE_LAUNCH_MINIMIZED) { $env:BRIDGE_LAUNCH_MINIMIZED } else { 'true' }
 $env:BRIDGE_LAUNCH_OFFSCREEN = if ($env:BRIDGE_LAUNCH_OFFSCREEN) { $env:BRIDGE_LAUNCH_OFFSCREEN } else { 'true' }
+$env:BRIDGE_HIDE_WINDOW = if ($env:BRIDGE_HIDE_WINDOW) { $env:BRIDGE_HIDE_WINDOW } else { 'true' }
+$env:BRIDGE_HIDE_CHATGPT_TITLE_WINDOW = if ($env:BRIDGE_HIDE_CHATGPT_TITLE_WINDOW) { $env:BRIDGE_HIDE_CHATGPT_TITLE_WINDOW } else { 'true' }
 $env:BRIDGE_AUTOSTART = 'true'
 
 function Test-TruthyEnv {
@@ -64,6 +66,60 @@ function Stop-BridgeRuntimeBrowserProcesses {
   }
 
   return $stopped
+}
+
+function Start-BridgeWindowHider {
+  param(
+    [string]$RepoRoot
+  )
+
+  $isEnabled = Test-TruthyEnv -Value $env:BRIDGE_HIDE_WINDOW
+  if (-not $isEnabled) {
+    Write-Host "[bridge] BRIDGE_HIDE_WINDOW=false (skip taskbar window hider)"
+    return
+  }
+
+  $hiderScript = Join-Path $RepoRoot 'scripts\bridge-hide-window.ps1'
+  if (-not (Test-Path $hiderScript)) {
+    Write-Host "[bridge] window hider script not found: $hiderScript"
+    return
+  }
+
+  $profileMarker = 'bridge-browser-profile'
+  $existing = @()
+  try {
+    $existing = Get-CimInstance Win32_Process -Filter "Name='powershell.exe' OR Name='pwsh.exe'" |
+      Where-Object { $_.CommandLine -like "*bridge-hide-window.ps1*" -and $_.CommandLine -like "*$profileMarker*" }
+  } catch {
+    $existing = @()
+  }
+
+  if ($existing.Count -gt 0) {
+    foreach ($proc in $existing) {
+      try {
+        Stop-Process -Id ([int]$proc.ProcessId) -Force -ErrorAction Stop
+      } catch {
+        # ignore stop failures
+      }
+    }
+    Start-Sleep -Milliseconds 250
+    Write-Host "[bridge] restarted window hider (replaced $($existing.Count) old process(es))"
+  }
+
+  try {
+    $hideByTitleFlag = if (Test-TruthyEnv -Value $env:BRIDGE_HIDE_CHATGPT_TITLE_WINDOW) { '$true' } else { '$false' }
+    Start-Process -FilePath "powershell" -WindowStyle Hidden -ArgumentList @(
+      '-NoProfile',
+      '-ExecutionPolicy', 'Bypass',
+      '-File', $hiderScript,
+      '-ProfileMarker', $profileMarker,
+      '-IntervalMs', '900',
+      '-HideChatGptTitleWindows', $hideByTitleFlag
+    ) | Out-Null
+    Write-Host "[bridge] window hider started (taskbar suppression enabled)"
+  } catch {
+    Write-Host "[bridge] failed to start window hider: $($_.Exception.Message)"
+  }
 }
 
 function Get-ListenerProcessInfo {
@@ -151,7 +207,10 @@ if ($null -ne $listener) {
 Write-Host "[bridge] starting DPG gateway from $gatewayRoot on $bridgeUrl"
 Write-Host "[bridge] BRIDGE_LAUNCH_MINIMIZED=$env:BRIDGE_LAUNCH_MINIMIZED"
 Write-Host "[bridge] BRIDGE_LAUNCH_OFFSCREEN=$env:BRIDGE_LAUNCH_OFFSCREEN"
+Write-Host "[bridge] BRIDGE_HIDE_WINDOW=$env:BRIDGE_HIDE_WINDOW"
+Write-Host "[bridge] BRIDGE_HIDE_CHATGPT_TITLE_WINDOW=$env:BRIDGE_HIDE_CHATGPT_TITLE_WINDOW"
 Write-Host "[bridge] BRIDGE_FORCE_RESTART=$shouldForceRestart"
 Write-Host "[bridge] if first run: npm run install:bridge"
+Start-BridgeWindowHider -RepoRoot $repoRoot
 
 npm --prefix $gatewayRoot run dev

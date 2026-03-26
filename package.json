@@ -12,6 +12,7 @@
     "dev:ai": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-ai.ps1",
     "dev:bridge": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-bridge.ps1",
     "dev:bridge:dev": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-bridge.ps1 -ForceRestart",
+    "debug:chrome-mcp": "npx chrome-devtools-mcp@latest",
     "dev": "concurrently --kill-others-on-fail \"npm:dev:bridge:dev\" \"npm:dev:core\" \"npm:dev:ai\" \"npm:dev:ui\"",
     "test:core": "powershell -NoProfile -Command \"Set-Location 'services/core-backend'; python -m pytest tests\"",
     "test:ai": "powershell -NoProfile -Command \"Set-Location 'services/ai-backend'; python -m pytest tests\"",
@@ -20,6 +21,7 @@
     "build:ui": "npm --prefix apps/kiosk-ui run build"
   },
   "devDependencies": {
+    "chrome-devtools-mcp": "^0.20.3",
     "concurrently": "^9.2.1"
   }
 }

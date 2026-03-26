@@ -76,6 +76,25 @@ class ProviderClient:
             detail = self._error_detail(response, f"{type(exc).__name__}: {exc}")
             raise ProviderError(f"Bridge provider request failed: internal={detail}") from exc
 
+    async def reset_temporary_chat(self, session_id: str) -> dict[str, Any]:
+        if not self.settings.provider_enabled:
+            raise ProviderError("Bridge provider is disabled.")
+
+        response: httpx.Response | None = None
+        try:
+            response = await self.client.post(
+                "/internal/bridge/reset-temp-chat",
+                json={"session_id": session_id},
+            )
+            response.raise_for_status()
+            payload = response.json()
+            if not bool(payload.get("ok", False)):
+                raise ValueError(payload.get("detail") or "Bridge reset endpoint returned ok=false")
+            return payload
+        except (httpx.HTTPError, ValueError, TypeError, json.JSONDecodeError) as exc:
+            detail = self._error_detail(response, f"{type(exc).__name__}: {exc}")
+            raise ProviderError(f"Bridge temporary chat reset failed: internal={detail}") from exc
+
     async def compose_reply_stream(self, prompt_payload: dict[str, Any]) -> AsyncIterator[str]:
         if not self.settings.provider_enabled:
             raise ProviderError("Bridge provider is disabled.")

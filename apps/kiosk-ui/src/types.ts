@@ -35,6 +35,12 @@ export type BridgeDebugChatResult = {
   detail: string | null
 }
 
+export type BridgeSessionEndResult = {
+  ok: boolean
+  source: 'bridge' | 'fallback'
+  detail: string | null
+}
+
 export type TranscriptEntry = {
   id: string
   speaker: 'assistant' | 'user' | 'system'

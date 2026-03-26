@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import './App.css'
-import { fetchMenu, fetchOrder, resetSession, sendTurnStream, startSession, saveFeedback } from './api'
+import {
+  fetchMenu,
+  fetchOrder,
+  resetBridgeTemporaryChat,
+  resetSession,
+  saveFeedback,
+  sendTurnStream,
+  startSession,
+} from './api'
 import { MenuBoard } from './components/MenuBoard'
 import { OrderSuccessModal } from './components/OrderSuccessModal'
 import { RobotAvatar } from './components/RobotAvatar'
@@ -84,12 +92,6 @@ function App() {
     setAwaitingVacancy(waitForVacancy)
   }, [])
 
-  const closeSuccessModal = useCallback(() => {
-    setSuccessModalInvoice(null)
-    setSuccessCountdown(6)
-    resetToWelcomeState({ waitForVacancy: true })
-  }, [resetToWelcomeState])
-
   const appendTranscript = useCallback((speaker: TranscriptEntry['speaker'], text: string) => {
     setTranscriptEntries((current) => [
       ...current,
@@ -121,6 +123,29 @@ function App() {
       ]
     })
   }, [])
+
+  const closeSuccessModal = useCallback(() => {
+    const endedSessionId = feedbackSessionId ?? sessionIdRef.current
+    if (endedSessionId) {
+      void resetBridgeTemporaryChat(endedSessionId)
+        .then((result) => {
+          if (!result.ok) {
+            addNotice(
+              `Bridge khong tao duoc temporary chat moi sau khi ket thuc phien: ${result.detail || 'unknown error'}`,
+              'warning',
+            )
+          }
+        })
+        .catch((error) => {
+          const detail = error instanceof Error ? error.message : 'unknown error'
+          addNotice(`Bridge reset temporary chat that bai: ${detail}`, 'warning')
+        })
+    }
+
+    setSuccessModalInvoice(null)
+    setSuccessCountdown(6)
+    resetToWelcomeState({ waitForVacancy: true })
+  }, [addNotice, feedbackSessionId, resetToWelcomeState])
 
   const handleUiError = useCallback((message: string) => {
     setRobotMode('error')

@@ -54,6 +54,12 @@ class BridgeDebugChatResponse(BaseModel):
     detail: str | None = None
 
 
+class BridgeTemporaryChatResetResponse(BaseModel):
+    ok: bool
+    source: Literal["bridge", "fallback"]
+    detail: str | None = None
+
+
 class FeedbackRequest(BaseModel):
     rating: int = Field(ge=1, le=5)
     comment: str | None = None

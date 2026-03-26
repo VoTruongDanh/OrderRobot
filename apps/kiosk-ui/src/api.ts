@@ -1,5 +1,11 @@
 import { getAiApiUrl, getMenuApiUrl, getOrdersApiUrl } from './config'
-import type { BridgeDebugChatResult, ConversationResponse, MenuItem, OrderRecord } from './types'
+import type {
+  BridgeDebugChatResult,
+  BridgeSessionEndResult,
+  ConversationResponse,
+  MenuItem,
+  OrderRecord,
+} from './types'
 
 async function readJson<T>(response: Response): Promise<T> {
   if (!response.ok) {
@@ -134,6 +140,13 @@ export async function resetSession(sessionId: string): Promise<ConversationRespo
     method: 'POST',
   })
   return readJson<ConversationResponse>(response)
+}
+
+export async function resetBridgeTemporaryChat(sessionId: string): Promise<BridgeSessionEndResult> {
+  const response = await fetch(`${getAiApiUrl()}/sessions/${sessionId}/bridge/reset-temp-chat`, {
+    method: 'POST',
+  })
+  return readJson<BridgeSessionEndResult>(response)
 }
 
 export async function synthesizeSpeech(text: string): Promise<Blob> {
