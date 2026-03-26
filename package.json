@@ -6,20 +6,17 @@
     "install:ui": "npm --prefix apps/kiosk-ui install",
     "install:python": "python -m pip install -r services/core-backend/requirements.txt -r services/ai-backend/requirements.txt",
     "install:all": "npm run install:ui && npm run install:python",
-    "install:bridge": "npm --prefix mau/Ay-bi-ai install",
     "dev:ui": "npm --prefix apps/kiosk-ui run dev",
     "dev:core": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-core.ps1",
     "dev:ai": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-ai.ps1",
     "dev:ai:bridge": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-ai.ps1 -ForceRestart",
     "dev:ai:lite": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-ai-lite.ps1",
-    "dev:bridge:lite": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-bridge-lite.ps1",
     "dev:bridge": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-bridge.ps1",
     "dev:bridge:dev": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-bridge.ps1 -ForceRestart",
     "debug:chrome-mcp": "npx chrome-devtools-mcp@latest",
     "dev": "npm run dev:full",
     "dev:full": "concurrently --kill-others-on-fail \"npm:dev:bridge\" \"npm:dev:core\" \"npm:dev:ai\" \"npm:dev:ui\"",
     "dev:lite": "concurrently --kill-others-on-fail \"npm:dev:core\" \"npm:dev:ai:lite\" \"npm:dev:ui\"",
-    "dev:lite:bridge": "concurrently --kill-others-on-fail \"npm:dev:bridge:lite\" \"npm:dev:core\" \"npm:dev:ai:bridge\" \"npm:dev:ui\"",
     "test:core": "powershell -NoProfile -Command \"Set-Location 'services/core-backend'; python -m pytest tests\"",
     "test:ai": "powershell -NoProfile -Command \"Set-Location 'services/ai-backend'; python -m pytest tests\"",
     "test:python": "npm run test:core && npm run test:ai",
@@ -29,5 +26,11 @@
   "devDependencies": {
     "chrome-devtools-mcp": "^0.20.3",
     "concurrently": "^9.2.1"
+  },
+  "dependencies": {
+    "puppeteer": "^24.40.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "uuid": "^13.0.0"
   }
 }

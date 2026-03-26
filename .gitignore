@@ -14,3 +14,9 @@ data/orders.csv
 agent/
 mau/
 tmp_*.log
+
+# Bridge auto-generated browser profiles and test scripts
+.bridge-*
+.bridge-browser-profile/
+.bridge-inject-temp.js
+scripts/test-bridge.mjs
