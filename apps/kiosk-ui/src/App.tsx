@@ -13,6 +13,7 @@ import { MenuBoard } from './components/MenuBoard'
 import { OrderSuccessModal } from './components/OrderSuccessModal'
 import { RobotAvatar } from './components/RobotAvatar'
 import { TranscriptPanel } from './components/TranscriptPanel'
+import { getAiApiUrl, getCoreApiUrl, getMenuApiUrl, getOrdersApiUrl, subscribeAdminConfigChanges } from './config'
 import { usePresenceDetection } from './hooks/usePresenceDetection'
 import { useSpeech } from './hooks/useSpeech'
 import type {
@@ -49,6 +50,12 @@ function App() {
   const isBusyRef = useRef(false)
   const currentTurnAbortRef = useRef<AbortController | null>(null)
   const activeTurnRequestIdRef = useRef(0)
+  const apiSnapshotRef = useRef({
+    aiUrl: getAiApiUrl(),
+    coreUrl: getCoreApiUrl(),
+    menuUrl: getMenuApiUrl(),
+    ordersUrl: getOrdersApiUrl(),
+  })
   const handleAssistantResponseRef = useRef<
     (response: ConversationResponse, options?: { autoListen?: boolean }) => Promise<void>
   >(async () => {})
@@ -655,21 +662,55 @@ function App() {
     }
   }, [submitIntent])
 
+  const loadMenuData = useCallback(async () => {
+    setLoadingMenu(true)
+    setMenuError('')
+    try {
+      const items = await fetchMenu()
+      setMenu(items)
+    } catch (error) {
+      setMenuError(error instanceof Error ? error.message : 'Khong the tai menu tu core backend.')
+    } finally {
+      setLoadingMenu(false)
+    }
+  }, [])
+
   useEffect(() => {
-    async function loadMenu() {
-      setLoadingMenu(true)
-      try {
-        const items = await fetchMenu()
-        setMenu(items)
-      } catch (error) {
-        setMenuError(error instanceof Error ? error.message : 'Không thể tải menu từ core backend.')
-      } finally {
-        setLoadingMenu(false)
-      }
+    void loadMenuData()
+  }, [loadMenuData])
+
+  const handleAdminConfigSync = useCallback(() => {
+    const nextSnapshot = {
+      aiUrl: getAiApiUrl(),
+      coreUrl: getCoreApiUrl(),
+      menuUrl: getMenuApiUrl(),
+      ordersUrl: getOrdersApiUrl(),
+    }
+    const previousSnapshot = apiSnapshotRef.current
+
+    const hasChanged =
+      previousSnapshot.aiUrl !== nextSnapshot.aiUrl ||
+      previousSnapshot.coreUrl !== nextSnapshot.coreUrl ||
+      previousSnapshot.menuUrl !== nextSnapshot.menuUrl ||
+      previousSnapshot.ordersUrl !== nextSnapshot.ordersUrl
+
+    if (!hasChanged) {
+      return
     }
 
-    void loadMenu()
-  }, [])
+    apiSnapshotRef.current = nextSnapshot
+    addNotice('Kiosk da nhan cau hinh moi tu trang admin.', 'info')
+    if (previousSnapshot.menuUrl !== nextSnapshot.menuUrl) {
+      void loadMenuData()
+    }
+  }, [addNotice, loadMenuData])
+
+  useEffect(() => {
+    const unsubscribe = subscribeAdminConfigChanges(() => {
+      handleAdminConfigSync()
+    })
+    return unsubscribe
+  }, [handleAdminConfigSync])
 
   const beginSession = useCallback(
     async (source: 'camera' | 'manual') => {
@@ -940,3 +981,4 @@ function buildLocalInvoiceSnapshot(order: {
 }
 
 export default App
+

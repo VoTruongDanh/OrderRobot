@@ -231,7 +231,15 @@ async def reset_bridge_temporary_chat(session_id: str) -> BridgeTemporaryChatRes
 
 @app.post("/sessions/{session_id}/feedback")
 async def save_session_feedback(session_id: str, payload: FeedbackRequest) -> dict[str, str]:
-    await conversation_engine.save_feedback(session_id, payload.rating, payload.comment, payload.transcript_history)
+    await conversation_engine.save_feedback(
+        session_id=session_id,
+        rating=payload.rating,
+        comment=payload.comment,
+        transcript_history=payload.transcript_history,
+        needs_improvement=payload.needs_improvement,
+        improvement_tags=payload.improvement_tags,
+        review_status=payload.review_status,
+    )
     return {"status": "ok"}
 
 

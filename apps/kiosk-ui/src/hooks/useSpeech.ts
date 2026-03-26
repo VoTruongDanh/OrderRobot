@@ -31,6 +31,8 @@ const ECHO_COOLDOWN_MS = 300
 
 // Minimum interim transcript length to consider as real user speech (barge-in)
 const BARGE_IN_MIN_CHARS = 3
+const LISTENING_STALL_RECOVERY_MS = 12000
+const LISTENING_STALL_POLL_MS = 1500
 
 export function useSpeech({ lang, onTranscript, onNotice, onBargeIn }: UseSpeechOptions) {
   const transcriptHandlerRef = useRef(onTranscript)
@@ -47,6 +49,10 @@ export function useSpeech({ lang, onTranscript, onNotice, onBargeIn }: UseSpeech
   const isSpeakingRef = useRef(false)
   const echoCooldownTimerRef = useRef<number | null>(null)
   const echoGateOpenRef = useRef(true)  // false = gate closed, reject transcripts
+  const listeningStartedAtRef = useRef(0)
+  const lastSpeechActivityAtRef = useRef(0)
+  const listeningRecoveryUsedRef = useRef(false)
+  const recoveryInFlightRef = useRef(false)
 
   // === Pipeline B state ===
   const submitTimerRef = useRef<number | null>(null)
@@ -85,6 +91,12 @@ export function useSpeech({ lang, onTranscript, onNotice, onBargeIn }: UseSpeech
       clearEchoCooldown()
     }
   }, [])
+
+  useEffect(() => {
+    if (interimTranscript.trim() || finalTranscript.trim()) {
+      lastSpeechActivityAtRef.current = Date.now()
+    }
+  }, [finalTranscript, interimTranscript])
 
   // === Pipeline A: display ===
   // interimTranscript is returned directly from this hook (see return statement).
@@ -198,8 +210,71 @@ export function useSpeech({ lang, onTranscript, onNotice, onBargeIn }: UseSpeech
       clearSubmitTimer()
       clearInterimSubmitTimer()
       lastInterimTextRef.current = ''
+      listeningStartedAtRef.current = 0
+      recoveryInFlightRef.current = false
     }
   }, [listening])
+
+  useEffect(() => {
+    if (!listening || !recognitionSupported) {
+      return
+    }
+
+    const timer = window.setInterval(() => {
+      if (recoveryInFlightRef.current) {
+        return
+      }
+      if (listeningRecoveryUsedRef.current) {
+        return
+      }
+      if (isSpeakingRef.current || !echoGateOpenRef.current) {
+        return
+      }
+
+      const now = Date.now()
+      const startedAt = listeningStartedAtRef.current || now
+      const lastSpeechAt = lastSpeechActivityAtRef.current || startedAt
+
+      if (now - startedAt < LISTENING_STALL_RECOVERY_MS) {
+        return
+      }
+      if (now - lastSpeechAt < LISTENING_STALL_RECOVERY_MS) {
+        return
+      }
+
+      recoveryInFlightRef.current = true
+      listeningRecoveryUsedRef.current = true
+
+      void (async () => {
+        try {
+          console.warn('[useSpeech] Listening stall detected, auto-restarting speech recognition')
+          noticeHandlerRef.current(
+            'Microphone dang dong bo lai vi tam thoi khong nghe duoc. Ban thu noi lai giup minh nhe.',
+            'info',
+          )
+          await SpeechRecognition.abortListening()
+          await new Promise((resolve) => setTimeout(resolve, 200))
+          await SpeechRecognition.startListening({
+            continuous: true,
+            interimResults: true,
+            language: lang,
+          })
+          const recoveredAt = Date.now()
+          listeningStartedAtRef.current = recoveredAt
+          lastSpeechActivityAtRef.current = recoveredAt
+        } catch (error) {
+          console.error('[useSpeech] Auto-restart listening failed:', error)
+          notifyOnce('stt-stall-recover-failed', 'Khong the khoi dong lai microphone tu dong. Hay bam Lai nghe.')
+        } finally {
+          recoveryInFlightRef.current = false
+        }
+      })()
+    }, LISTENING_STALL_POLL_MS)
+
+    return () => {
+      window.clearInterval(timer)
+    }
+  }, [lang, listening, recognitionSupported])
 
   function clearSubmitTimer() {
     if (submitTimerRef.current !== null) {
@@ -264,9 +339,16 @@ export function useSpeech({ lang, onTranscript, onNotice, onBargeIn }: UseSpeech
     // Reset Pipeline B state for clean turn
     clearSubmitTimer()
     clearInterimSubmitTimer()
+    clearEchoCooldown()
+    isSpeakingRef.current = false
+    echoGateOpenRef.current = true
     pendingSubmitTextRef.current = ''
     accumulatedFinalRef.current = ''
     lastInterimTextRef.current = ''
+    listeningRecoveryUsedRef.current = false
+    const startedAt = Date.now()
+    listeningStartedAtRef.current = startedAt
+    lastSpeechActivityAtRef.current = startedAt
     resetTranscript()
 
     try {

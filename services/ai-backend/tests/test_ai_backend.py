@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from app.config import Settings, get_settings
-from app.models import CreateOrderResponse, MenuItem
+from app.models import CreateOrderResponse, MenuItem, TTSConfigRequest
 from app.services.conversation_engine import ConversationEngine, render_fallback_reply
 
 
@@ -68,6 +68,16 @@ def test_get_settings_keeps_custom_bridge_url(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setenv("BRIDGE_BASE_URL", "http://10.0.0.8:9000")
     settings = get_settings()
     assert settings.bridge_base_url == "http://10.0.0.8:9000"
+
+
+def test_tts_config_request_accepts_legacy_and_new_payload_keys() -> None:
+    legacy_payload = TTSConfigRequest.model_validate({"tts_voice": "vi-VN-HoaiMyNeural", "tts_rate": 165})
+    assert legacy_payload.voice == "vi-VN-HoaiMyNeural"
+    assert legacy_payload.rate == 165
+
+    new_payload = TTSConfigRequest.model_validate({"voice": "vi-VN-NamMinhNeural", "rate": 180})
+    assert new_payload.voice == "vi-VN-NamMinhNeural"
+    assert new_payload.rate == 180
 
 
 @pytest.mark.anyio
@@ -279,6 +289,100 @@ async def test_save_feedback_writes_to_backend_data_dir() -> None:
         assert payload["session_id"] == "SES-TEST"
         assert payload["rating"] == 5
         assert payload["transcript_history"] == ["user: xin chao", "assistant: chao ban"]
+        assert payload["needs_improvement"] is False
+        assert payload["improvement_tags"] == []
+        assert payload["review_status"] == "new"
+        assert payload["analysis_version"] == 1
+    finally:
+        if existing is None:
+            if log_path.exists():
+                log_path.unlink()
+        else:
+            log_path.write_text(existing, encoding="utf-8")
+
+
+@pytest.mark.anyio
+async def test_save_feedback_auto_tags_intent_mismatch_transcript() -> None:
+    settings = Settings(
+        ai_base_url="",
+        ai_api_key="",
+        ai_model="",
+        core_backend_url="http://127.0.0.1:8001",
+        voice_lang="vi-VN",
+        voice_style="cute_friendly",
+        tts_voice="vietnam",
+        tts_rate="165",
+        stt_model="small",
+        stt_device="cpu",
+        stt_compute_type="int8",
+    )
+    core_client = FakeCoreBackendClient()
+    engine = ConversationEngine(settings, core_client)
+
+    log_path = Path(__file__).resolve().parents[1] / "data" / "feedback.jsonl"
+    existing = log_path.read_text(encoding="utf-8") if log_path.exists() else None
+
+    transcript_history = [
+        "user: bo bo 14 tra dao cam sa",
+        "assistant: em da them 14 tra dao cam sa vao gio hang",
+        "user: bo 14 tra dao cam sa",
+        "assistant: em da bo 14 tra dao cam sa khoi gio hang",
+        "user: bo 14 tra dao cam sa",
+        "assistant: em da them 14 tra dao cam sa vao gio hang",
+    ]
+
+    try:
+        await engine.save_feedback("SES-FEED-5", 3, "", transcript_history)
+
+        payload = json.loads(log_path.read_text(encoding="utf-8").splitlines()[-1])
+        assert payload["session_id"] == "SES-FEED-5"
+        assert payload["needs_improvement"] is True
+        assert "low_rating" in payload["improvement_tags"]
+        assert "intent_action_mismatch" in payload["improvement_tags"]
+        assert "repeated_remove_command" in payload["improvement_tags"]
+    finally:
+        if existing is None:
+            if log_path.exists():
+                log_path.unlink()
+        else:
+            log_path.write_text(existing, encoding="utf-8")
+
+
+@pytest.mark.anyio
+async def test_save_feedback_auto_tags_conversation_loop_for_short_ack_flow() -> None:
+    settings = Settings(
+        ai_base_url="",
+        ai_api_key="",
+        ai_model="",
+        core_backend_url="http://127.0.0.1:8001",
+        voice_lang="vi-VN",
+        voice_style="cute_friendly",
+        tts_voice="vietnam",
+        tts_rate="165",
+        stt_model="small",
+        stt_device="cpu",
+        stt_compute_type="int8",
+    )
+    core_client = FakeCoreBackendClient()
+    engine = ConversationEngine(settings, core_client)
+
+    log_path = Path(__file__).resolve().parents[1] / "data" / "feedback.jsonl"
+    existing = log_path.read_text(encoding="utf-8") if log_path.exists() else None
+
+    transcript_history = [
+        "user: co",
+        "assistant: ban muon thu socola da xay hay muon minh goi y them?",
+        "user: co",
+        "assistant: ban muon goi mon gi hom nay? minh co ca phe va tra sua.",
+    ]
+
+    try:
+        await engine.save_feedback("SES-FEED-6", 4, "", transcript_history)
+
+        payload = json.loads(log_path.read_text(encoding="utf-8").splitlines()[-1])
+        assert payload["session_id"] == "SES-FEED-6"
+        assert payload["needs_improvement"] is True
+        assert "conversation_loop" in payload["improvement_tags"]
     finally:
         if existing is None:
             if log_path.exists():

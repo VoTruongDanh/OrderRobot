@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+from collections import Counter
 import difflib
 import json
 import logging
@@ -69,6 +70,9 @@ RESET_KEYWORDS = {"huy", "lam lai", "dat lai", "bo het", "xoa het", "xoa tat ca"
 REMOVE_KEYWORDS = {
     "bo", "xoa", "huy mon", "khong lay", "bo di", "xoa di", "xoa mon", "bo mon",
     "khong can", "bo ra", "xoa ra", "huy mon nay", "bo mon nay", "khong muon",
+}
+ADD_INTENT_KEYWORDS = {
+    "them", "cho", "goi", "dat", "lay", "order", "mua",
 }
 RECOMMEND_KEYWORDS = {
     "goi y", "tu van", "nen uong", "nen an", "de uong", "it ngot", "mon nao",
@@ -157,6 +161,27 @@ SIMPLE_SCENES = {"reset", "cart_updated", "remove_item",
 COMPLEX_SCENES = {"recommendation", "greeting", "fallback"}
 
 MENU_CACHE_TTL = 60.0  # seconds
+
+ASSISTANT_ADD_MARKERS = (
+    "da them",
+    "them vao gio hang",
+    "vao gio hang",
+)
+ASSISTANT_REMOVE_MARKERS = (
+    "da bo",
+    "da xoa",
+    "khoi gio hang",
+)
+ASSISTANT_GENERIC_PROMPT_MARKERS = (
+    "ban muon goi mon gi",
+    "ban chon thu mot mon",
+    "ban muon dung gi",
+    "ban muon thu",
+    "minh co ca phe",
+    "minh co tra sua",
+    "goi mon nao",
+)
+SHORT_ACK_USER_WORDS = {"co", "da", "ok", "oke", "uh", "uhm", "vang", "roi"}
 
 
 @dataclass(slots=True)
@@ -595,18 +620,45 @@ class ConversationEngine:
         except Exception:
             pass
 
-    async def save_feedback(self, session_id: str, rating: int, comment: str | None, transcript_history: list[str]) -> None:
+    async def save_feedback(
+        self,
+        session_id: str,
+        rating: int,
+        comment: str | None,
+        transcript_history: list[str],
+        needs_improvement: bool | None = None,
+        improvement_tags: list[str] | None = None,
+        review_status: str = "new",
+    ) -> None:
         """Save feedback and transcript logs to local JSONL for analytics."""
         async with self.lock:
-            # We don't read from state.history because frontend sends the full synced transcript_history, removing any async timing mismatch 
+            # We don't read from state.history because frontend sends the full synced transcript_history, removing any async timing mismatch
             pass
+
+        auto_tags, auto_notes = self._analyze_feedback_issues(
+            rating=rating,
+            comment=comment,
+            transcript_history=transcript_history,
+        )
+        manual_tags = [
+            normalize_text(tag).replace(" ", "_")
+            for tag in (improvement_tags or [])
+            if isinstance(tag, str) and tag.strip()
+        ]
+        merged_tags = sorted(set(auto_tags + manual_tags))
+        final_needs_improvement = bool(merged_tags) if needs_improvement is None else bool(needs_improvement)
 
         feedback_data = {
             "session_id": session_id,
             "rating": rating,
             "comment": comment,
             "transcript_history": transcript_history,
-            "created_at": datetime.now(UTC).isoformat()
+            "needs_improvement": final_needs_improvement,
+            "improvement_tags": merged_tags,
+            "review_status": review_status,
+            "analysis_notes": auto_notes,
+            "analysis_version": 1,
+            "created_at": datetime.now(UTC).isoformat(),
         }
 
         backend_root = Path(__file__).resolve().parents[2]
@@ -614,6 +666,94 @@ class ConversationEngine:
         log_path.parent.mkdir(parents=True, exist_ok=True)
         with log_path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(feedback_data, ensure_ascii=False) + "\n")
+
+    def _analyze_feedback_issues(
+        self,
+        rating: int,
+        comment: str | None,
+        transcript_history: list[str],
+    ) -> tuple[list[str], list[str]]:
+        tags: set[str] = set()
+        notes: list[str] = []
+
+        normalized_comment = normalize_text(comment or "")
+        if rating <= 3:
+            tags.add("low_rating")
+            notes.append(f"rating={rating} <= 3")
+
+        if normalized_comment:
+            if any(term in normalized_comment for term in ("cham", "lag", "tre", "ket noi", "reconnect")):
+                tags.add("latency_or_connection")
+                notes.append("comment indicates latency/connection issue")
+            if any(term in normalized_comment for term in ("loi", "sai", "khong nghe", "diec")):
+                tags.add("recognition_or_logic_issue")
+                notes.append("comment indicates recognition/logic issue")
+
+        user_messages = self._extract_role_messages(transcript_history, "user")
+        user_counter = Counter(user_messages)
+
+        mismatch_count = 0
+        ack_loop_count = 0
+
+        for user_text, assistant_text in self._iter_user_assistant_pairs(transcript_history):
+            user_normalized = normalize_text(user_text)
+            assistant_normalized = normalize_text(assistant_text)
+
+            user_remove = contains_any(user_normalized, REMOVE_KEYWORDS)
+            user_add = contains_any(user_normalized, ADD_INTENT_KEYWORDS)
+            assistant_add = contains_any_fragment(assistant_normalized, ASSISTANT_ADD_MARKERS)
+            assistant_remove = contains_any_fragment(assistant_normalized, ASSISTANT_REMOVE_MARKERS)
+
+            if (user_remove and assistant_add) or (user_add and assistant_remove):
+                mismatch_count += 1
+
+            if user_normalized in SHORT_ACK_USER_WORDS and contains_any_fragment(
+                assistant_normalized,
+                ASSISTANT_GENERIC_PROMPT_MARKERS,
+            ):
+                ack_loop_count += 1
+
+        if mismatch_count > 0:
+            tags.add("intent_action_mismatch")
+            notes.append(f"found {mismatch_count} add/remove mismatched turn(s)")
+
+        repeated_remove_user_inputs = sum(
+            count
+            for text, count in user_counter.items()
+            if count > 1 and contains_any(text, REMOVE_KEYWORDS)
+        )
+        if repeated_remove_user_inputs > 1:
+            tags.add("repeated_remove_command")
+            notes.append("user had repeated remove commands")
+
+        if ack_loop_count >= 2:
+            tags.add("conversation_loop")
+            notes.append("multiple short-acknowledgement loops detected")
+
+        return sorted(tags), notes
+
+    @staticmethod
+    def _extract_role_messages(transcript_history: list[str], target_role: str) -> list[str]:
+        messages: list[str] = []
+        for raw in transcript_history:
+            role, content = split_feedback_line(raw)
+            if role == target_role and content:
+                messages.append(content)
+        return messages
+
+    @staticmethod
+    def _iter_user_assistant_pairs(transcript_history: list[str]) -> list[tuple[str, str]]:
+        pairs: list[tuple[str, str]] = []
+        pending_user: str | None = None
+        for raw in transcript_history:
+            role, content = split_feedback_line(raw)
+            if role == "user":
+                pending_user = content
+                continue
+            if role == "assistant" and pending_user:
+                pairs.append((pending_user, content))
+                pending_user = None
+        return pairs
 
     async def active_session_count(self) -> int:
         async with self.lock:
@@ -729,6 +869,26 @@ def contains_any(text: str, keywords: set[str]) -> bool:
         if re.search(rf"\b{re.escape(keyword)}\b", text):
             return True
     return False
+
+
+def contains_any_fragment(text: str, fragments: tuple[str, ...]) -> bool:
+    return any(fragment in text for fragment in fragments)
+
+
+def split_feedback_line(raw_line: str) -> tuple[str, str]:
+    line = str(raw_line or "").strip()
+    if ":" not in line:
+        return "", normalize_text(line)
+
+    role_text, content = line.split(":", 1)
+    normalized_role = normalize_text(role_text)
+    role = ""
+    if normalized_role in {"user", "khach", "customer"}:
+        role = "user"
+    elif normalized_role in {"assistant", "robot", "bot"}:
+        role = "assistant"
+
+    return role, normalize_text(content)
 
 
 def normalize_text(text: str) -> str:

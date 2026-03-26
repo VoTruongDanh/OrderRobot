@@ -1,8 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import './admin.css'
-import { getAiApiUrl, getCoreApiUrl, getMenuApiUrl, getOrdersApiUrl, normalizeEnvValue } from './config'
+import {
+  ADMIN_ENV_STORAGE_KEY,
+  getAdminConfigUpdatedAt,
+  getAiApiUrl,
+  getCoreApiUrl,
+  getMenuApiUrl,
+  getOrdersApiUrl,
+  normalizeEnvValue,
+  saveAdminEnvConfig,
+} from './config'
 import { useLiveCaption } from './hooks/useLiveCaption'
 import { useSpeech } from './hooks/useSpeech'
+
+type AdminTab = 'overview' | 'voice' | 'config'
 
 type ServiceStatus = {
   name: string
@@ -12,12 +23,51 @@ type ServiceStatus = {
   detail: string
 }
 
+type NoticeTone = 'info' | 'success' | 'warning' | 'error'
+
+type Notice = {
+  tone: NoticeTone
+  text: string
+}
+
 type EnvField = {
   key: string
   label: string
   value: string
 }
 
+type TtsApplyStatus = 'idle' | 'saving' | 'success' | 'error'
+
+const TAB_ITEMS: Array<{ id: AdminTab; label: string; hint: string }> = [
+  {
+    id: 'overview',
+    label: 'Tong quan',
+    hint: 'Xem nhanh he thong dang song hay loi.',
+  },
+  {
+    id: 'voice',
+    label: 'Giong noi',
+    hint: 'Cai dat TTS va an test ky thuat.',
+  },
+  {
+    id: 'config',
+    label: 'Cau hinh',
+    hint: 'Luu cai dat va dong bo sang kiosk ngay.',
+  },
+]
+
+const ESSENTIAL_ENV_KEYS = new Set([
+  'VITE_CORE_API_URL',
+  'VITE_AI_API_URL',
+  'VITE_MENU_API_URL',
+  'VITE_ORDERS_API_URL',
+  'AI_MODEL',
+  'CORE_BACKEND_URL',
+  'TTS_VOICE',
+  'TTS_RATE',
+  'VOICE_LANG',
+  'SESSION_TIMEOUT_MINUTES',
+])
 
 const ENV_TEMPLATE: EnvField[] = [
   { key: 'AI_BASE_URL', label: 'AI Base URL', value: 'http://127.0.0.1:11434/v1' },
@@ -46,9 +96,16 @@ const ENV_TEMPLATE: EnvField[] = [
   { key: 'VITE_ORDERS_API_URL', label: 'VITE Orders API URL', value: getOrdersApiUrl() },
 ]
 
+const TTS_VOICE_OPTIONS = [
+  { value: 'vi-VN-HoaiMyNeural', label: 'vi-VN-HoaiMyNeural (Nu, Neural)' },
+  { value: 'vi-VN-NamMinhNeural', label: 'vi-VN-NamMinhNeural (Nam, Neural)' },
+  { value: 'vi-VN-An', label: 'vi-VN-An (Nam, Standard)' },
+  { value: 'vi-VN-HoaiMy', label: 'vi-VN-HoaiMy (Nu, Standard)' },
+]
+
 function loadSavedEnv(): EnvField[] {
   try {
-    const raw = localStorage.getItem('admin.env.fields')
+    const raw = localStorage.getItem(ADMIN_ENV_STORAGE_KEY)
     if (!raw) {
       return ENV_TEMPLATE
     }
@@ -62,39 +119,104 @@ function loadSavedEnv(): EnvField[] {
   }
 }
 
+function getFieldValue(fields: EnvField[], key: string, fallback: string): string {
+  return fields.find((field) => field.key === key)?.value ?? fallback
+}
+
+function toEnvPayload(fields: EnvField[]): Record<string, string> {
+  return Object.fromEntries(
+    fields.map((field) => [field.key, normalizeEnvValue(field.key, field.value)]),
+  )
+}
+
+function formatSyncTime(updatedAt: number | null): string {
+  if (!updatedAt) {
+    return 'Chua dong bo lan nao'
+  }
+  return new Date(updatedAt).toLocaleString('vi-VN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    day: '2-digit',
+    month: '2-digit',
+  })
+}
+
+function toSafeTtsRate(rawValue: string): number | null {
+  const parsed = Number.parseInt(rawValue.trim(), 10)
+  if (!Number.isFinite(parsed)) {
+    return null
+  }
+  if (parsed < 100 || parsed > 300) {
+    return null
+  }
+  return parsed
+}
+
 export default function AdminPage() {
+  const [activeTab, setActiveTab] = useState<AdminTab>('overview')
+  const [showAdvancedConfig, setShowAdvancedConfig] = useState(false)
+  const [showAdvancedVoiceTools, setShowAdvancedVoiceTools] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const [notice, setNotice] = useState<Notice | null>(null)
+  const [lastSyncAt, setLastSyncAt] = useState<number | null>(() => getAdminConfigUpdatedAt())
   const [micState, setMicState] = useState<'idle' | 'checking' | 'ok' | 'error'>('idle')
-  const [micDetail, setMicDetail] = useState('')
+  const [micDetail, setMicDetail] = useState('Chua check microphone')
   const [sttPartialText, setSttPartialText] = useState('')
   const [sttFinalText, setSttFinalText] = useState('')
-  const [envFields, setEnvFields] = useState<EnvField[]>(() => loadSavedEnv())
-  const [services, setServices] = useState<ServiceStatus[]>([])
-  const [copied, setCopied] = useState(false)
   const [speechNotices, setSpeechNotices] = useState<Array<{ text: string; level: 'warning' | 'info' }>>([])
-  const [ttsVoice, setTtsVoice] = useState('vi-VN-HoaiMyNeural')
-  const [ttsRate, setTtsRate] = useState('200')
-  const [ttsTestText, setTtsTestText] = useState('Xin chào! Mình là robot đặt món. Bạn muốn gọi gì hôm nay?')
+  const [envFields, setEnvFields] = useState<EnvField[]>(() => loadSavedEnv())
+  const [ttsVoice, setTtsVoice] = useState(() =>
+    getFieldValue(loadSavedEnv(), 'TTS_VOICE', 'vi-VN-HoaiMyNeural'),
+  )
+  const [ttsRate, setTtsRate] = useState(() => getFieldValue(loadSavedEnv(), 'TTS_RATE', '165'))
+  const [ttsTestText, setTtsTestText] = useState(
+    'Xin chao! Minh la robot dat mon. Ban muon goi gi hom nay?',
+  )
   const [ttsTestStatus, setTtsTestStatus] = useState<'idle' | 'playing' | 'error'>('idle')
+  const [ttsApplyStatus, setTtsApplyStatus] = useState<TtsApplyStatus>('idle')
   const liveCaption = useLiveCaption({ lang: 'vi-VN' })
+
   const envFieldMap = useMemo(
     () => Object.fromEntries(envFields.map((field) => [field.key, normalizeEnvValue(field.key, field.value)])),
     [envFields],
   )
+
   const currentCoreApiUrl = envFieldMap.VITE_CORE_API_URL || getCoreApiUrl()
   const currentAiApiUrl = envFieldMap.VITE_AI_API_URL || getAiApiUrl()
   const currentMenuApiUrl = envFieldMap.VITE_MENU_API_URL || getMenuApiUrl()
   const currentOrdersApiUrl = envFieldMap.VITE_ORDERS_API_URL || getOrdersApiUrl()
+
+  const serviceTargets = useMemo(
+    () => [
+      { name: 'Core Backend', url: `${currentCoreApiUrl}/health` },
+      { name: 'AI Backend', url: `${currentAiApiUrl}/health` },
+      { name: 'Menu API', url: currentMenuApiUrl },
+      { name: 'Orders API', url: `${currentOrdersApiUrl}?limit=1` },
+    ],
+    [currentAiApiUrl, currentCoreApiUrl, currentMenuApiUrl, currentOrdersApiUrl],
+  )
+
+  const [services, setServices] = useState<ServiceStatus[]>(
+    serviceTargets.map((target) => ({
+      name: target.name,
+      url: target.url,
+      status: 'idle',
+      latencyMs: null,
+      detail: 'Chua kiem tra',
+    })),
+  )
 
   const { listening, interimTranscript, recognitionSupported, startListening, stopListening } = useSpeech({
     lang: 'vi-VN',
     onTranscript: (transcript) => {
       setSttFinalText(transcript)
       setMicState('ok')
-      setMicDetail('STT da nhan duoc transcript tu luong kiosk hien tai.')
+      setMicDetail('STT da nhan transcript')
     },
     onNotice: (message, level = 'warning') => {
       setSpeechNotices((current) => {
-        if (current.some((notice) => notice.text === message)) {
+        if (current.some((item) => item.text === message)) {
           return current
         }
         return [...current, { text: message, level }]
@@ -106,7 +228,34 @@ export default function AdminPage() {
     },
   })
 
-  // Update partial transcript from interimTranscript
+  const essentialFields = useMemo(
+    () => envFields.filter((field) => ESSENTIAL_ENV_KEYS.has(field.key)),
+    [envFields],
+  )
+  const advancedFields = useMemo(
+    () => envFields.filter((field) => !ESSENTIAL_ENV_KEYS.has(field.key)),
+    [envFields],
+  )
+
+  const envText = useMemo(
+    () => envFields.map((field) => `${field.key}=${normalizeEnvValue(field.key, field.value)}`).join('\n'),
+    [envFields],
+  )
+  const essentialEnvText = useMemo(
+    () =>
+      essentialFields
+        .map((field) => `${field.key}=${normalizeEnvValue(field.key, field.value)}`)
+        .join('\n'),
+    [essentialFields],
+  )
+
+  const healthyServiceCount = useMemo(
+    () => services.filter((service) => service.status === 'ok').length,
+    [services],
+  )
+
+  const isHealthChecking = services.some((service) => service.status === 'checking')
+
   useEffect(() => {
     setSttPartialText(interimTranscript)
     if (interimTranscript.trim()) {
@@ -116,43 +265,50 @@ export default function AdminPage() {
   }, [interimTranscript])
 
   useEffect(() => {
-    const normalizedFields = envFields.map((field) => {
-      const normalizedValue = normalizeEnvValue(field.key, field.value)
-      return normalizedValue === field.value ? field : { ...field, value: normalizedValue }
+    setEnvFields((current) => {
+      const normalized = current.map((field) => {
+        const value = normalizeEnvValue(field.key, field.value)
+        return value === field.value ? field : { ...field, value }
+      })
+      const changed = normalized.some((field, index) => field.value !== current[index]?.value)
+      return changed ? normalized : current
     })
-    const changed = normalizedFields.some((field, index) => field.value !== envFields[index]?.value)
-    if (!changed) {
-      return
-    }
-
-    setEnvFields(normalizedFields)
-    const payload = Object.fromEntries(normalizedFields.map((field) => [field.key, field.value]))
-    localStorage.setItem('admin.env.fields', JSON.stringify(payload))
-  }, [envFields])
+  }, [])
 
   useEffect(() => {
-    setServices((current) => {
-      const nextServices = [
-        { name: 'Core Backend', url: `${currentCoreApiUrl}/health` },
-        { name: 'AI Backend', url: `${currentAiApiUrl}/health` },
-        { name: 'Menu API', url: currentMenuApiUrl },
-        { name: 'Orders API', url: `${currentOrdersApiUrl}?limit=1` },
-      ]
-
-      return nextServices.map((service) => {
-        const existing = current.find((item) => item.name === service.name)
+    setServices((current) =>
+      serviceTargets.map((target) => {
+        const existing = current.find((item) => item.name === target.name)
         if (!existing) {
-          return { ...service, status: 'idle', latencyMs: null, detail: '' }
+          return {
+            name: target.name,
+            url: target.url,
+            status: 'idle',
+            latencyMs: null,
+            detail: 'Chua kiem tra',
+          }
         }
-        if (existing.url === service.url) {
+        if (existing.url === target.url) {
           return existing
         }
-        return { ...existing, url: service.url, status: 'idle', latencyMs: null, detail: '' }
-      })
-    })
-  }, [currentAiApiUrl, currentCoreApiUrl, currentMenuApiUrl, currentOrdersApiUrl])
+        return {
+          ...existing,
+          url: target.url,
+          status: 'idle',
+          latencyMs: null,
+          detail: 'URL da thay doi, can check lai',
+        }
+      }),
+    )
+  }, [serviceTargets])
 
-  const checkService = useCallback(async (service: ServiceStatus) => {
+  const setFieldValue = useCallback((key: string, value: string) => {
+    setEnvFields((current) =>
+      current.map((field) => (field.key === key ? { ...field, value } : field)),
+    )
+  }, [])
+
+  const checkService = useCallback(async (service: ServiceStatus): Promise<ServiceStatus> => {
     const startedAt = performance.now()
     try {
       const response = await fetch(service.url, { method: 'GET' })
@@ -160,12 +316,17 @@ export default function AdminPage() {
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`)
       }
-      return { ...service, status: 'ok' as const, latencyMs, detail: 'OK' }
+      return {
+        ...service,
+        status: 'ok',
+        latencyMs,
+        detail: 'Online',
+      }
     } catch (error) {
       const latencyMs = Math.round(performance.now() - startedAt)
       return {
         ...service,
-        status: 'error' as const,
+        status: 'error',
         latencyMs,
         detail: error instanceof Error ? error.message : 'Unknown error',
       }
@@ -173,33 +334,64 @@ export default function AdminPage() {
   }, [])
 
   const runHealthChecks = useCallback(async () => {
-    setServices((current) =>
-      current.map((service) => ({ ...service, status: 'checking', detail: 'Checking...' })),
-    )
-    const checked = await Promise.all(services.map((service) => checkService(service)))
+    const checkingList = services.map((service) => ({
+      ...service,
+      status: 'checking' as const,
+      detail: 'Dang kiem tra...',
+    }))
+    setServices(checkingList)
+    const checked = await Promise.all(checkingList.map((service) => checkService(service)))
     setServices(checked)
   }, [checkService, services])
 
-  const runMicCheck = useCallback(async () => {
-    setMicState('checking')
-    setMicDetail('Requesting microphone permission...')
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const tracks = stream.getAudioTracks()
-      const trackLabel = tracks[0]?.label || 'Microphone ready'
-      tracks.forEach((track) => track.stop())
-      setMicState('ok')
-      setMicDetail(trackLabel)
-    } catch (error) {
-      setMicState('error')
-      setMicDetail(error instanceof Error ? error.message : 'Microphone not available')
-    }
-  }, [])
+  const saveAndSyncConfig = useCallback(
+    (fields: EnvField[], successText: string) => {
+      saveAdminEnvConfig(toEnvPayload(fields))
+      setLastSyncAt(getAdminConfigUpdatedAt())
+      setNotice({
+        tone: 'success',
+        text: successText,
+      })
+    },
+    [],
+  )
 
-  const startBrowserStt = useCallback(async () => {
-    if (!recognitionSupported) {
-      setMicState('error')
-      setMicDetail('Trinh duyet nay khong ho tro luong thu am/STT cua kiosk.')
+  const handleSaveConfig = useCallback(() => {
+    saveAndSyncConfig(envFields, 'Da luu cau hinh. Trang kiosk index se nhan ngay.')
+  }, [envFields, saveAndSyncConfig])
+
+  const handleCopyEnv = useCallback(async () => {
+    const textToCopy = showAdvancedConfig ? envText : essentialEnvText
+    try {
+      await navigator.clipboard.writeText(textToCopy)
+      setCopied(true)
+      setNotice({
+        tone: 'info',
+        text: showAdvancedConfig
+          ? 'Da copy full .env'
+          : 'Da copy .env voi nhom cau hinh thiet yeu',
+      })
+      window.setTimeout(() => setCopied(false), 1500)
+    } catch (error) {
+      setNotice({
+        tone: 'error',
+        text: error instanceof Error ? error.message : 'Khong the copy .env',
+      })
+    }
+  }, [envText, essentialEnvText, showAdvancedConfig])
+
+  const stopBrowserStt = useCallback(() => {
+    if (!listening) {
+      return
+    }
+    stopListening()
+    setMicState('ok')
+    setMicDetail('Da dung STT va cho transcript cuoi')
+  }, [listening, stopListening])
+
+  const runQuickMicTest = useCallback(async () => {
+    if (listening) {
+      stopBrowserStt()
       return
     }
 
@@ -207,45 +399,41 @@ export default function AdminPage() {
     setSttPartialText('')
     setSttFinalText('')
     setMicState('checking')
-    setMicDetail('Dang khoi dong luong STT giong trang kiosk...')
+    setMicDetail('Dang xin quyen microphone va khoi dong STT...')
+
     try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const tracks = stream.getAudioTracks()
+      const trackLabel = tracks[0]?.label || 'Microphone ready'
+      tracks.forEach((track) => track.stop())
+
+      if (!recognitionSupported) {
+        setMicState('ok')
+        setMicDetail(`${trackLabel}. Trinh duyet khong ho tro STT kiosk flow.`)
+        return
+      }
+
       await startListening()
       setMicState('ok')
-      setMicDetail('Dang nghe bang dung luong STT cua kiosk.')
+      setMicDetail(`Mic ok (${trackLabel}). Dang nghe...`)
     } catch (error) {
       setMicState('error')
-      setMicDetail(error instanceof Error ? error.message : 'Khong the bat STT.')
+      setMicDetail(error instanceof Error ? error.message : 'Khong the test microphone')
     }
-  }, [recognitionSupported, startListening])
-
-  const stopBrowserStt = useCallback(async () => {
-    if (!listening) {
-      return
-    }
-    stopListening()
-    setMicState('ok')
-    setMicDetail('Da dung thu am, dang cho transcript cuoi neu co.')
-  }, [listening, stopListening])
-
-  const envText = useMemo(
-    () => envFields.map((field) => `${field.key}=${field.value}`).join('\n'),
-    [envFields],
-  )
-
-  const saveEnvDraft = useCallback(() => {
-    const payload = Object.fromEntries(
-      envFields.map((field) => [field.key, normalizeEnvValue(field.key, field.value)]),
-    )
-    localStorage.setItem('admin.env.fields', JSON.stringify(payload))
-  }, [envFields])
-
-  const copyEnv = useCallback(async () => {
-    await navigator.clipboard.writeText(envText)
-    setCopied(true)
-    window.setTimeout(() => setCopied(false), 1500)
-  }, [envText])
+  }, [listening, recognitionSupported, startListening, stopBrowserStt])
 
   const testTtsVoice = useCallback(async () => {
+    const normalizedRate = toSafeTtsRate(ttsRate)
+    if (normalizedRate === null) {
+      setTtsTestStatus('error')
+      setNotice({
+        tone: 'warning',
+        text: 'TTS Rate phai la so trong khoang 100-300.',
+      })
+      window.setTimeout(() => setTtsTestStatus('idle'), 2000)
+      return
+    }
+
     setTtsTestStatus('playing')
     try {
       const response = await fetch(`${currentAiApiUrl}/speech/synthesize`, {
@@ -254,12 +442,19 @@ export default function AdminPage() {
         body: JSON.stringify({
           text: ttsTestText,
           voice: ttsVoice,
-          rate: parseInt(ttsRate, 10),
+          rate: normalizedRate,
         }),
       })
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`)
+        let detail = `HTTP ${response.status}`
+        try {
+          const payload = (await response.json()) as { detail?: string }
+          detail = payload.detail ?? detail
+        } catch {
+          // ignore json parse error
+        }
+        throw new Error(detail)
       }
 
       const audioBlob = await response.blob()
@@ -279,296 +474,425 @@ export default function AdminPage() {
       })
 
       setTtsTestStatus('idle')
-    } catch (error) {
+    } catch {
       setTtsTestStatus('error')
-      console.error('TTS test failed:', error)
-      setTimeout(() => setTtsTestStatus('idle'), 2000)
+      window.setTimeout(() => setTtsTestStatus('idle'), 2000)
     }
-  }, [currentAiApiUrl, ttsTestText, ttsVoice, ttsRate])
+  }, [currentAiApiUrl, ttsRate, ttsTestText, ttsVoice])
 
   const applyTtsConfig = useCallback(async () => {
+    const normalizedRate = toSafeTtsRate(ttsRate)
+    if (normalizedRate === null) {
+      setTtsApplyStatus('error')
+      setNotice({
+        tone: 'warning',
+        text: 'Khong the apply TTS: Rate phai nam trong khoang 100-300.',
+      })
+      window.setTimeout(() => setTtsApplyStatus('idle'), 2000)
+      return
+    }
+
+    setTtsApplyStatus('saving')
     try {
-      // Update backend runtime config
       const response = await fetch(`${currentAiApiUrl}/config/tts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           voice: ttsVoice,
-          rate: parseInt(ttsRate, 10),
+          rate: normalizedRate,
+          tts_voice: ttsVoice,
+          tts_rate: normalizedRate,
         }),
       })
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`)
+        let detail = `HTTP ${response.status}`
+        try {
+          const payload = (await response.json()) as { detail?: string }
+          detail = payload.detail ?? detail
+        } catch {
+          // ignore json parse error
+        }
+        throw new Error(detail)
       }
 
-      // Also update env fields for .env export
-      setEnvFields((current) =>
-        current.map((item) => {
-          if (item.key === 'TTS_VOICE') return { ...item, value: ttsVoice }
-          if (item.key === 'TTS_RATE') return { ...item, value: ttsRate }
-          return item
-        }),
-      )
-
-      alert('✅ Đã apply TTS config vào backend! Trang chính sẽ dùng giọng mới ngay.')
+      const nextFields = envFields.map((field) => {
+        if (field.key === 'TTS_VOICE') {
+          return { ...field, value: ttsVoice }
+        }
+        if (field.key === 'TTS_RATE') {
+          return { ...field, value: ttsRate }
+        }
+        return field
+      })
+      setEnvFields(nextFields)
+      saveAndSyncConfig(nextFields, 'Da apply TTS vao backend va dong bo vao kiosk.')
+      setTtsApplyStatus('success')
     } catch (error) {
-      alert('❌ Không thể apply config: ' + (error instanceof Error ? error.message : 'Unknown error'))
+      setTtsApplyStatus('error')
+      setNotice({
+        tone: 'error',
+        text: error instanceof Error ? error.message : 'Khong the apply TTS config',
+      })
+    } finally {
+      window.setTimeout(() => setTtsApplyStatus('idle'), 2000)
     }
-  }, [currentAiApiUrl, ttsVoice, ttsRate])
+  }, [currentAiApiUrl, envFields, saveAndSyncConfig, ttsRate, ttsVoice])
 
   return (
     <main className="admin-page">
+      <div className="admin-page__backdrop admin-page__backdrop--one" />
+      <div className="admin-page__backdrop admin-page__backdrop--two" />
+
       <header className="admin-header">
-        <div>
-          <p className="admin-kicker">Order Robot Admin</p>
-          <h1>Health, Microphone, and .env Config</h1>
-          <p>Use this page to validate runtime connections and prepare a full `.env` quickly.</p>
+        <div className="admin-header__title">
+          <p className="admin-kicker">Order Robot / Admin</p>
+          <h1>Bang dieu khien de quan ly nhanh va ro</h1>
+          <p className="admin-subtitle">
+            Khong can nho het tung config. Chi can lam theo thu tu: check he thong, test giong noi,
+            sau do luu va dong bo.
+          </p>
         </div>
-        <div className="admin-actions">
-          <a className="admin-back" href="/debug">
+        <div className="admin-header__actions">
+          <a className="admin-link" href="/debug">
             Bridge Debug
           </a>
-          <a className="admin-back" href="/">
-            Back to Kiosk
+          <a className="admin-link admin-link--primary" href="/">
+            Ve Kiosk
           </a>
         </div>
       </header>
 
-      <section className="admin-card">
-        <div className="admin-card__head">
-          <div>
-            <h2>Alternative Live Caption</h2>
-            <p className="admin-hint">
-              Uu tien backend streaming STT de test caption on dinh truoc. Neu backend audio capture
-              khong kha dung thi moi thu native SpeechRecognition cua browser.
-            </p>
-          </div>
-          <div className="admin-actions">
-            <button className="admin-btn admin-btn--ghost" type="button" onClick={liveCaption.clear}>
-              Clear
-            </button>
-            {liveCaption.isListening ? (
-              <button className="admin-btn" type="button" onClick={liveCaption.stop}>
-                Stop Caption
-              </button>
-            ) : (
-              <button className="admin-btn" type="button" onClick={() => void liveCaption.start()}>
-                Start Caption
-              </button>
-            )}
-          </div>
-        </div>
-        <p
-          className={`admin-badge admin-badge--${
-            liveCaption.status === 'error' || liveCaption.status === 'unsupported' ? 'error' : 'ok'
-          }`}
-        >
-          {liveCaption.status}
-        </p>
-        <p>
-          Support native SpeechRecognition: <strong>{liveCaption.supported ? 'yes' : 'no'}</strong>
-        </p>
-        <p>
-          Active engine: <strong>{liveCaption.engine ?? 'none'}</strong> | Backend live caption:{' '}
-          <strong>{liveCaption.backendSupported ? 'yes' : 'no'}</strong>
-        </p>
-        <p>
-          Native SpeechRecognition available: <strong>{liveCaption.supported ? 'yes' : 'no'}</strong>
-        </p>
-        <div className="admin-stt">
-          <label>
-            <span>Final caption stream</span>
-            <textarea
-              value={liveCaption.finalTranscript}
-              readOnly
-              placeholder="Caption final se tich luy lien tuc o day..."
-            />
-          </label>
-          <label>
-            <span>Interim caption</span>
-            <textarea
-              value={liveCaption.interimTranscript}
-              readOnly
-              placeholder="Caption tam thoi se cap nhat lien tuc o day..."
-            />
-          </label>
-        </div>
-        {liveCaption.error ? (
-          <p className="admin-badge admin-badge--error">{liveCaption.error}</p>
-        ) : (
-          <p className="admin-badge admin-badge--ok">
-            Live caption mode uu tien toc do va tinh lien tuc, giong caption hon la voice-turn.
+      {notice ? (
+        <section className={`admin-notice admin-notice--${notice.tone}`} role="status">
+          {notice.text}
+        </section>
+      ) : null}
+
+      <section className="admin-metrics-grid">
+        <article className="admin-metric-card">
+          <p className="admin-metric-card__label">He thong khoe</p>
+          <p className="admin-metric-card__value">
+            {healthyServiceCount}/{services.length}
           </p>
-        )}
+          <p className="admin-metric-card__hint">service dang online</p>
+        </article>
+        <article className="admin-metric-card">
+          <p className="admin-metric-card__label">Dong bo index</p>
+          <p className="admin-metric-card__value">{formatSyncTime(lastSyncAt)}</p>
+          <p className="admin-metric-card__hint">moi thay doi se cap nhat vao kiosk</p>
+        </article>
+        <article className="admin-metric-card">
+          <p className="admin-metric-card__label">Speech status</p>
+          <p className="admin-metric-card__value">{listening ? 'Dang nghe' : 'Dang nghi'}</p>
+          <p className="admin-metric-card__hint">
+            Mic: {micState} | Caption: {liveCaption.status}
+          </p>
+        </article>
       </section>
 
-      <section className="admin-card">
-        <div className="admin-card__head">
-          <h2>Service Health Check</h2>
-          <button className="admin-btn" type="button" onClick={() => void runHealthChecks()}>
-            Check Now
+      <nav className="admin-tabs" aria-label="Admin sections">
+        {TAB_ITEMS.map((tab) => (
+          <button
+            key={tab.id}
+            className={`admin-tab ${activeTab === tab.id ? 'admin-tab--active' : ''}`}
+            type="button"
+            onClick={() => setActiveTab(tab.id)}
+            aria-pressed={activeTab === tab.id}
+          >
+            <span>{tab.label}</span>
+            <small>{tab.hint}</small>
           </button>
-        </div>
-        <div className="admin-grid">
-          {services.map((service) => (
-            <article key={service.name} className="admin-service">
-              <h3>{service.name}</h3>
-              <p className="admin-url">{service.url}</p>
-              <p className={`admin-badge admin-badge--${service.status}`}>{service.status}</p>
-              <p>{service.detail || 'Not checked yet'}</p>
-              <p>{service.latencyMs !== null ? `${service.latencyMs} ms` : '-'}</p>
-            </article>
-          ))}
-        </div>
-      </section>
+        ))}
+      </nav>
 
-      <section className="admin-card">
-        <div className="admin-card__head">
-          <h2>Microphone + Kiosk STT Flow</h2>
-          <p className="admin-hint">
-            Day la flow goi mon hien tai cua kiosk. Nhanh hon truoc nhung van la speech-turn, khong
-            phai live caption thuần.
-          </p>
-          <div className="admin-actions">
-            <button className="admin-btn admin-btn--ghost" type="button" onClick={() => void runMicCheck()}>
-              Check Mic
+      {activeTab === 'overview' ? (
+        <section className="admin-panel">
+          <header className="admin-panel__head">
+            <div>
+              <h2>Suc khoe backend</h2>
+              <p>Kiem tra ngay cac endpoint quan trong de biet cai nao dang cham, cai nao dang loi.</p>
+            </div>
+            <button className="admin-btn" type="button" onClick={() => void runHealthChecks()}>
+              {isHealthChecking ? 'Dang kiem tra...' : 'Check ngay'}
             </button>
-            {listening ? (
-              <button className="admin-btn" type="button" onClick={() => void stopBrowserStt()}>
-                Stop STT
-              </button>
-            ) : (
-              <button className="admin-btn" type="button" onClick={() => void startBrowserStt()}>
-                Start STT
-              </button>
-            )}
-          </div>
-        </div>
-        <p className={`admin-badge admin-badge--${micState}`}>{micState}</p>
-        <p>{micDetail || 'Not checked yet'}</p>
-        <p>
-          Listening: <strong>{listening ? 'yes' : 'no'}</strong> | Recognition supported:{' '}
-          <strong>{recognitionSupported ? 'yes' : 'no'}</strong>
-        </p>
-        <div className="admin-stt">
-          <label>
-            <span>Live transcript</span>
-            <textarea value={sttPartialText} readOnly placeholder="Realtime text tu kiosk STT..." />
-          </label>
-          <label>
-            <span>Final transcript</span>
-            <textarea value={sttFinalText} readOnly placeholder="Final text after stop..." />
-          </label>
-        </div>
-        {speechNotices.length > 0 ? (
-          <div className="admin-fields">
-            {speechNotices.map((notice) => (
-              <p key={`${notice.level}-${notice.text}`} className={`admin-badge admin-badge--${notice.level === 'warning' ? 'error' : 'ok'}`}>
-                {notice.text}
-              </p>
+          </header>
+
+          <div className="admin-service-grid">
+            {services.map((service) => (
+              <article key={service.name} className="admin-service-card">
+                <h3>{service.name}</h3>
+                <p className="admin-service-card__url">{service.url}</p>
+                <p className={`admin-chip admin-chip--${service.status}`}>{service.status}</p>
+                <p className="admin-service-card__detail">{service.detail}</p>
+                <p className="admin-service-card__latency">
+                  {service.latencyMs === null ? '-' : `${service.latencyMs} ms`}
+                </p>
+              </article>
             ))}
           </div>
-        ) : null}
-      </section>
+        </section>
+      ) : null}
 
-      <section className="admin-card">
-        <div className="admin-card__head">
-          <h2>TTS Voice Testing</h2>
-          <p className="admin-hint">
-            Test các giọng TTS khác nhau với tốc độ khác nhau. Chọn giọng và rate rồi bấm "Đọc thử" để nghe.
-          </p>
-        </div>
+      {activeTab === 'voice' ? (
+        <section className="admin-panel admin-panel--stacked">
+          <article className="admin-subcard">
+            <header className="admin-subcard__head">
+              <div>
+                <h3>Cai dat giong noi</h3>
+                <p>
+                  Chon voice va toc do doc. Test va apply ngay tai day.
+                </p>
+              </div>
+              <div className="admin-inline-actions">
+                <button
+                  className="admin-btn"
+                  type="button"
+                  onClick={() => void testTtsVoice()}
+                  disabled={ttsTestStatus === 'playing'}
+                >
+                  {ttsTestStatus === 'playing'
+                    ? 'Dang doc...'
+                    : ttsTestStatus === 'error'
+                      ? 'Doc thu bi loi'
+                      : 'Doc thu'}
+                </button>
+                <button
+                  className="admin-btn admin-btn--ghost"
+                  type="button"
+                  onClick={() => void applyTtsConfig()}
+                  disabled={ttsApplyStatus === 'saving'}
+                >
+                  {ttsApplyStatus === 'saving'
+                    ? 'Dang apply...'
+                    : ttsApplyStatus === 'success'
+                      ? 'Apply xong'
+                      : ttsApplyStatus === 'error'
+                        ? 'Apply loi'
+                        : 'Apply vao backend'}
+                </button>
+                <button
+                  className="admin-btn admin-btn--minimal"
+                  type="button"
+                  onClick={() => setShowAdvancedVoiceTools((current) => !current)}
+                >
+                  {showAdvancedVoiceTools ? 'An test ky thuat' : 'Hien test ky thuat'}
+                </button>
+              </div>
+            </header>
+            <div className="admin-fields-grid">
+              <label className="admin-field">
+                <span>TTS Voice</span>
+                <select value={ttsVoice} onChange={(event) => setTtsVoice(event.target.value)}>
+                  {TTS_VOICE_OPTIONS.map((voice) => (
+                    <option key={voice.value} value={voice.value}>
+                      {voice.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="admin-field">
+                <span>TTS Rate (100-300)</span>
+                <input
+                  type="number"
+                  min="100"
+                  max="300"
+                  step="5"
+                  value={ttsRate}
+                  onChange={(event) => setTtsRate(event.target.value)}
+                />
+              </label>
+              <label className="admin-field admin-field--full">
+                <span>Text test</span>
+                <textarea
+                  value={ttsTestText}
+                  onChange={(event) => setTtsTestText(event.target.value)}
+                  placeholder="Nhap noi dung can doc thu..."
+                />
+              </label>
+            </div>
+            <p className="admin-service-card__detail">
+              Phan test ky thuat (Mic/STT/Caption) dang duoc an mac dinh de giao dien gon hon.
+            </p>
+          </article>
 
-        <div className="admin-fields">
-          <label className="admin-field">
-            <span>TTS Voice</span>
-            <select value={ttsVoice} onChange={(e) => setTtsVoice(e.target.value)}>
-              <option value="vi-VN-HoaiMyNeural">vi-VN-HoaiMyNeural (Nữ, Neural)</option>
-              <option value="vi-VN-NamMinhNeural">vi-VN-NamMinhNeural (Nam, Neural)</option>
-              <option value="vi-VN-An">vi-VN-An (Nam, Standard)</option>
-              <option value="vi-VN-HoaiMy">vi-VN-HoaiMy (Nữ, Standard)</option>
-            </select>
-          </label>
+          {showAdvancedVoiceTools ? (
+            <>
+              <article className="admin-subcard">
+                <header className="admin-subcard__head">
+                  <div>
+                    <h3>Test mic nhanh (1 nut)</h3>
+                    <p>
+                      Bam mot lan de xin quyen mic va bat STT ngay. Bam lai de dung test.
+                    </p>
+                  </div>
+                  <div className="admin-inline-actions">
+                    <button className="admin-btn" type="button" onClick={() => void runQuickMicTest()}>
+                      {listening ? 'Dung test mic' : 'Test mic ngay'}
+                    </button>
+                  </div>
+                </header>
+                <p className={`admin-chip admin-chip--${micState}`}>{micState}</p>
+                <p className="admin-service-card__detail">{micDetail}</p>
+                <div className="admin-fields-grid admin-fields-grid--voice">
+                  <label className="admin-field">
+                    <span>Realtime transcript</span>
+                    <textarea value={sttPartialText} readOnly placeholder="Text tam thoi se hien o day..." />
+                  </label>
+                  <label className="admin-field">
+                    <span>Final transcript</span>
+                    <textarea value={sttFinalText} readOnly placeholder="Text final se hien o day..." />
+                  </label>
+                </div>
+                {speechNotices.length > 0 ? (
+                  <div className="admin-chip-list">
+                    {speechNotices.map((item) => (
+                      <p
+                        key={`${item.level}-${item.text}`}
+                        className={`admin-chip admin-chip--${item.level === 'warning' ? 'error' : 'ok'}`}
+                      >
+                        {item.text}
+                      </p>
+                    ))}
+                  </div>
+                ) : null}
+              </article>
 
-          <label className="admin-field">
-            <span>TTS Rate (tốc độ: 100-300, mặc định 165)</span>
-            <input
-              type="number"
-              min="100"
-              max="300"
-              step="5"
-              value={ttsRate}
-              onChange={(e) => setTtsRate(e.target.value)}
-            />
-          </label>
+              <article className="admin-subcard">
+                <header className="admin-subcard__head">
+                  <div>
+                    <h3>Live caption alternative</h3>
+                    <p>Che do caption de theo doi text lien tuc, huu ich khi test o moi truong on ao.</p>
+                  </div>
+                  <div className="admin-inline-actions">
+                    <button className="admin-btn admin-btn--ghost" type="button" onClick={liveCaption.clear}>
+                      Xoa caption
+                    </button>
+                    {liveCaption.isListening ? (
+                      <button className="admin-btn" type="button" onClick={liveCaption.stop}>
+                        Dung Caption
+                      </button>
+                    ) : (
+                      <button className="admin-btn" type="button" onClick={() => void liveCaption.start()}>
+                        Bat Caption
+                      </button>
+                    )}
+                  </div>
+                </header>
+                <p
+                  className={`admin-chip admin-chip--${
+                    liveCaption.status === 'error' || liveCaption.status === 'unsupported'
+                      ? 'error'
+                      : 'ok'
+                  }`}
+                >
+                  {liveCaption.status}
+                </p>
+                <p className="admin-service-card__detail">
+                  Engine: {liveCaption.engine ?? 'none'} | Backend support:{' '}
+                  {liveCaption.backendSupported ? 'yes' : 'no'}
+                </p>
+                <div className="admin-fields-grid admin-fields-grid--voice">
+                  <label className="admin-field">
+                    <span>Caption final</span>
+                    <textarea
+                      value={liveCaption.finalTranscript}
+                      readOnly
+                      placeholder="Caption final se tich luy o day..."
+                    />
+                  </label>
+                  <label className="admin-field">
+                    <span>Caption interim</span>
+                    <textarea
+                      value={liveCaption.interimTranscript}
+                      readOnly
+                      placeholder="Caption tam thoi se cap nhat o day..."
+                    />
+                  </label>
+                </div>
+                {liveCaption.error ? (
+                  <p className="admin-chip admin-chip--error">{liveCaption.error}</p>
+                ) : null}
+              </article>
+            </>
+          ) : null}
+        </section>
+      ) : null}
 
-          <label className="admin-field">
-            <span>Text để test</span>
+      {activeTab === 'config' ? (
+        <section className="admin-panel admin-panel--stacked">
+          <article className="admin-subcard">
+            <header className="admin-subcard__head">
+              <div>
+                <h3>Cau hinh thiet yeu</h3>
+                <p>
+                  Nhom nay la du de van hanh. Nhan luu de dong bo ngay vao index, khong can refresh tay.
+                </p>
+              </div>
+              <div className="admin-inline-actions">
+                <button className="admin-btn admin-btn--ghost" type="button" onClick={handleSaveConfig}>
+                  Luu va dong bo
+                </button>
+                <button className="admin-btn" type="button" onClick={() => void handleCopyEnv()}>
+                  {copied ? 'Da copy' : 'Copy .env'}
+                </button>
+              </div>
+            </header>
+
+            <p className="admin-service-card__detail">Lan dong bo gan nhat: {formatSyncTime(lastSyncAt)}</p>
+
+            <div className="admin-fields-grid">
+              {essentialFields.map((field) => (
+                <label key={field.key} className="admin-field">
+                  <span>{field.label}</span>
+                  <input
+                    value={field.value}
+                    onChange={(event) => setFieldValue(field.key, event.target.value)}
+                    onBlur={handleSaveConfig}
+                  />
+                </label>
+              ))}
+            </div>
+
+            <button
+              className="admin-btn admin-btn--minimal"
+              type="button"
+              onClick={() => setShowAdvancedConfig((current) => !current)}
+            >
+              {showAdvancedConfig ? 'An cau hinh nang cao' : 'Mo cau hinh nang cao'}
+            </button>
+
+            {showAdvancedConfig ? (
+              <div className="admin-fields-grid">
+                {advancedFields.map((field) => (
+                  <label key={field.key} className="admin-field">
+                    <span>{field.label}</span>
+                    <input
+                      value={field.value}
+                      onChange={(event) => setFieldValue(field.key, event.target.value)}
+                      onBlur={handleSaveConfig}
+                    />
+                  </label>
+                ))}
+              </div>
+            ) : null}
+          </article>
+
+          <article className="admin-subcard">
+            <header className="admin-subcard__head">
+              <div>
+                <h3>Preview .env</h3>
+                <p>{showAdvancedConfig ? 'Dang hien full cau hinh' : 'Dang hien nhom thiet yeu'}</p>
+              </div>
+            </header>
             <textarea
-              value={ttsTestText}
-              onChange={(e) => setTtsTestText(e.target.value)}
-              placeholder="Nhập text để test giọng đọc..."
-              rows={3}
+              className="admin-env-preview"
+              value={showAdvancedConfig ? envText : essentialEnvText}
+              readOnly
             />
-          </label>
-        </div>
-
-        <div className="admin-actions">
-          <button
-            className="admin-btn"
-            type="button"
-            onClick={() => void testTtsVoice()}
-            disabled={ttsTestStatus === 'playing'}
-          >
-            {ttsTestStatus === 'playing' ? 'Đang đọc...' : ttsTestStatus === 'error' ? 'Lỗi!' : 'Đọc thử'}
-          </button>
-          <button
-            className="admin-btn admin-btn--ghost"
-            type="button"
-            onClick={() => void applyTtsConfig()}
-          >
-            Apply ngay
-          </button>
-        </div>
-
-        <p className="admin-hint">
-          Sau khi test xong, bấm "Apply ngay" để backend dùng giọng mới. Trang chính sẽ thấy thay đổi ngay lập tức.
-        </p>
-      </section>
-
-      <section className="admin-card">
-        <div className="admin-card__head">
-          <h2>.env Builder</h2>
-          <div className="admin-actions">
-            <button className="admin-btn admin-btn--ghost" type="button" onClick={saveEnvDraft}>
-              Save Draft
-            </button>
-            <button className="admin-btn" type="button" onClick={() => void copyEnv()}>
-              {copied ? 'Copied' : 'Copy .env'}
-            </button>
-          </div>
-        </div>
-
-        <div className="admin-fields">
-          {envFields.map((field) => (
-            <label key={field.key} className="admin-field">
-              <span>{field.label}</span>
-              <input
-                value={field.value}
-                onChange={(event) => {
-                  const next = event.target.value
-                  setEnvFields((current) =>
-                    current.map((item) => (item.key === field.key ? { ...item, value: next } : item)),
-                  )
-                }}
-              />
-            </label>
-          ))}
-        </div>
-
-        <textarea className="admin-preview" value={envText} readOnly />
-      </section>
+          </article>
+        </section>
+      ) : null}
     </main>
   )
 }

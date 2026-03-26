@@ -13,7 +13,7 @@
     "dev:bridge": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-bridge.ps1",
     "dev:bridge:dev": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-bridge.ps1 -ForceRestart",
     "debug:chrome-mcp": "npx chrome-devtools-mcp@latest",
-    "dev": "concurrently --kill-others-on-fail \"npm:dev:bridge:dev\" \"npm:dev:core\" \"npm:dev:ai\" \"npm:dev:ui\"",
+    "dev": "concurrently --kill-others-on-fail \"npm:dev:bridge\" \"npm:dev:core\" \"npm:dev:ai\" \"npm:dev:ui\"",
     "test:core": "powershell -NoProfile -Command \"Set-Location 'services/core-backend'; python -m pytest tests\"",
     "test:ai": "powershell -NoProfile -Command \"Set-Location 'services/ai-backend'; python -m pytest tests\"",
     "test:python": "npm run test:core && npm run test:ai",

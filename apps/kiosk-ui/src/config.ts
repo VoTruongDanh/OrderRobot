@@ -13,18 +13,63 @@ const LEGACY_ENV_VALUE_MIGRATIONS: Record<string, Record<string, string>> = {
   },
 }
 
+export const ADMIN_ENV_STORAGE_KEY = 'admin.env.fields'
+const ADMIN_ENV_UPDATED_AT_KEY = 'admin.env.updatedAt'
+const ADMIN_CONFIG_UPDATED_EVENT = 'orderrobot:admin-config-updated'
+
 export function normalizeEnvValue(key: string, value: string): string {
   return LEGACY_ENV_VALUE_MIGRATIONS[key]?.[value] ?? value
 }
 
+function readSavedAdminEnv(): Record<string, string> | null {
+  try {
+    const raw = localStorage.getItem(ADMIN_ENV_STORAGE_KEY)
+    if (!raw) {
+      return null
+    }
+    return JSON.parse(raw) as Record<string, string>
+  } catch {
+    return null
+  }
+}
+
+export function saveAdminEnvConfig(nextConfig: Record<string, string>): void {
+  const normalized = Object.fromEntries(
+    Object.entries(nextConfig).map(([key, value]) => [key, normalizeEnvValue(key, String(value ?? ''))]),
+  )
+
+  const updatedAt = Date.now()
+  localStorage.setItem(ADMIN_ENV_STORAGE_KEY, JSON.stringify(normalized))
+  localStorage.setItem(ADMIN_ENV_UPDATED_AT_KEY, String(updatedAt))
+  window.dispatchEvent(
+    new CustomEvent(ADMIN_CONFIG_UPDATED_EVENT, {
+      detail: { updatedAt, config: normalized },
+    }),
+  )
+}
+
+export function subscribeAdminConfigChanges(onChange: () => void): () => void {
+  const handleCustomEvent = () => onChange()
+  const handleStorage = (event: StorageEvent) => {
+    if (event.key === ADMIN_ENV_STORAGE_KEY || event.key === ADMIN_ENV_UPDATED_AT_KEY) {
+      onChange()
+    }
+  }
+
+  window.addEventListener(ADMIN_CONFIG_UPDATED_EVENT, handleCustomEvent as EventListener)
+  window.addEventListener('storage', handleStorage)
+
+  return () => {
+    window.removeEventListener(ADMIN_CONFIG_UPDATED_EVENT, handleCustomEvent as EventListener)
+    window.removeEventListener('storage', handleStorage)
+  }
+}
+
 export function getEnvConfig(key: string, defaultValue: string): string {
   try {
-    const raw = localStorage.getItem('admin.env.fields')
-    if (raw) {
-      const saved = JSON.parse(raw) as Record<string, string>
-      if (saved[key]) {
-        return normalizeEnvValue(key, saved[key])
-      }
+    const saved = readSavedAdminEnv()
+    if (saved?.[key]) {
+      return normalizeEnvValue(key, saved[key])
     }
   } catch {
     // ignore parsing errors
@@ -36,6 +81,26 @@ export function getEnvConfig(key: string, defaultValue: string): string {
     }
   }
   return defaultValue
+}
+
+export function getAllAdminEnvConfig(): Record<string, string> {
+  const saved = readSavedAdminEnv()
+  if (!saved) {
+    return {}
+  }
+
+  return Object.fromEntries(
+    Object.entries(saved).map(([key, value]) => [key, normalizeEnvValue(key, value)]),
+  )
+}
+
+export function getAdminConfigUpdatedAt(): number | null {
+  const raw = localStorage.getItem(ADMIN_ENV_UPDATED_AT_KEY)
+  if (!raw) {
+    return null
+  }
+  const parsed = Number(raw)
+  return Number.isFinite(parsed) ? parsed : null
 }
 
 export function getCoreApiUrl(): string {

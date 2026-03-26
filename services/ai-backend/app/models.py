@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field
 
 
 class MenuItem(BaseModel):
@@ -64,11 +64,19 @@ class FeedbackRequest(BaseModel):
     rating: int = Field(ge=1, le=5)
     comment: str | None = None
     transcript_history: list[str] = Field(default_factory=list)
+    needs_improvement: bool | None = None
+    improvement_tags: list[str] = Field(default_factory=list)
+    review_status: Literal["new", "triaged", "resolved"] = "new"
 
 
 class TTSConfigRequest(BaseModel):
-    voice: str | None = None
-    rate: int | None = Field(default=None, ge=100, le=300)
+    voice: str | None = Field(default=None, validation_alias=AliasChoices("voice", "tts_voice"))
+    rate: int | None = Field(
+        default=None,
+        ge=100,
+        le=300,
+        validation_alias=AliasChoices("rate", "tts_rate"),
+    )
 
 
 class SpeechSynthesisRequest(BaseModel):
