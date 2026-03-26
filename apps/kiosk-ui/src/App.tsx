@@ -387,7 +387,6 @@ function App() {
       const turnAbortController = new AbortController()
       currentTurnAbortRef.current = turnAbortController
 
-      stopListening()
       isBusyRef.current = true
       appendTranscript('user', transcript)
       setRobotMode('thinking')
@@ -408,10 +407,20 @@ function App() {
         const audioChunks: Uint8Array[] = []
         let streamingAudioPlayer: ReturnType<typeof createStreamingAudioPlayer> | null = null
         let receivedStreamingAudio = false
-        let bargeInListeningStarted = false
+        let bargeInListeningStarted = listening
         let cartData: ConversationResponse['cart'] = []
         let orderCreatedDetected = false
         let detectedOrderId: string | null = null
+
+        if (recognitionSupported && !bargeInListeningStarted) {
+          try {
+            await startListening()
+            bargeInListeningStarted = true
+            console.log('[submitIntent] Listening kept active while waiting backend response')
+          } catch (error) {
+            console.warn('[submitIntent] Could not keep listening during backend wait:', error)
+          }
+        }
 
         setRobotMode('speaking')
         setStatusMessage('Robot đang phản hồi...')
@@ -650,9 +659,9 @@ function App() {
       createSilentSession,
       createStreamingAudioPlayer,
       handleUiError,
+      listening,
       recognitionSupported,
       startListening,
-      stopListening,
     ],
   )
 

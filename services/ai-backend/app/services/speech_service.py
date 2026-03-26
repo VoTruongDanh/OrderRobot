@@ -622,7 +622,9 @@ def should_fallback_to_windows_tts(exc: Exception) -> bool:
 
 def pick_edge_voice(voice_lang: str, voice_hint: str) -> str:
     hint = voice_hint.lower().strip()
-    if hint.startswith("vi-vn-"):
+    # Allow passing a full Edge voice id directly, for example:
+    # vi-VN-HoaiMyNeural, en-US-AvaMultilingualNeural, etc.
+    if re.match(r"^[a-z]{2}-[a-z]{2}-[a-z0-9]+(?:neural)$", hint):
         return voice_hint
 
     if any(token in hint for token in ["hoaimy", "hoai", "female", "nu", "woman"]):

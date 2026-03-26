@@ -433,6 +433,12 @@
   background: rgba(255, 255, 255, 0.9);
 }
 
+.admin-field input[type='range'] {
+  padding: 0;
+  accent-color: var(--admin-accent);
+  height: 28px;
+}
+
 .admin-field textarea {
   min-height: 110px;
   resize: vertical;
@@ -452,6 +458,20 @@
 .admin-tab:focus-visible {
   outline: 2px solid rgba(27, 146, 158, 0.42);
   outline-offset: 2px;
+}
+
+.admin-noise-meter {
+  height: 12px;
+  border-radius: 999px;
+  background: rgba(74, 95, 110, 0.18);
+  overflow: hidden;
+}
+
+.admin-noise-meter__bar {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #2d8f64, #f0a63f, #d84f62);
+  transition: width 0.12s ease;
 }
 
 .admin-chip-list {

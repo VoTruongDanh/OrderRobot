@@ -16,6 +16,17 @@ const LEGACY_ENV_VALUE_MIGRATIONS: Record<string, Record<string, string>> = {
 export const ADMIN_ENV_STORAGE_KEY = 'admin.env.fields'
 const ADMIN_ENV_UPDATED_AT_KEY = 'admin.env.updatedAt'
 const ADMIN_CONFIG_UPDATED_EVENT = 'orderrobot:admin-config-updated'
+const ADMIN_MIC_NOISE_FILTER_KEY = 'admin.mic.noiseFilter'
+const ADMIN_MIC_NOISE_FILTER_STRENGTH_KEY = 'admin.mic.noiseFilterStrength'
+
+export type MicNoiseFilterLevel = 'off' | 'balanced' | 'strong'
+
+function clampMicStrength(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 60
+  }
+  return Math.max(0, Math.min(100, Math.round(value)))
+}
 
 export function normalizeEnvValue(key: string, value: string): string {
   return LEGACY_ENV_VALUE_MIGRATIONS[key]?.[value] ?? value
@@ -117,4 +128,86 @@ export function getMenuApiUrl(): string {
 
 export function getOrdersApiUrl(): string {
   return getEnvConfig('VITE_ORDERS_API_URL', `${getCoreApiUrl()}/orders`)
+}
+
+export function getMicNoiseFilterLevel(): MicNoiseFilterLevel {
+  const strength = getMicNoiseFilterStrength()
+  return getMicNoiseFilterLevelFromStrength(strength)
+}
+
+export function getMicNoiseFilterStrength(): number {
+  const rawStrength = localStorage.getItem(ADMIN_MIC_NOISE_FILTER_STRENGTH_KEY)
+  if (rawStrength !== null) {
+    const parsed = Number(rawStrength)
+    return clampMicStrength(parsed)
+  }
+
+  const saved = localStorage.getItem(ADMIN_MIC_NOISE_FILTER_KEY)
+  if (saved === 'off') {
+    return 0
+  }
+  if (saved === 'strong') {
+    return 100
+  }
+  return 60
+}
+
+export function getMicNoiseFilterLevelFromStrength(strength: number): MicNoiseFilterLevel {
+  if (strength <= 20) {
+    return 'off'
+  }
+  if (strength >= 75) {
+    return 'strong'
+  }
+  return 'balanced'
+}
+
+export function setMicNoiseFilterLevel(level: MicNoiseFilterLevel): void {
+  localStorage.setItem(ADMIN_MIC_NOISE_FILTER_KEY, level)
+  const mappedStrength = level === 'off' ? 0 : level === 'strong' ? 100 : 60
+  localStorage.setItem(ADMIN_MIC_NOISE_FILTER_STRENGTH_KEY, String(mappedStrength))
+}
+
+export function setMicNoiseFilterStrength(strength: number): void {
+  const safeStrength = clampMicStrength(strength)
+  localStorage.setItem(ADMIN_MIC_NOISE_FILTER_STRENGTH_KEY, String(safeStrength))
+  localStorage.setItem(
+    ADMIN_MIC_NOISE_FILTER_KEY,
+    getMicNoiseFilterLevelFromStrength(safeStrength),
+  )
+}
+
+export function getMicAudioConstraints(
+  levelOrStrength: MicNoiseFilterLevel | number = getMicNoiseFilterStrength(),
+): MediaTrackConstraints {
+  const level =
+    typeof levelOrStrength === 'number'
+      ? getMicNoiseFilterLevelFromStrength(levelOrStrength)
+      : levelOrStrength
+
+  if (level === 'off') {
+    return {
+      channelCount: 1,
+      echoCancellation: false,
+      noiseSuppression: false,
+      autoGainControl: false,
+    }
+  }
+
+  if (level === 'strong') {
+    return {
+      channelCount: 1,
+      sampleRate: 16000,
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+    }
+  }
+
+  return {
+    channelCount: 1,
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true,
+  }
 }

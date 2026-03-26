@@ -1,14 +1,18 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './admin.css'
 import {
   ADMIN_ENV_STORAGE_KEY,
   getAdminConfigUpdatedAt,
   getAiApiUrl,
   getCoreApiUrl,
+  getMicAudioConstraints,
+  getMicNoiseFilterLevelFromStrength,
+  getMicNoiseFilterStrength,
   getMenuApiUrl,
   getOrdersApiUrl,
   normalizeEnvValue,
   saveAdminEnvConfig,
+  setMicNoiseFilterStrength as persistMicNoiseFilterStrength,
 } from './config'
 import { useLiveCaption } from './hooks/useLiveCaption'
 import { useSpeech } from './hooks/useSpeech'
@@ -97,11 +101,31 @@ const ENV_TEMPLATE: EnvField[] = [
 ]
 
 const TTS_VOICE_OPTIONS = [
-  { value: 'vi-VN-HoaiMyNeural', label: 'vi-VN-HoaiMyNeural (Nu, Neural)' },
-  { value: 'vi-VN-NamMinhNeural', label: 'vi-VN-NamMinhNeural (Nam, Neural)' },
+  { value: 'vi-VN-HoaiMyNeural', label: 'HoaiMy Neural (Nu, tu nhien)' },
+  { value: 'vi-VN-NamMinhNeural', label: 'NamMinh Neural (Nam, tu nhien)' },
+  { value: 'en-US-AvaMultilingualNeural', label: 'Ava Multilingual Neural (Nu, mem)' },
+  { value: 'en-US-AndrewMultilingualNeural', label: 'Andrew Multilingual Neural (Nam, dam)' },
   { value: 'vi-VN-An', label: 'vi-VN-An (Nam, Standard)' },
   { value: 'vi-VN-HoaiMy', label: 'vi-VN-HoaiMy (Nu, Standard)' },
 ]
+
+const TTS_NATURAL_PRESETS: Array<{ label: string; voice: string; rate: string }> = [
+  { label: 'Nu tu nhien', voice: 'vi-VN-HoaiMyNeural', rate: '165' },
+  { label: 'Nam tu nhien', voice: 'vi-VN-NamMinhNeural', rate: '160' },
+  { label: 'Nu mem chat', voice: 'en-US-AvaMultilingualNeural', rate: '155' },
+  { label: 'Nam am dam', voice: 'en-US-AndrewMultilingualNeural', rate: '155' },
+]
+
+function getMicNoiseFilterLabel(strength: number): string {
+  const level = getMicNoiseFilterLevelFromStrength(strength)
+  if (level === 'off') {
+    return 'Tat loc on'
+  }
+  if (level === 'strong') {
+    return 'Loc on manh'
+  }
+  return 'Can bang'
+}
 
 function loadSavedEnv(): EnvField[] {
   try {
@@ -170,6 +194,18 @@ export default function AdminPage() {
     getFieldValue(loadSavedEnv(), 'TTS_VOICE', 'vi-VN-HoaiMyNeural'),
   )
   const [ttsRate, setTtsRate] = useState(() => getFieldValue(loadSavedEnv(), 'TTS_RATE', '165'))
+  const [micNoiseFilterStrength, setMicNoiseFilterStrength] = useState<number>(() =>
+    getMicNoiseFilterStrength(),
+  )
+  const [noiseMonitorActive, setNoiseMonitorActive] = useState(false)
+  const [noiseLevelDb, setNoiseLevelDb] = useState(-90)
+  const [noiseLevelPercent, setNoiseLevelPercent] = useState(0)
+  const noiseMonitorRef = useRef<{
+    stream: MediaStream
+    audioContext: AudioContext
+    analyser: AnalyserNode
+    intervalId: number
+  } | null>(null)
   const [ttsTestText, setTtsTestText] = useState(
     'Xin chao! Minh la robot dat mon. Ban muon goi gi hom nay?',
   )
@@ -402,7 +438,9 @@ export default function AdminPage() {
     setMicDetail('Dang xin quyen microphone va khoi dong STT...')
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: getMicAudioConstraints(micNoiseFilterStrength),
+      })
       const tracks = stream.getAudioTracks()
       const trackLabel = tracks[0]?.label || 'Microphone ready'
       tracks.forEach((track) => track.stop())
@@ -420,7 +458,100 @@ export default function AdminPage() {
       setMicState('error')
       setMicDetail(error instanceof Error ? error.message : 'Khong the test microphone')
     }
-  }, [listening, recognitionSupported, startListening, stopBrowserStt])
+  }, [listening, micNoiseFilterStrength, recognitionSupported, startListening, stopBrowserStt])
+
+  const handleMicNoiseFilterStrengthChange = useCallback((nextStrength: number) => {
+    const safeStrength = Math.max(0, Math.min(100, Math.round(nextStrength)))
+    setMicNoiseFilterStrength(safeStrength)
+    persistMicNoiseFilterStrength(safeStrength)
+  }, [])
+
+  const stopNoiseMonitor = useCallback(() => {
+    const current = noiseMonitorRef.current
+    if (!current) {
+      setNoiseMonitorActive(false)
+      return
+    }
+
+    window.clearInterval(current.intervalId)
+    current.stream.getTracks().forEach((track) => track.stop())
+    void current.audioContext.close()
+    noiseMonitorRef.current = null
+    setNoiseMonitorActive(false)
+  }, [])
+
+  const startNoiseMonitor = useCallback(async () => {
+    if (noiseMonitorRef.current) {
+      return
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: getMicAudioConstraints(micNoiseFilterStrength),
+      })
+      const audioContext = new AudioContext()
+      if (audioContext.state === 'suspended') {
+        await audioContext.resume()
+      }
+
+      const source = audioContext.createMediaStreamSource(stream)
+      const analyser = audioContext.createAnalyser()
+      analyser.fftSize = 1024
+      analyser.smoothingTimeConstant = 0.35
+      source.connect(analyser)
+      // Keep node graph active without audible output.
+      const silentGain = audioContext.createGain()
+      silentGain.gain.value = 0
+      analyser.connect(silentGain)
+      silentGain.connect(audioContext.destination)
+
+      const floatData = new Float32Array(analyser.fftSize)
+      const intervalId = window.setInterval(() => {
+        analyser.getFloatTimeDomainData(floatData)
+        let sumSquares = 0
+        let peak = 0
+        for (let index = 0; index < floatData.length; index += 1) {
+          const sample = floatData[index]
+          const absSample = Math.abs(sample)
+          if (absSample > peak) {
+            peak = absSample
+          }
+          sumSquares += sample * sample
+        }
+        const rms = Math.sqrt(sumSquares / floatData.length)
+        const effectiveSignal = Math.max(rms, peak * 0.5, 1e-6)
+        const db = 20 * Math.log10(effectiveSignal)
+        const clampedDb = Math.max(-70, Math.min(0, db))
+        const normalizedPercent = Math.max(0, Math.min(100, ((clampedDb + 70) / 70) * 100))
+        setNoiseLevelDb(Number(clampedDb.toFixed(1)))
+        setNoiseLevelPercent((current) => Math.round(current * 0.65 + normalizedPercent * 0.35))
+      }, 120)
+
+      noiseMonitorRef.current = {
+        stream,
+        audioContext,
+        analyser,
+        intervalId,
+      }
+      setNoiseMonitorActive(true)
+      setNotice({
+        tone: 'info',
+        text: 'Dang do do on truc tiep tu microphone.',
+      })
+    } catch (error) {
+      setNotice({
+        tone: 'error',
+        text: error instanceof Error ? error.message : 'Khong the bat do on microphone.',
+      })
+      stopNoiseMonitor()
+    }
+  }, [micNoiseFilterStrength, stopNoiseMonitor])
+
+  useEffect(() => {
+    return () => {
+      stopNoiseMonitor()
+    }
+  }, [stopNoiseMonitor])
 
   const testTtsVoice = useCallback(async () => {
     const normalizedRate = toSafeTtsRate(ttsRate)
@@ -639,6 +770,45 @@ export default function AdminPage() {
           <article className="admin-subcard">
             <header className="admin-subcard__head">
               <div>
+                <h3>Mic Noise Filter</h3>
+                <p>Keo slider de chinh muc loc on, va xem do on realtime tu mic.</p>
+              </div>
+              <div className="admin-inline-actions">
+                {noiseMonitorActive ? (
+                  <button className="admin-btn admin-btn--ghost" type="button" onClick={stopNoiseMonitor}>
+                    Dung do on
+                  </button>
+                ) : (
+                  <button className="admin-btn" type="button" onClick={() => void startNoiseMonitor()}>
+                    Bat do on truc tiep
+                  </button>
+                )}
+              </div>
+            </header>
+            <div className="admin-fields-grid">
+              <label className="admin-field">
+                <span>Muc loc on: {micNoiseFilterStrength}% ({getMicNoiseFilterLabel(micNoiseFilterStrength)})</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  step="1"
+                  value={micNoiseFilterStrength}
+                  onChange={(event) => handleMicNoiseFilterStrengthChange(Number(event.target.value))}
+                />
+              </label>
+            </div>
+            <p className="admin-service-card__detail">
+              Do on hien tai: <strong>{noiseLevelDb.toFixed(1)} dB</strong>
+            </p>
+            <div className="admin-noise-meter" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={noiseLevelPercent}>
+              <div className="admin-noise-meter__bar" style={{ width: `${noiseLevelPercent}%` }} />
+            </div>
+          </article>
+
+          <article className="admin-subcard">
+            <header className="admin-subcard__head">
+              <div>
                 <h3>Cai dat giong noi</h3>
                 <p>
                   Chon voice va toc do doc. Test va apply ngay tai day.
@@ -711,8 +881,27 @@ export default function AdminPage() {
                 />
               </label>
             </div>
+            <div className="admin-inline-actions">
+              {TTS_NATURAL_PRESETS.map((preset) => (
+                <button
+                  key={preset.label}
+                  className="admin-btn admin-btn--ghost"
+                  type="button"
+                  onClick={() => {
+                    setTtsVoice(preset.voice)
+                    setTtsRate(preset.rate)
+                    setNotice({
+                      tone: 'info',
+                      text: `Da chon preset ${preset.label}.`,
+                    })
+                  }}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
             <p className="admin-service-card__detail">
-              Phan test ky thuat (Mic/STT/Caption) dang duoc an mac dinh de giao dien gon hon.
+              Goi y de nghe giong nguoi that hon: dung Neural voice, rate trong khoang 145-180.
             </p>
           </article>
 

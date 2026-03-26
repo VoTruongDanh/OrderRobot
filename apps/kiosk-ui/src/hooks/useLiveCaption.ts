@@ -5,6 +5,7 @@ import {
   type StreamingSpeechFinalEvent,
   StreamingSpeechClient,
 } from '../api'
+import { getMicAudioConstraints } from '../config'
 
 type UseLiveCaptionOptions = {
   lang: string
@@ -294,12 +295,7 @@ export function useLiveCaption({ lang }: UseLiveCaptionOptions) {
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          channelCount: 1,
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
+        audio: getMicAudioConstraints(),
       })
       streamRef.current = stream
 
@@ -472,12 +468,7 @@ export function useLiveCaption({ lang }: UseLiveCaptionOptions) {
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          channelCount: 1,
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
+        audio: getMicAudioConstraints(),
       })
       stream.getTracks().forEach((track) => track.stop())
     } catch {
