@@ -4,6 +4,7 @@ import {
   ADMIN_ENV_STORAGE_KEY,
   getAdminConfigUpdatedAt,
   getAiApiUrl,
+  getCameraPreviewVisible,
   getCoreApiUrl,
   getMicAudioConstraints,
   getMicNoiseFilterLevelFromStrength,
@@ -13,6 +14,7 @@ import {
   getOrdersApiUrl,
   normalizeEnvValue,
   saveAdminEnvConfig,
+  setCameraPreviewVisible as persistCameraPreviewVisible,
   setMicNoiseFilterStrength as persistMicNoiseFilterStrength,
   setRobotScalePercent as persistRobotScalePercent,
 } from './config'
@@ -200,6 +202,9 @@ export default function AdminPage() {
     getMicNoiseFilterStrength(),
   )
   const [robotScalePercent, setRobotScalePercent] = useState<number>(() => getRobotScalePercent())
+  const [cameraPreviewVisible, setCameraPreviewVisible] = useState<boolean>(() =>
+    getCameraPreviewVisible(),
+  )
   const [noiseMonitorActive, setNoiseMonitorActive] = useState(false)
   const [noiseLevelDb, setNoiseLevelDb] = useState(-90)
   const [noiseLevelPercent, setNoiseLevelPercent] = useState(0)
@@ -479,6 +484,15 @@ export default function AdminPage() {
     })
   }, [])
 
+  const handleCameraPreviewVisibleChange = useCallback((visible: boolean) => {
+    setCameraPreviewVisible(visible)
+    persistCameraPreviewVisible(visible)
+    setNotice({
+      tone: 'info',
+      text: visible ? 'Da bat khung camera tren kiosk.' : 'Da an khung camera tren kiosk.',
+    })
+  }, [])
+
   const stopNoiseMonitor = useCallback(() => {
     const current = noiseMonitorRef.current
     if (!current) {
@@ -754,6 +768,16 @@ export default function AdminPage() {
               value={robotScalePercent}
               onChange={(event) => handleRobotScaleChange(Number(event.target.value))}
             />
+          </label>
+          <label className="admin-field">
+            <span>Khung camera mini (goc phai tren)</span>
+            <select
+              value={cameraPreviewVisible ? 'show' : 'hide'}
+              onChange={(event) => handleCameraPreviewVisibleChange(event.target.value === 'show')}
+            >
+              <option value="show">Hien</option>
+              <option value="hide">An</option>
+            </select>
           </label>
         </div>
       </section>

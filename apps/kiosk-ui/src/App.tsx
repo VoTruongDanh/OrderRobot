@@ -1,26 +1,39 @@
 import './App.css'
 import { useEffect, useRef, useState } from 'react'
-import { getRobotScalePercent, subscribeAdminConfigChanges } from './config'
+import {
+  getCameraPreviewVisible,
+  getRobotScalePercent,
+  subscribeAdminConfigChanges,
+} from './config'
 
 function App() {
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
   const [robotScalePercent, setRobotScalePercent] = useState<number>(() => getRobotScalePercent())
+  const [cameraPreviewVisible, setCameraPreviewVisible] = useState<boolean>(() =>
+    getCameraPreviewVisible(),
+  )
 
   useEffect(() => {
-    const applyScale = () => {
-      const next = getRobotScalePercent()
-      setRobotScalePercent(next)
+    const syncAdminConfigToIframe = () => {
+      const nextScale = getRobotScalePercent()
+      const nextCameraVisible = getCameraPreviewVisible()
+      setRobotScalePercent(nextScale)
+      setCameraPreviewVisible(nextCameraVisible)
       iframeRef.current?.contentWindow?.postMessage(
-        { type: 'orderrobot:robot-scale', scalePercent: next },
+        { type: 'orderrobot:robot-scale', scalePercent: nextScale },
+        window.location.origin,
+      )
+      iframeRef.current?.contentWindow?.postMessage(
+        { type: 'orderrobot:camera-preview-visible', visible: nextCameraVisible },
         window.location.origin,
       )
     }
 
     const unsubscribe = subscribeAdminConfigChanges(() => {
-      applyScale()
+      syncAdminConfigToIframe()
     })
 
-    applyScale()
+    syncAdminConfigToIframe()
     return unsubscribe
   }, [])
 
@@ -36,6 +49,10 @@ function App() {
           onLoad={() => {
             iframeRef.current?.contentWindow?.postMessage(
               { type: 'orderrobot:robot-scale', scalePercent: robotScalePercent },
+              window.location.origin,
+            )
+            iframeRef.current?.contentWindow?.postMessage(
+              { type: 'orderrobot:camera-preview-visible', visible: cameraPreviewVisible },
               window.location.origin,
             )
           }}

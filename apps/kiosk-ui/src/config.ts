@@ -19,6 +19,7 @@ const ADMIN_CONFIG_UPDATED_EVENT = 'orderrobot:admin-config-updated'
 const ADMIN_MIC_NOISE_FILTER_KEY = 'admin.mic.noiseFilter'
 const ADMIN_MIC_NOISE_FILTER_STRENGTH_KEY = 'admin.mic.noiseFilterStrength'
 const ADMIN_ROBOT_SCALE_PERCENT_KEY = 'admin.robot.scalePercent'
+const ADMIN_CAMERA_PREVIEW_VISIBLE_KEY = 'admin.camera.previewVisible'
 
 export type MicNoiseFilterLevel = 'off' | 'balanced' | 'strong'
 
@@ -201,6 +202,25 @@ export function setRobotScalePercent(scalePercent: number): void {
   window.dispatchEvent(
     new CustomEvent(ADMIN_CONFIG_UPDATED_EVENT, {
       detail: { updatedAt, robotScalePercent: safeValue },
+    }),
+  )
+}
+
+export function getCameraPreviewVisible(): boolean {
+  const raw = localStorage.getItem(ADMIN_CAMERA_PREVIEW_VISIBLE_KEY)
+  if (raw === null) {
+    return true
+  }
+  return raw !== 'false'
+}
+
+export function setCameraPreviewVisible(visible: boolean): void {
+  localStorage.setItem(ADMIN_CAMERA_PREVIEW_VISIBLE_KEY, String(Boolean(visible)))
+  const updatedAt = Date.now()
+  localStorage.setItem(ADMIN_ENV_UPDATED_AT_KEY, String(updatedAt))
+  window.dispatchEvent(
+    new CustomEvent(ADMIN_CONFIG_UPDATED_EVENT, {
+      detail: { updatedAt, cameraPreviewVisible: Boolean(visible) },
     }),
   )
 }
