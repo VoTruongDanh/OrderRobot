@@ -1,5 +1,6 @@
 param(
-  [string]$Port
+  [string]$Port,
+  [switch]$ForceRestart
 )
 
 $ErrorActionPreference = 'Stop'
@@ -61,27 +62,55 @@ $listener = Get-ListenerProcessInfo -Port ([int]$aiPort)
 if ($null -ne $listener) {
   Write-Host "[ai] detected existing listener on $baseUrl (pid=$($listener.ProcessId), process=$($listener.ProcessName))"
 
-  $isHealthyAi = $false
-  try {
-    $health = Invoke-RestMethod -Uri "$baseUrl/health" -Method Get -TimeoutSec 2
-    $isHealthyAi = ($null -ne $health -and $health.status -eq 'ok')
-  } catch {
+  if ($ForceRestart.IsPresent) {
+    Write-Host "[ai] force restart enabled. stopping existing ai listener..."
+    try {
+      Stop-Process -Id $listener.ProcessId -Force -ErrorAction Stop
+    } catch {
+      Write-Host "[ai] warning: could not stop pid=$($listener.ProcessId): $($_.Exception.Message). re-checking port..."
+    }
+    Start-Sleep -Milliseconds 600
+    $stillUsed = Get-ListenerProcessInfo -Port ([int]$aiPort)
+    if ($null -ne $stillUsed) {
+      $healthyBridgeMode = $false
+      try {
+        $health = Invoke-RestMethod -Uri "$baseUrl/health" -Method Get -TimeoutSec 2
+        $healthyBridgeMode = ($null -ne $health -and $health.status -eq 'ok' -and $health.llm_mode -eq 'bridge_only')
+      } catch {
+        $healthyBridgeMode = $false
+      }
+
+      if ($healthyBridgeMode) {
+        Write-Host "[ai] existing ai-backend is already healthy in bridge_only mode. Reusing current instance."
+        exit 0
+      }
+
+      throw "Failed to free ai port $aiPort. still occupied by pid=$($stillUsed.ProcessId), process=$($stillUsed.ProcessName)."
+    }
+  } else {
+
     $isHealthyAi = $false
-  }
+    try {
+      $health = Invoke-RestMethod -Uri "$baseUrl/health" -Method Get -TimeoutSec 2
+      $isHealthyAi = ($null -ne $health -and $health.status -eq 'ok')
+    } catch {
+      $isHealthyAi = $false
+    }
 
-  if ($isHealthyAi) {
-    Write-Host "[ai] existing ai-backend is healthy. Reusing current instance."
-    exit 0
-  }
+    if ($isHealthyAi) {
+      Write-Host "[ai] existing ai-backend is healthy. Reusing current instance."
+      exit 0
+    }
 
-  Write-Host "[ai] port in use by a non-ai service or unhealthy process."
-  if ($listener.Path) {
-    Write-Host "[ai] process path: $($listener.Path)"
+    Write-Host "[ai] port in use by a non-ai service or unhealthy process."
+    if ($listener.Path) {
+      Write-Host "[ai] process path: $($listener.Path)"
+    }
+    if ($listener.CommandLine) {
+      Write-Host "[ai] command line: $($listener.CommandLine)"
+    }
+    throw "Port $aiPort is already in use and did not pass health check at $baseUrl/health. Stop that process or set AI_BACKEND_PORT to a free port."
   }
-  if ($listener.CommandLine) {
-    Write-Host "[ai] command line: $($listener.CommandLine)"
-  }
-  throw "Port $aiPort is already in use and did not pass health check at $baseUrl/health. Stop that process or set AI_BACKEND_PORT to a free port."
 }
 
 Write-Host "[ai] starting ai-backend on http://127.0.0.1:$aiPort"

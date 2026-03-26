@@ -14,6 +14,7 @@ MENU_HEADERS = [
     "name",
     "category",
     "description",
+    "image_url",
     "price",
     "available",
     "tags",
@@ -40,7 +41,8 @@ class CsvMenuRepository:
                 writer.writeheader()
 
     def _read_rows(self) -> list[MenuItem]:
-        with self.csv_path.open("r", newline="", encoding="utf-8") as handle:
+        # Use utf-8-sig so CSV files saved with BOM still parse correct headers (item_id, ...).
+        with self.csv_path.open("r", newline="", encoding="utf-8-sig") as handle:
             reader = csv.DictReader(handle)
             return [self._row_to_menu_item(row) for row in reader]
 
@@ -52,6 +54,7 @@ class CsvMenuRepository:
             name=row["name"],
             category=row["category"],
             description=row["description"],
+            image_url=(row.get("image_url") or "").strip() or None,
             price=Decimal(row["price"]),
             available=row["available"].strip().lower() == "true",
             tags=tags,
@@ -125,6 +128,7 @@ class CsvMenuRepository:
                         "name": menu_item.name,
                         "category": menu_item.category,
                         "description": menu_item.description,
+                        "image_url": menu_item.image_url or "",
                         "price": str(menu_item.price),
                         "available": str(menu_item.available).lower(),
                         "tags": ",".join(menu_item.tags),

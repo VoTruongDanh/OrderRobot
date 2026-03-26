@@ -153,6 +153,55 @@ function Get-ListenerProcessInfo {
   }
 }
 
+function Test-PortListening {
+  param(
+    [int]$Port
+  )
+
+  $conn = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+  return ($null -ne $conn)
+}
+
+function Ensure-BridgeDependencies {
+  param(
+    [string]$GatewayRoot
+  )
+
+  $dbPort = 25432
+  $redisPort = 26379
+
+  $hasDb = Test-PortListening -Port $dbPort
+  $hasRedis = Test-PortListening -Port $redisPort
+  if ($hasDb -and $hasRedis) {
+    return
+  }
+
+  Write-Host "[bridge] postgres/redis not fully ready on localhost ($dbPort/$redisPort). trying docker compose up..."
+  try {
+    Push-Location $GatewayRoot
+    try {
+      docker compose up -d postgres redis | Out-Host
+    } finally {
+      Pop-Location
+    }
+  } catch {
+    throw "Bridge dependencies are not running (postgres:$dbPort, redis:$redisPort) and auto-start failed. Please run in ${GatewayRoot}: docker compose up -d postgres redis"
+  }
+
+  $maxAttempts = 30
+  for ($i = 0; $i -lt $maxAttempts; $i++) {
+    Start-Sleep -Milliseconds 700
+    $hasDb = Test-PortListening -Port $dbPort
+    $hasRedis = Test-PortListening -Port $redisPort
+    if ($hasDb -and $hasRedis) {
+      Write-Host "[bridge] dependencies are ready (postgres:$dbPort, redis:$redisPort)."
+      return
+    }
+  }
+
+  throw "Bridge dependencies did not become ready in time. postgres:$dbPort ready=$hasDb, redis:$redisPort ready=$hasRedis"
+}
+
 $shouldForceRestart = $ForceRestart.IsPresent -or (Test-TruthyEnv -Value $env:BRIDGE_FORCE_RESTART)
 $bridgeUrl = "http://127.0.0.1:$bridgePort"
 $listener = Get-ListenerProcessInfo -Port ([int]$bridgePort)
@@ -181,7 +230,8 @@ if ($null -ne $listener) {
     $isHealthyBridge = $false
     try {
       $health = Invoke-RestMethod -Uri "$bridgeUrl/health" -Method Get -TimeoutSec 2
-      $isHealthyBridge = ($null -ne $health -and $health.status -eq 'ok')
+      $isBridgeLite = ($null -ne $health -and $health.mode -eq 'bridge-lite')
+      $isHealthyBridge = ($null -ne $health -and $health.status -eq 'ok' -and -not $isBridgeLite)
     } catch {
       $isHealthyBridge = $false
     }
@@ -191,14 +241,36 @@ if ($null -ne $listener) {
       exit 0
     }
 
-    Write-Host "[bridge] port in use by a non-bridge process or unhealthy service."
-    if ($listener.Path) {
-      Write-Host "[bridge] process path: $($listener.Path)"
-    }
+    $looksLikeBridgeProcess = $false
     if ($listener.CommandLine) {
-      Write-Host "[bridge] command line: $($listener.CommandLine)"
+      $looksLikeBridgeProcess = (
+        $listener.CommandLine -like "*mau\Ay-bi-ai*" -and
+        ($listener.CommandLine -like "*src/index.ts*" -or $listener.CommandLine -like "*data-pipeline-gateway*")
+      )
     }
-    throw "Port $bridgePort is already in use and did not pass bridge health check at $bridgeUrl/health. Stop that process or set BRIDGE_GATEWAY_PORT to a free port."
+
+    if ($looksLikeBridgeProcess) {
+      Write-Host "[bridge] existing bridge-like process is unhealthy. restarting..."
+      try {
+        Stop-Process -Id $listener.ProcessId -Force -ErrorAction Stop
+      } catch {
+        throw "Failed to stop unhealthy bridge process pid=$($listener.ProcessId): $($_.Exception.Message)"
+      }
+      Start-Sleep -Milliseconds 700
+      $portCheck = Get-ListenerProcessInfo -Port ([int]$bridgePort)
+      if ($null -ne $portCheck) {
+        throw "Port $bridgePort is still occupied after unhealthy bridge restart attempt (pid=$($portCheck.ProcessId), process=$($portCheck.ProcessName))."
+      }
+    } else {
+      Write-Host "[bridge] port in use by a non-bridge process or unhealthy service."
+      if ($listener.Path) {
+        Write-Host "[bridge] process path: $($listener.Path)"
+      }
+      if ($listener.CommandLine) {
+        Write-Host "[bridge] command line: $($listener.CommandLine)"
+      }
+      throw "Port $bridgePort is already in use and did not pass bridge health check at $bridgeUrl/health. Stop that process or set BRIDGE_GATEWAY_PORT to a free port."
+    }
   }
 } elseif ($shouldForceRestart) {
   $stoppedWorkers = Stop-BridgeRuntimeBrowserProcesses
@@ -217,6 +289,7 @@ Write-Host "[bridge] BRIDGE_CDP_EXECUTION_ENABLED=$env:BRIDGE_CDP_EXECUTION_ENAB
 Write-Host "[bridge] BRIDGE_CDP_PRIMARY_ENABLED=$env:BRIDGE_CDP_PRIMARY_ENABLED"
 Write-Host "[bridge] BRIDGE_FORCE_RESTART=$shouldForceRestart"
 Write-Host "[bridge] if first run: npm run install:bridge"
+Ensure-BridgeDependencies -GatewayRoot $gatewayRoot
 Start-BridgeWindowHider -RepoRoot $repoRoot
 
 npm --prefix $gatewayRoot run dev

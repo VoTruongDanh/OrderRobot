@@ -14,6 +14,7 @@ class MenuItem(BaseModel):
     name: str
     category: str
     description: str
+    image_url: str | None = None
     price: Decimal
     available: bool
     tags: list[str] = Field(default_factory=list)
@@ -24,6 +25,7 @@ class UpsertMenuItemRequest(BaseModel):
     name: str
     category: str
     description: str
+    image_url: str | None = None
     price: Decimal
     available: bool
     tags: list[str] = Field(default_factory=list)

@@ -8,11 +8,13 @@ import {
   getMicAudioConstraints,
   getMicNoiseFilterLevelFromStrength,
   getMicNoiseFilterStrength,
+  getRobotScalePercent,
   getMenuApiUrl,
   getOrdersApiUrl,
   normalizeEnvValue,
   saveAdminEnvConfig,
   setMicNoiseFilterStrength as persistMicNoiseFilterStrength,
+  setRobotScalePercent as persistRobotScalePercent,
 } from './config'
 import { useLiveCaption } from './hooks/useLiveCaption'
 import { useSpeech } from './hooks/useSpeech'
@@ -197,6 +199,7 @@ export default function AdminPage() {
   const [micNoiseFilterStrength, setMicNoiseFilterStrength] = useState<number>(() =>
     getMicNoiseFilterStrength(),
   )
+  const [robotScalePercent, setRobotScalePercent] = useState<number>(() => getRobotScalePercent())
   const [noiseMonitorActive, setNoiseMonitorActive] = useState(false)
   const [noiseLevelDb, setNoiseLevelDb] = useState(-90)
   const [noiseLevelPercent, setNoiseLevelPercent] = useState(0)
@@ -466,6 +469,16 @@ export default function AdminPage() {
     persistMicNoiseFilterStrength(safeStrength)
   }, [])
 
+  const handleRobotScaleChange = useCallback((nextValue: number) => {
+    const safeValue = Math.max(60, Math.min(170, Math.round(nextValue)))
+    setRobotScalePercent(safeValue)
+    persistRobotScalePercent(safeValue)
+    setNotice({
+      tone: 'info',
+      text: `Da cap nhat do to robot: ${safeValue}%`,
+    })
+  }, [])
+
   const stopNoiseMonitor = useCallback(() => {
     const current = noiseMonitorRef.current
     if (!current) {
@@ -720,6 +733,29 @@ export default function AdminPage() {
             Mic: {micState} | Caption: {liveCaption.status}
           </p>
         </article>
+      </section>
+
+      <section className="admin-panel admin-panel--robot-first">
+        <header className="admin-panel__head">
+          <div>
+            <h2>Tuy chinh robot</h2>
+            <p>Chinh do to robot truoc tien. Keo la kiosk cap nhat ngay.</p>
+          </div>
+          <p className="admin-chip admin-chip--ok">Scale: {robotScalePercent}%</p>
+        </header>
+        <div className="admin-fields-grid">
+          <label className="admin-field admin-field--full">
+            <span>Do to robot (60-170%)</span>
+            <input
+              type="range"
+              min="60"
+              max="170"
+              step="1"
+              value={robotScalePercent}
+              onChange={(event) => handleRobotScaleChange(Number(event.target.value))}
+            />
+          </label>
+        </div>
       </section>
 
       <nav className="admin-tabs" aria-label="Admin sections">

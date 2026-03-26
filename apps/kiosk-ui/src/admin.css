@@ -232,6 +232,10 @@
   gap: 14px;
 }
 
+.admin-panel--robot-first {
+  gap: 10px;
+}
+
 .admin-panel--stacked {
   gap: 12px;
 }

@@ -18,8 +18,16 @@ const ADMIN_ENV_UPDATED_AT_KEY = 'admin.env.updatedAt'
 const ADMIN_CONFIG_UPDATED_EVENT = 'orderrobot:admin-config-updated'
 const ADMIN_MIC_NOISE_FILTER_KEY = 'admin.mic.noiseFilter'
 const ADMIN_MIC_NOISE_FILTER_STRENGTH_KEY = 'admin.mic.noiseFilterStrength'
+const ADMIN_ROBOT_SCALE_PERCENT_KEY = 'admin.robot.scalePercent'
 
 export type MicNoiseFilterLevel = 'off' | 'balanced' | 'strong'
+
+function clampRobotScalePercent(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 100
+  }
+  return Math.max(60, Math.min(170, Math.round(value)))
+}
 
 function clampMicStrength(value: number): number {
   if (!Number.isFinite(value)) {
@@ -174,6 +182,26 @@ export function setMicNoiseFilterStrength(strength: number): void {
   localStorage.setItem(
     ADMIN_MIC_NOISE_FILTER_KEY,
     getMicNoiseFilterLevelFromStrength(safeStrength),
+  )
+}
+
+export function getRobotScalePercent(): number {
+  const raw = localStorage.getItem(ADMIN_ROBOT_SCALE_PERCENT_KEY)
+  if (raw === null) {
+    return 100
+  }
+  return clampRobotScalePercent(Number(raw))
+}
+
+export function setRobotScalePercent(scalePercent: number): void {
+  const safeValue = clampRobotScalePercent(scalePercent)
+  localStorage.setItem(ADMIN_ROBOT_SCALE_PERCENT_KEY, String(safeValue))
+  const updatedAt = Date.now()
+  localStorage.setItem(ADMIN_ENV_UPDATED_AT_KEY, String(updatedAt))
+  window.dispatchEvent(
+    new CustomEvent(ADMIN_CONFIG_UPDATED_EVENT, {
+      detail: { updatedAt, robotScalePercent: safeValue },
+    }),
   )
 }
 

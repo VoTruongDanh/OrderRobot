@@ -1,0 +1,395 @@
+.robot3d-card {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: grid;
+  align-items: center;
+  justify-items: center;
+  overflow: visible;
+}
+
+.robot3d-scene {
+  position: relative;
+  width: min(700px, 96%);
+  min-height: 520px;
+  height: 100%;
+  display: grid;
+  align-items: center;
+  justify-items: center;
+  transition: transform 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.robot3d-scene--menu-open {
+  transform: translateY(-11vh) scale(0.72);
+}
+
+.robot3d-halo {
+  position: absolute;
+  width: min(560px, 78%);
+  height: 260px;
+  bottom: 27%;
+  border-radius: 100%;
+  background:
+    radial-gradient(circle at 35% 24%, rgba(255, 255, 255, 0.9), transparent 40%),
+    linear-gradient(135deg, rgba(0, 210, 253, 0.74), rgba(0, 100, 122, 0.52));
+  filter: blur(0.2px);
+}
+
+.robot3d-avatar {
+  position: relative;
+  width: 334px;
+  height: 404px;
+  transform-origin: center bottom;
+  animation: robot3d-float 5.8s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+.robot3d-head {
+  position: absolute;
+  top: 16px;
+  left: 82px;
+  width: 136px;
+  height: 108px;
+  border-radius: 40px;
+  background: linear-gradient(180deg, #ffffff, #f0f6fb 88%);
+  box-shadow: 0 22px 30px rgba(20, 49, 80, 0.15);
+}
+
+.robot3d-face {
+  position: absolute;
+  top: 28px;
+  left: 22px;
+  width: 92px;
+  height: 54px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #0f1724, #1a2b3f);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+}
+
+.robot3d-eye {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: #9de8ff;
+  box-shadow: 0 0 11px rgba(157, 232, 255, 0.85);
+  animation: robot3d-blink 4.8s ease-in-out infinite;
+}
+
+.robot3d-mouth {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  width: 24px;
+  height: 3px;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background: rgba(115, 194, 235, 0.86);
+}
+
+.robot3d-neck {
+  position: absolute;
+  top: 118px;
+  left: 130px;
+  width: 40px;
+  height: 18px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #f7fcff, #d7e9f4);
+}
+
+.robot3d-body {
+  position: absolute;
+  top: 130px;
+  left: 66px;
+  width: 170px;
+  height: 150px;
+  border-radius: 38px;
+  background: linear-gradient(180deg, #ffffff, #e9f1f8 84%);
+  box-shadow: 0 22px 34px rgba(20, 49, 80, 0.14);
+}
+
+.robot3d-core {
+  position: absolute;
+  top: 46px;
+  left: 58px;
+  width: 54px;
+  height: 54px;
+  border-radius: 999px;
+  background: radial-gradient(circle at 35% 30%, #c9f2ff, #34add6);
+  box-shadow: 0 0 24px rgba(52, 173, 214, 0.62);
+}
+
+.robot3d-arm {
+  position: absolute;
+  top: 160px;
+  width: 28px;
+  height: 114px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #f4fbff, #dceef9);
+  transform-origin: top center;
+}
+
+.robot3d-arm--left {
+  left: 26px;
+  transform: rotate(14deg);
+}
+
+.robot3d-arm--right {
+  right: 26px;
+  transform: rotate(-14deg);
+}
+
+.robot3d-shadow {
+  position: absolute;
+  left: 50%;
+  bottom: 34px;
+  width: 188px;
+  height: 38px;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background: rgba(11, 38, 66, 0.16);
+  filter: blur(11px);
+}
+
+.robot3d-wave {
+  position: absolute;
+  top: 116px;
+  right: -16px;
+  width: 68px;
+  height: 68px;
+  border-radius: 999px;
+  border: 3px solid rgba(0, 210, 253, 0.36);
+  opacity: 0;
+}
+
+.robot3d-wave--two {
+  animation-delay: 0.8s;
+}
+
+.robot3d-shockwave {
+  position: absolute;
+  left: 50%;
+  bottom: 20px;
+  width: 180px;
+  height: 84px;
+  transform: translateX(-50%) scale(0.2);
+  border-radius: 100%;
+  border: 6px solid rgba(0, 210, 253, 0.55);
+  opacity: 0;
+}
+
+.robot3d-copy {
+  position: absolute;
+  left: 50%;
+  bottom: 2%;
+  transform: translateX(-50%);
+  text-align: center;
+  width: min(620px, 88%);
+  display: grid;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.robot3d-copy h1 {
+  margin: 0;
+  font-family: 'Space Grotesk', 'Trebuchet MS', sans-serif;
+  font-size: clamp(2rem, 3.4vw, 3.1rem);
+  line-height: 0.92;
+  letter-spacing: -0.02em;
+  color: #253240;
+}
+
+.robot3d-copy .status-message {
+  max-width: 62ch;
+  margin: 0 auto;
+}
+
+.robot3d-card--speaking .robot3d-wave,
+.robot3d-card--listening .robot3d-wave {
+  animation: robot3d-wave-pulse 2.2s ease-out infinite;
+}
+
+.robot3d-card--speaking .robot3d-mouth {
+  animation: robot3d-mouth-talk 0.38s ease-in-out infinite;
+}
+
+.robot3d-card--thinking .robot3d-core {
+  animation: robot3d-core-thinking 1s ease-in-out infinite;
+}
+
+.robot3d-card--error .robot3d-eye {
+  background: #ff6d7b;
+  box-shadow: 0 0 12px rgba(255, 109, 123, 0.8);
+}
+
+.robot3d-avatar--happy .robot3d-mouth {
+  height: 8px;
+  border-radius: 0 0 14px 14px;
+}
+
+.robot3d-avatar--attentive .robot3d-eye {
+  transform: scale(1.16);
+}
+
+.robot3d-avatar--thinking .robot3d-eye {
+  transform: scale(0.9);
+}
+
+.robot3d-avatar--error .robot3d-eye {
+  transform: scaleY(0.44) rotate(12deg);
+}
+
+.robot3d-avatar--wave .robot3d-arm--right {
+  animation: robot3d-arm-wave 0.45s ease-in-out 3;
+}
+
+.robot3d-avatar--scan .robot3d-head {
+  animation: robot3d-head-scan 1.4s ease-in-out;
+}
+
+.robot3d-avatar--dance {
+  animation: robot3d-dance 0.35s ease-in-out 6;
+}
+
+.robot3d-avatar--hero .robot3d-shockwave {
+  animation: robot3d-shockwave 0.9s ease-out;
+}
+
+.robot3d-avatar--hero .robot3d-core {
+  animation: robot3d-hero-core 0.88s ease-out;
+}
+
+@keyframes robot3d-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-22px);
+  }
+}
+
+@keyframes robot3d-blink {
+  0%,
+  91%,
+  100% {
+    transform: scaleY(1);
+  }
+  95% {
+    transform: scaleY(0.18);
+  }
+}
+
+@keyframes robot3d-wave-pulse {
+  0% {
+    transform: scale(0.8);
+    opacity: 0;
+  }
+  35% {
+    opacity: 0.82;
+  }
+  100% {
+    transform: scale(1.32);
+    opacity: 0;
+  }
+}
+
+@keyframes robot3d-mouth-talk {
+  0%,
+  100% {
+    height: 3px;
+  }
+  50% {
+    height: 9px;
+  }
+}
+
+@keyframes robot3d-core-thinking {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.2);
+    box-shadow: 0 0 30px rgba(52, 173, 214, 0.85);
+  }
+}
+
+@keyframes robot3d-arm-wave {
+  0%,
+  100% {
+    transform: rotate(-14deg);
+  }
+  50% {
+    transform: rotate(-60deg);
+  }
+}
+
+@keyframes robot3d-head-scan {
+  0% {
+    transform: rotateY(0);
+  }
+  25% {
+    transform: rotateY(34deg);
+  }
+  50% {
+    transform: rotateY(-34deg);
+  }
+  100% {
+    transform: rotateY(0);
+  }
+}
+
+@keyframes robot3d-dance {
+  0%,
+  100% {
+    transform: rotate(0deg) translateY(0);
+  }
+  50% {
+    transform: rotate(11deg) translateY(-16px);
+  }
+}
+
+@keyframes robot3d-shockwave {
+  0% {
+    transform: translateX(-50%) scale(0.2);
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(-50%) scale(3.8);
+    opacity: 0;
+  }
+}
+
+@keyframes robot3d-hero-core {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.7);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@media (max-width: 1280px) {
+  .robot3d-scene {
+    min-height: 420px;
+  }
+
+  .robot3d-copy {
+    bottom: 0;
+  }
+}
+
+@media (max-width: 768px) {
+  .robot3d-scene {
+    min-height: 360px;
+  }
+
+  .robot3d-avatar {
+    transform: scale(0.85);
+  }
+}
