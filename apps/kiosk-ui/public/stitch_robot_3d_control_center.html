@@ -31,7 +31,7 @@
 <style>
         .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
         :root { --menu-easing: cubic-bezier(0.4, 0, 0.2, 1); --menu-duration: 0.8s; }
-        :root { --robot-scale-factor: 1; }
+        :root { --robot-scale-factor: 1; --robot-core-color: #00d2fd; --robot-core-glow: rgba(0,210,253,0.5); }
 
         /* Layout & Clipping Fixes */
         #stage-container { 
@@ -310,6 +310,18 @@
         .voice-mini-panel.content-only .voice-mini-status {
             display: none;
         }
+        .voice-mini-panel.content-only {
+            background: transparent;
+            border: none;
+            box-shadow: none;
+            backdrop-filter: none;
+            padding: 0;
+        }
+        .voice-mini-panel.content-only .chat-mini-list {
+            gap: 8px;
+            max-height: 184px;
+            padding: 0 2px 0 0;
+        }
         .chat-mini-list {
             display: grid;
             gap: 6px;
@@ -326,9 +338,10 @@
             border-radius: 10px;
             border: 1px solid rgba(148, 163, 184, 0.2);
             background: rgba(255,255,255,0.9);
-            padding: 6px 8px;
+            padding: 8px 10px;
             display: grid;
             gap: 4px;
+            box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
         }
         .chat-mini-role {
             font-size: 0.62rem;
@@ -556,7 +569,7 @@
 <!-- Body -->
 <div class="w-40 h-44 bg-white rounded-3xl shadow-xl border-t border-slate-100 relative -mt-1 z-20 transition-all duration-500" id="body">
 <div class="absolute top-8 left-1/2 -translate-x-1/2 w-14 h-14 rounded-full bg-slate-50 border border-slate-100 shadow-inner flex items-center justify-center">
-<div class="w-6 h-6 rounded-full bg-primary-fixed shadow-[0_0_15px_rgba(0,210,253,0.5)] transition-all duration-500" id="core"></div>
+<div class="w-6 h-6 rounded-full transition-all duration-500" style="background: var(--robot-core-color); box-shadow: 0 0 15px var(--robot-core-glow);" id="core"></div>
 </div>
 </div>
 <!-- Arms -->
@@ -583,6 +596,10 @@
 <div class="mt-auto text-[8px] font-bold text-slate-300 tracking-[0.4em] uppercase">Aetheris Control OS v6.0</div>
 </div>
 </div>
+<script src="/robot/robot-config.js"></script>
+<script src="/robot/robot-skins.js"></script>
+<script src="/robot/robot-actions.js"></script>
+<script src="/robot/robot-controller.js"></script>
 <script>
     const robot = document.getElementById('robot-container');
     const head = document.getElementById('head');
@@ -615,7 +632,6 @@
     const PRESENCE_MOTION_THRESHOLD = 16;
     const PRESENCE_ABSENCE_FRAMES = 4;
 
-    let isCinematicRunning = false;
     let isMenuOpen = false;
     let menuLoaded = false;
     let activeMenuCategory = 'all';
@@ -656,14 +672,27 @@
         'tiramisu': 'https://images.unsplash.com/photo-1571877227200-a0d98ea607e9?auto=format&fit=crop&w=1000&q=80',
     };
 
-    function clampRobotScalePercent(value) {
-        if (!Number.isFinite(value)) return 100;
-        return Math.max(60, Math.min(170, Math.round(value)));
-    }
+    const robotController = window.OrderRobot.createRobotController({
+        robot,
+        head,
+        body,
+        neck,
+        leftArm,
+        rightArm,
+        core,
+        face,
+        viewport,
+        discoBall,
+        getIsMenuOpen: () => isMenuOpen,
+        onRequestCloseMenu: () => {
+            if (isMenuOpen) toggleMenu();
+        },
+    });
+    window.printRobotInfo = () => robotController.printInfo();
+    const robotArchitectureInfo = robotController.printInfo();
 
     function applyRobotScalePercent(scalePercent) {
-        const safePercent = clampRobotScalePercent(scalePercent);
-        document.documentElement.style.setProperty('--robot-scale-factor', String(safePercent / 100));
+        robotController.applyScalePercent(scalePercent);
     }
 
     function applyCameraPreviewVisible(visible) {
@@ -697,9 +726,7 @@
     }
 
     function loadRobotScalePercent() {
-        const raw = localStorage.getItem(ROBOT_SCALE_STORAGE_KEY);
-        const parsed = raw === null ? 100 : Number(raw);
-        applyRobotScalePercent(parsed);
+        robotController.loadScalePercent(ROBOT_SCALE_STORAGE_KEY);
     }
 
     function getAiApiUrl() {
@@ -738,7 +765,7 @@
     }
 
     function setFaceState(state) {
-        face.className = `w-24 h-10 bg-slate-900 rounded-full flex flex-col items-center justify-center gap-1 overflow-hidden transition-all duration-300 state-${state}`;
+        robotController.setFaceState(state);
     }
 
     function setVoiceStatus(text) {
@@ -874,7 +901,7 @@
         } finally {
             URL.revokeObjectURL(audioUrl);
             activeGreetingAudio = null;
-            if (!isMenuOpen && !isCinematicRunning) {
+            if (!isMenuOpen && !robotController.isCinematicRunning) {
                 setFaceState('normal');
             }
         }
@@ -889,6 +916,16 @@
         }
     }
 
+    function shouldOpenMenuFromText(text) {
+        const normalized = String(text || '').toLowerCase();
+        return /(xem|mo|mở).*(menu|thuc don|thực đơn)|menu/i.test(normalized);
+    }
+
+    function shouldCloseMenuFromText(text) {
+        const normalized = String(text || '').toLowerCase();
+        return /(dong|đóng|an|ẩn).*(menu|thuc don|thực đơn)|tat menu|tắt menu/i.test(normalized);
+    }
+
     async function processVoiceQueue() {
         if (voiceQueueRunning) return;
         voiceQueueRunning = true;
@@ -897,6 +934,12 @@
             if (!userText) continue;
             appendChat('user', userText);
             setVoiceStatus('Dang gui len backend...');
+            if (shouldOpenMenuFromText(userText) && !isMenuOpen) {
+                toggleMenu();
+            }
+            if (shouldCloseMenuFromText(userText) && isMenuOpen) {
+                toggleMenu();
+            }
 
             try {
                 if (!currentSessionId) {
@@ -915,10 +958,20 @@
                 const replyPayload = await sendConversationTurn(currentSessionId, userText);
                 const replyText = String(replyPayload?.reply_text || '').trim();
                 updateMiniCart(replyPayload?.cart);
+                if (replyPayload?.order_created) {
+                    currentSessionId = null;
+                    setVoiceStatus(`Da chot don ${replyPayload.order_id || ''}`.trim());
+                }
                 if (replyText) {
                     appendChat('assistant', replyText);
                     setVoiceStatus('Robot dang tra loi...');
                     await playBotSpeech(replyText);
+                    if (shouldOpenMenuFromText(replyText) && !isMenuOpen) {
+                        toggleMenu();
+                    }
+                    if (shouldCloseMenuFromText(replyText) && isMenuOpen) {
+                        toggleMenu();
+                    }
                 }
                 setVoiceStatus(voiceListening ? 'Dang nghe ban noi...' : 'Da tra loi xong.');
             } catch (error) {
@@ -1087,239 +1140,30 @@
                 absenceFrames = 0;
                 if (!presenceDetected) {
                     presenceDetected = true;
+                    setVoiceStatus('Da thay khach, robot bat dau chao va nghe.');
                     void runAutoGreeting();
+                    setVoiceListening(true);
                 }
                 return;
             }
 
             absenceFrames += 1;
             if (absenceFrames >= PRESENCE_ABSENCE_FRAMES) {
+                if (presenceDetected) {
+                    setVoiceStatus('Dang cho khach vao vung camera...');
+                    setVoiceListening(false);
+                }
                 presenceDetected = false;
             }
         }, PRESENCE_CHECK_INTERVAL_MS);
     }
 
     async function triggerCinematic(type) {
-        if (isCinematicRunning) return;
-        isCinematicRunning = true;
-        if (isMenuOpen) toggleMenu();
-
-        switch(type) {
-            case 'plasmaSurge':
-                await playPlasmaSurge();
-                break;
-            case 'heroLanding':
-                await playHeroLanding();
-                break;
-            case 'zeroG':
-                await playZeroG();
-                break;
-            case 'dance':
-                await playDance();
-                break;
-            case 'scan':
-                await playScan();
-                break;
-            case 'glitch':
-                await playGlitch();
-                break;
-            case 'overdrive':
-                await playOverdrive();
-                break;
-        }
-
-        isCinematicRunning = false;
-        resetRobot();
-    }
-
-    async function playPlasmaSurge() {
-        // Phase 1: Charge
-        setFaceState('angry');
-        viewport.classList.add('shake-heavy');
-        core.style.transform = 'scale(2.5)';
-        core.style.boxShadow = '0 0 40px #00d2fd';
-        robot.style.transform = 'scale(1.8) translateY(-10px)';
-        await sleep(1500);
-
-        // Phase 2: Explode
-        viewport.classList.remove('shake-heavy');
-        const flash = document.createElement('div');
-        flash.className = 'fixed inset-0 bg-white z-[300] opacity-0 transition-opacity duration-75 pointer-events-none';
-        document.body.appendChild(flash);
-        flash.style.opacity = '1';
-        createShockwave();
-        await sleep(100);
-        flash.style.opacity = '0';
-        setTimeout(() => flash.remove(), 200);
-
-        // Phase 3: Exhaust
-        setFaceState('sleep');
-        robot.style.transform = 'scale(1.5) translateY(40px)';
-        core.style.background = '#444';
-        core.style.boxShadow = 'none';
-        for(let i=0; i<15; i++) {
-            spawnSmoke();
-            await sleep(100);
-        }
-        await sleep(1000);
-    }
-
-    async function playHeroLanding() {
-        setFaceState('surprised');
-        robot.style.transform = 'scale(0.4) translateY(-1000px)';
-        await sleep(600);
-        
-        robot.style.transition = 'transform 0.4s cubic-bezier(0.16, 1, 0.3, 1)';
-        robot.style.transform = 'scale(2) translateY(50px)';
-        await sleep(400);
-        
-        createShockwave();
-        viewport.classList.add('shake-heavy');
-        setTimeout(() => viewport.classList.remove('shake-heavy'), 400);
-        
-        setFaceState('happy');
-        await sleep(1000);
-    }
-
-    async function playZeroG() {
-        setFaceState('surprised');
-        robot.style.transform = 'scale(1.6) translateY(-150px)';
-        
-        // Parts fly off
-        head.style.animation = 'orbit-parts 4s infinite linear';
-        body.style.animation = 'orbit-parts 4s infinite linear reverse';
-        leftArm.style.animation = 'orbit-parts 4s infinite linear 0.5s';
-        rightArm.style.animation = 'orbit-parts 4s infinite linear 0.8s';
-        
-        await sleep(4000);
-        
-        // Snap back
-        head.style.animation = 'none';
-        body.style.animation = 'none';
-        leftArm.style.animation = 'none';
-        rightArm.style.animation = 'none';
-        
-        setFaceState('happy');
-        robot.style.transform = 'scale(1.6) translateY(0)';
-        await sleep(500);
-    }
-
-    async function playDance() {
-        await enterDiscoMode();
-        setFaceState('happy');
-        robot.style.transition = 'transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)';
-        leftArm.style.transition = 'transform 0.15s ease';
-        rightArm.style.transition = 'transform 0.15s ease';
-        head.style.transition = 'transform 0.2s ease';
-        body.style.transition = 'transform 0.2s ease';
-        core.style.transition = 'transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease';
-
-        const dancePalette = ['#ff3f80', '#ff9f1c', '#ffe45e', '#42ff87', '#4ee9ff', '#7b61ff', '#ff4de3'];
-        for(let i=0; i<12; i++) {
-            const tilt = i % 2 ? 18 : -18;
-            const jump = i % 3 === 0 ? -145 : -95;
-            const armUp = i % 2 ? -145 : -35;
-            const armDown = i % 2 ? 35 : 145;
-            const color = dancePalette[i % dancePalette.length];
-
-            robot.style.transform = `scale(1.62) translateY(${jump}px) rotate(${tilt}deg)`;
-            head.style.transform = `rotate(${tilt * 0.45}deg)`;
-            body.style.transform = `rotate(${tilt * -0.25}deg)`;
-            leftArm.style.transform = `rotate(${armUp}deg)`;
-            rightArm.style.transform = `rotate(${armDown}deg)`;
-            core.style.background = color;
-            core.style.boxShadow = `0 0 34px ${color}`;
-            core.style.transform = i % 2 ? 'scale(1.9)' : 'scale(1.2)';
-
-            if (i % 4 === 0) createShockwave();
-            await sleep(200);
-        }
-
-        robot.style.transform = 'scale(1.6) translateY(-20px)';
-        leftArm.style.transform = 'rotate(-20deg)';
-        rightArm.style.transform = 'rotate(20deg)';
-        await sleep(260);
-        await exitDiscoMode();
-    }
-
-    async function playScan() {
-        setFaceState('surprised');
-        head.style.transform = 'rotateY(180deg)';
-        await sleep(500);
-        head.style.transform = 'rotateY(0deg)';
-        await sleep(500);
-    }
-
-    async function playGlitch() {
-        for(let i=0; i<10; i++) {
-            robot.style.opacity = Math.random() > 0.5 ? '0.2' : '1';
-            robot.style.transform = `scale(1.6) translate(${Math.random()*20-10}px, ${Math.random()*20-10}px)`;
-            await sleep(50);
-        }
-        robot.style.opacity = '1';
-    }
-
-    async function playOverdrive() {
-        setFaceState('angry');
-        core.style.background = '#ff0000';
-        core.style.boxShadow = '0 0 30px #ff0000';
-        robot.style.transform = 'scale(1.9)';
-        await sleep(2000);
-    }
-
-    function createShockwave() {
-        const holder = document.getElementById('shockwave-holder');
-        const wave = document.createElement('div');
-        wave.className = 'shockwave animate-shockwave';
-        holder.appendChild(wave);
-        setTimeout(() => wave.remove(), 1000);
-    }
-
-    function spawnSmoke() {
-        const source = document.getElementById('breath-source');
-        const smoke = document.createElement('div');
-        smoke.className = 'digital-smoke';
-        smoke.style.left = (Math.random() * 20 - 10) + 'px';
-        smoke.style.animation = `smoke-rise ${1 + Math.random()}s forwards`;
-        source.appendChild(smoke);
-        setTimeout(() => smoke.remove(), 2000);
+        await robotController.triggerCinematic(type);
     }
 
     function resetRobot() {
-        robot.style.transition = 'transform 0.8s cubic-bezier(0.4, 0, 0.2, 1)';
-        robot.style.transform = '';
-        robot.style.opacity = '1';
-        head.style.transform = '';
-        head.style.animation = 'none';
-        body.style.animation = 'none';
-        leftArm.style.transform = '';
-        leftArm.style.animation = 'none';
-        rightArm.style.transform = '';
-        rightArm.style.animation = 'none';
-        core.style.transform = '';
-        core.style.boxShadow = '';
-        core.style.background = '';
-        body.style.transform = '';
-        neck.style.transform = '';
-        discoBall.classList.remove('active', 'retract');
-        document.body.classList.remove('disco-on');
-        setFaceState('normal');
-        viewport.classList.remove('shake-heavy');
-    }
-
-    async function enterDiscoMode() {
-        discoBall.classList.remove('retract');
-        discoBall.classList.add('active');
-        document.body.classList.add('disco-on');
-        await sleep(550);
-    }
-
-    async function exitDiscoMode() {
-        discoBall.classList.remove('active');
-        discoBall.classList.add('retract');
-        await sleep(420);
-        document.body.classList.remove('disco-on');
-        discoBall.classList.remove('retract');
+        robotController.reset();
     }
     function formatCurrencyVnd(value) {
         const numeric = Number(value || 0);
@@ -1509,8 +1353,6 @@
         }
     }
 
-    function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
-
     async function initializeMiniCamera() {
         if (!cameraMiniVideo || !navigator.mediaDevices?.getUserMedia) {
             return;
@@ -1523,6 +1365,7 @@
             });
             miniCameraStream = stream;
             cameraMiniVideo.srcObject = stream;
+            startPresenceGreetingDetection();
         } catch {}
     }
     
@@ -1533,13 +1376,9 @@
     renderChatMini();
     updateMiniCart([]);
     setupSpeechRecognition();
-    setVoiceStatus('San sang. Bam "Bat nghe" de noi.');
+    setVoiceStatus('Dang cho khach vao vung camera...');
     updateMenuPanelHeight(3);
     void initializeMiniCamera();
-    window.setTimeout(() => {
-        void runAutoGreeting();
-        setVoiceListening(true);
-    }, 400);
     if (voiceMiniToggle) {
         voiceMiniToggle.addEventListener('click', () => {
             setVoiceListening(!voiceListening);
