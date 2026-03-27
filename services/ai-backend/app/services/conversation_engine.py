@@ -223,7 +223,7 @@ class ConversationEngine:
 
         decision = Decision(
             scene="greeting_intro",
-            reply_seed="ChÃ o má»«ng mÃ¬nh áº¡. HÃ´m nay mÃ¬nh muá»‘n thá»­ mÃ³n nÃ o Ä‘á»ƒ em tÆ° váº¥n ngay nhÃ©?",
+            reply_seed="Chao mung ban. Hom nay ban muon thu mon nao de minh tu van ngay?",
         )
         return await self._build_response(session_id, decision)
 
@@ -238,7 +238,7 @@ class ConversationEngine:
 
         decision = Decision(
             scene="reset",
-            reply_seed="Em Ä‘Ã£ lÃ m má»›i giá» hÃ ng rá»“i áº¡. MÃ¬nh muá»‘n gá»i mÃ³n nÃ o tiáº¿p theo nÃ¨?",
+            reply_seed="Minh da lam moi gio hang roi. Ban muon goi mon nao tiep theo?",
         )
         return await self._build_response(session_id, decision)
 
@@ -262,7 +262,7 @@ class ConversationEngine:
                 session_id,
                 Decision(
                     scene="reset",
-                    reply_seed="Em Ä‘Ã£ xÃ³a giá» hÃ ng cÅ© rá»“i áº¡. MÃ¬nh muá»‘n em gá»£i Ã½ mÃ³n nÃ o tiáº¿p khÃ´ng?",
+                    reply_seed="Minh da xoa gio hang cu roi. Ban muon minh goi y mon nao tiep khong?",
                 ),
                 menu,
             )
@@ -287,7 +287,7 @@ class ConversationEngine:
                     session_id,
                     Decision(
                         scene="order_created",
-                        reply_seed=f"ÄÃ£ xong rá»“i áº¡. Em Ä‘Ã£ lÃªn Ä‘Æ¡n thÃ nh cÃ´ng vá»›i mÃ£ {order.order_id}. Cáº£m Æ¡n mÃ¬nh nha.",
+                        reply_seed=f"Da xong. Minh da len don thanh cong voi ma {order.order_id}. Cam on ban nha.",
                         order_created=True,
                         order_id=order.order_id,
                     ),
@@ -299,7 +299,7 @@ class ConversationEngine:
                 session_id,
                 Decision(
                     scene="ask_confirmation",
-                    reply_seed="Em Ä‘á»c láº¡i giá» hÃ ng Ä‘á»ƒ mÃ¬nh xÃ¡c nháº­n nhÃ©.",
+                    reply_seed="Minh doc lai gio hang de ban xac nhan nhe.",
                     needs_confirmation=True,
                 ),
                 menu,
@@ -312,7 +312,7 @@ class ConversationEngine:
                     session_id,
                     Decision(
                         scene="remove_item",
-                        reply_seed=f"Em Ä‘Ã£ bá» {removed} khá»i giá» hÃ ng rá»“i áº¡. MÃ¬nh muá»‘n sá»­a gÃ¬ thÃªm khÃ´ng?",
+                        reply_seed=f"Minh da bo {removed} khoi gio hang roi. Ban muon sua gi them khong?",
                     ),
                     menu,
                 )
@@ -324,7 +324,7 @@ class ConversationEngine:
                     session_id,
                     Decision(
                         scene="recommendation",
-                        reply_seed="Em tÃ¬m Ä‘Æ°á»£c vÃ i mÃ³n há»£p gu cá»§a mÃ¬nh rá»“i áº¡.",
+                        reply_seed="Minh tim duoc vai mon hop gu cua ban roi.",
                         recommended_item_ids=[candidate.item.item_id for candidate in recommended],
                         user_text=transcript,
                     ),
@@ -352,9 +352,9 @@ class ConversationEngine:
             added_summary = ", ".join(f"{quantity} {item.name}" for item, quantity in segment_matches)
             scene = "ask_confirmation" if state.awaiting_confirmation else "cart_updated"
             seed = (
-                f"Em Ä‘Ã£ thÃªm {added_summary} vÃ o giá» hÃ ng."
+                f"Minh da them {added_summary} vao gio hang."
                 if not state.awaiting_confirmation
-                else f"Em Ä‘Ã£ thÃªm {added_summary}. Em Ä‘á»c láº¡i giá» hÃ ng Ä‘á»ƒ mÃ¬nh xÃ¡c nháº­n nhÃ©."
+                else f"Minh da them {added_summary}. Minh doc lai gio hang de ban xac nhan nhe."
             )
             return await self._build_response(
                 session_id,
@@ -377,7 +377,7 @@ class ConversationEngine:
                 session_id,
                 Decision(
                     scene="recommendation",
-                    reply_seed=f"Em xin lá»—i, {unavailable_names} Ä‘ang táº¡m háº¿t rá»“i áº¡. Em gá»£i Ã½ mÃ¬nh Ä‘á»•i sang mÃ³n khÃ¡c nhÃ©.",
+                    reply_seed=f"Xin loi, {unavailable_names} dang tam het. Minh goi y ban doi sang mon khac nhe.",
                     recommended_item_ids=[candidate.item.item_id for candidate in alternatives],
                     user_text=transcript,
                 ),
@@ -397,9 +397,9 @@ class ConversationEngine:
                 state.awaiting_confirmation = contains_any(normalized, CHECKOUT_KEYWORDS)
                 scene = "ask_confirmation" if state.awaiting_confirmation else "cart_updated"
                 seed = (
-                    f"Em Ä‘Ã£ thÃªm {quantity} {item.name} vÃ o giá» hÃ ng."
+                    f"Minh da them {quantity} {item.name} vao gio hang."
                     if not state.awaiting_confirmation
-                    else f"Em Ä‘Ã£ thÃªm {quantity} {item.name}. Em Ä‘á»c láº¡i giá» hÃ ng Ä‘á»ƒ mÃ¬nh xÃ¡c nháº­n nhÃ©."
+                    else f"Minh da them {quantity} {item.name}. Minh doc lai gio hang de ban xac nhan nhe."
                 )
                 return await self._build_response(
                     session_id,
@@ -417,7 +417,7 @@ class ConversationEngine:
                 session_id,
                 Decision(
                     scene="clarify_item",
-                    reply_seed="Em tháº¥y cÃ³ máº¥y mÃ³n gáº§n giá»‘ng. MÃ¬nh muá»‘n gá»i mÃ³n nÃ o áº¡?",
+                    reply_seed="Minh thay co may mon gan giong. Ban muon goi mon nao?",
                     recommended_item_ids=[item.item_id for item, _ in available_matches[:3]],
                 ),
                 menu,
@@ -429,7 +429,7 @@ class ConversationEngine:
                 session_id,
                 Decision(
                     scene="recommendation",
-                    reply_seed="Em cÃ³ vÃ i gá»£i Ã½ dá»… uá»‘ng, thÃ¢n thiá»‡n vÃ  dá»… chá»n cho mÃ¬nh Ä‘Ã¢y áº¡.",
+                    reply_seed="Minh co vai goi y de uong, de chon cho ban day.",
                     recommended_item_ids=[candidate.item.item_id for candidate in ranked_items],
                     user_text=transcript,
                 ),
@@ -441,7 +441,7 @@ class ConversationEngine:
                 session_id,
                 Decision(
                     scene="cart_follow_up",
-                    reply_seed="Em chÆ°a nghe rÃµ mÃ³n má»›i. Hiá»‡n giá» hÃ ng cá»§a mÃ¬nh váº«n Ä‘ang cÃ³ sáºµn, mÃ¬nh muá»‘n em Ä‘á»c láº¡i Ä‘á»ƒ xÃ¡c nháº­n khÃ´ng?",
+                    reply_seed="Minh chua nghe ro mon moi. Gio hang cua ban van dang co san, ban muon minh doc lai de xac nhan khong?",
                 ),
                 menu,
             )
@@ -450,7 +450,7 @@ class ConversationEngine:
             session_id,
             Decision(
                 scene="fallback",
-                reply_seed="Em nghe chÆ°a rÃµ láº¯m. MÃ¬nh cÃ³ thá»ƒ nÃ³i tÃªn mÃ³n, kháº©u vá»‹ nhÆ° Ã­t ngá»t, hoáº·c báº£o em tÆ° váº¥n mÃ³n dá»… uá»‘ng nhÃ©.",
+                reply_seed="Minh nghe chua ro. Ban co the noi ten mon, khau vi nhu it ngot, hoac bao minh tu van mon de uong nhe.",
                 user_text=transcript,
             ),
             menu,
@@ -608,6 +608,11 @@ class ConversationEngine:
             "type": "text",
             "content": response.reply_text,
             "cart": [item.model_dump() for item in response.cart],
+            "scene": response.scene,
+            "emotion_hint": response.emotion_hint,
+            "action_hints": list(response.action_hints),
+            "order_created": response.order_created,
+            "order_id": response.order_id,
         }
 
         # Stream audio with the shared service so we keep runtime caches warm.
@@ -818,9 +823,10 @@ class ConversationEngine:
         state = self.sessions[session_id]
         menu = menu or await self._get_menu()
         cart = build_cart_items(state.cart, menu)
+        seed_text = ensure_frontend_safe_reply(decision.scene, decision.reply_seed)
         prompt_payload = {
             "scene": decision.scene,
-            "seed": decision.reply_seed,
+            "seed": seed_text,
             "cart_summary": [
                 {
                     "name": item.name,
@@ -859,6 +865,7 @@ class ConversationEngine:
             reply_text = render_fallback_reply(prompt_payload)
             voice_style = self.settings.voice_style
 
+        reply_text = ensure_frontend_safe_reply(decision.scene, reply_text)
         logger.info("reply_source=%s scene=%s session_id=%s", reply_source, decision.scene, session_id)
 
         return ConversationResponse(
@@ -1073,29 +1080,29 @@ def _fuzzy_match(transcript: str, item_name: str) -> bool:
 
 
 _GREETING_REPLIES = [
-    "ChÃ o mÃ¬nh áº¡! HÃ´m nay mÃ¬nh muá»‘n thá»­ mÃ³n nÃ o Ä‘á»ƒ em tÆ° váº¥n nhÃ©?",
-    "Xin chÃ o mÃ¬nh áº¡. Em sáºµn sÃ ng phá»¥c vá»¥, mÃ¬nh muá»‘n gá»i gÃ¬ nÃ¨?",
-    "ChÃ o má»«ng mÃ¬nh! MÃ¬nh muá»‘n uá»‘ng gÃ¬ hÃ´m nay Ä‘á»ƒ em gá»£i Ã½ nhÃ©?",
-    "Hi mÃ¬nh áº¡! Em lÃ  robot gá»i mÃ³n. MÃ¬nh cáº§n em giÃºp gÃ¬ nha?",
+    "Chao ban. Hom nay ban muon thu mon nao de minh tu van?",
+    "Xin chao. Minh san sang phuc vu, ban muon goi gi?",
+    "Chao mung ban. Ban muon uong gi hom nay de minh goi y?",
+    "Hi ban. Minh la robot goi mon. Ban can minh giup gi?",
 ]
 
 _CART_UPDATED_SUFFIXES = [
-    " MÃ¬nh muá»‘n gá»i thÃªm gÃ¬ khÃ´ng áº¡?",
-    " MÃ¬nh cáº§n gÃ¬ thÃªm khÃ´ng nÃ¨?",
-    " MÃ¬nh muá»‘n order thÃªm khÃ´ng áº¡?",
+    " Ban muon goi them gi khong?",
+    " Ban can gi them khong?",
+    " Ban muon order them khong?",
     "",
 ]
 
 _RESET_REPLIES = [
-    "Em Ä‘Ã£ xÃ³a giá» hÃ ng rá»“i áº¡. MÃ¬nh muá»‘n gá»i mÃ³n nÃ o tiáº¿p khÃ´ng?",
-    "Giá» hÃ ng Ä‘Ã£ Ä‘Æ°á»£c lÃ m má»›i. MÃ¬nh chá»n láº¡i mÃ³n nÃ o nhÃ©?",
-    "Em Ä‘Ã£ reset giá» hÃ ng rá»“i áº¡. MÃ¬nh báº¯t Ä‘áº§u láº¡i nha!",
+    "Minh da xoa gio hang roi. Ban muon goi mon nao tiep?",
+    "Gio hang da duoc lam moi. Ban chon lai mon nao nhe?",
+    "Minh da reset gio hang roi. Ban bat dau lai nhe!",
 ]
 
 _FALLBACK_REPLIES = [
-    "Em nghe chÆ°a rÃµ láº¯m. MÃ¬nh cÃ³ thá»ƒ nÃ³i tÃªn mÃ³n hoáº·c báº£o em tÆ° váº¥n nhÃ©.",
-    "Em chÆ°a hiá»ƒu Ã½ mÃ¬nh. MÃ¬nh thá»­ nÃ³i tÃªn mÃ³n cá»¥ thá»ƒ giÃºp em nha.",
-    "Em xin lá»—i, nghe khÃ´ng rÃµ áº¡. MÃ¬nh nÃ³i láº¡i tÃªn mÃ³n hoáº·c há»i em gá»£i Ã½ nhÃ©.",
+    "Minh nghe chua ro. Ban co the noi ten mon hoac bao minh tu van nhe.",
+    "Minh chua hieu y ban. Ban thu noi ten mon cu the giup minh nhe.",
+    "Xin loi, minh nghe khong ro. Ban noi lai ten mon hoac hoi minh goi y nhe.",
 ]
 
 _SOFT_REDIRECT_PATTERNS = {
@@ -1106,25 +1113,70 @@ _SOFT_REDIRECT_PATTERNS = {
 
 _SOFT_REDIRECT_REPLIES = {
     "sing": [
-        "Em xin ná»£ má»™t cÃ¢u hÃ¡t dá»… thÆ°Æ¡ng thÃ´i nha, cÃ²n bÃ¢y giá» mÃ¬nh chá»n mÃ³n em phá»¥c vá»¥ liá»n nÃ¨.",
-        "Em hÃ¡t dá»Ÿ nÃªn xin phÃ©p chiá»u mÃ¬nh báº±ng Ä‘á»“ uá»‘ng ngon hÆ¡n nha, mÃ¬nh muá»‘n gá»i mÃ³n gÃ¬ áº¡?",
+        "Minh xin no mot cau hat de thuong thoi nhe, gio ban chon mon de minh phuc vu lien nhe.",
+        "Minh hat do nen xin phep chieu ban bang do uong ngon hon nhe, ban muon goi mon gi?",
     ],
     "poem": [
-        "Em xin gá»­i má»™t váº§n thÆ¡ ngáº¯n trong lÃ²ng thÃ´i, cÃ²n ngoÃ i Ä‘á»i em má»i mÃ¬nh chá»n mÃ³n há»£p mood nha.",
-        "Em lÃ m thÆ¡ Ã­t chá»¯ thÃ´i káº»o quÃªn order máº¥t, mÃ¬nh muá»‘n em gá»£i Ã½ mÃ³n nÃ o cho há»£p tÃ¢m tráº¡ng áº¡?",
+        "Minh gui mot van tho ngan trong long thoi, con ngoai doi moi ban chon mon hop mood nhe.",
+        "Minh lam tho it chu thoi keo quen order mat, ban muon minh goi y mon nao hop tam trang?",
     ],
     "heart": [
-        "Náº¿u mÃ¬nh Ä‘ang má»‡t hay buá»“n thÃ¬ Ä‘á»ƒ em á»Ÿ Ä‘Ã¢y nÃ³i chuyá»‡n má»™t chÃºt rá»“i gá»£i Ã½ mÃ³n há»£p tÃ¢m tráº¡ng cho mÃ¬nh nha.",
-        "Nghe mÃ¬nh nÃ³i váº­y lÃ  em muá»‘n chÄƒm mÃ¬nh báº±ng má»™t mÃ³n tháº­t há»£p gu rá»“i Ä‘Ã³, mÃ¬nh thÃ­ch ngá»t dá»‹u hay Ä‘áº­m vá»‹ hÆ¡n áº¡?",
+        "Neu ban dang met hay buon thi de minh o day noi chuyen mot chut roi goi y mon hop tam trang cho ban nhe.",
+        "Nghe ban noi vay la minh muon cham ban bang mot mon that hop gu roi do, ban thich ngot diu hay dam vi hon?",
     ],
 }
 
 _ORDER_CREATED_SUFFIXES = [
-    " Háº¹n gáº·p láº¡i mÃ¬nh áº¡!",
-    " ChÃºc mÃ¬nh ngon miá»‡ng nha!",
-    " Cáº£m Æ¡n mÃ¬nh nhiá»u áº¡!",
+    " Hen gap lai ban nhe!",
+    " Chuc ban ngon mieng nhe!",
+    " Cam on ban nhieu!",
     "",
 ]
+
+_MOJIBAKE_MARKERS = ("Ã", "Ä", "á»", "áº", "Æ", "â€")
+_SAFE_SCENE_REPLIES = {
+    "greeting_intro": "Chao mung ban. Hom nay ban muon thu mon nao?",
+    "greeting": "Xin chao. Ban muon goi mon gi hom nay?",
+    "cart_updated": "Minh da them vao gio hang. Ban muon goi them gi khong?",
+    "ask_confirmation": "Minh doc lai gio hang. Neu dung thi noi xac nhan.",
+    "order_created": "Don cua ban da tao thanh cong. Cam on ban.",
+    "recommendation": "Minh co vai goi y de uong. Ban muon thu mon nao?",
+    "clarify_item": "Minh thay co vai mon gan giong. Ban muon mon nao?",
+    "remove_item": "Minh da cap nhat gio hang theo yeu cau.",
+    "reset": "Minh da lam moi gio hang. Ban muon goi mon nao tiep?",
+    "fallback": "Minh chua nghe ro. Ban noi ten mon hoac yeu cau ngan gon giup minh nhe.",
+    "cart_follow_up": "Gio hang van dang giu. Ban muon minh doc lai khong?",
+}
+
+
+def repair_mojibake_text(value: object) -> str:
+    text = str(value or "")
+    if not text:
+        return ""
+    if not any(marker in text for marker in _MOJIBAKE_MARKERS):
+        return text
+
+    candidates = [text]
+    for source_encoding in ("latin1", "cp1252"):
+        try:
+            candidates.append(text.encode(source_encoding, errors="ignore").decode("utf-8", errors="ignore"))
+        except Exception:
+            continue
+
+    def score(candidate: str) -> tuple[int, int]:
+        marker_hits = sum(candidate.count(marker) for marker in _MOJIBAKE_MARKERS)
+        return (marker_hits, -len(candidate))
+
+    return min(candidates, key=score)
+
+
+def ensure_frontend_safe_reply(scene: str, value: object) -> str:
+    repaired = repair_mojibake_text(value)
+    if not repaired.strip():
+        return _SAFE_SCENE_REPLIES.get(scene, _SAFE_SCENE_REPLIES["fallback"])
+    if any(marker in repaired for marker in _MOJIBAKE_MARKERS):
+        return _SAFE_SCENE_REPLIES.get(scene, _SAFE_SCENE_REPLIES["fallback"])
+    return repaired
 
 
 def render_fallback_reply(payload: dict[str, object]) -> str:
@@ -1137,24 +1189,24 @@ def render_fallback_reply(payload: dict[str, object]) -> str:
     if scene == "greeting":
         soft_reply = _render_soft_redirect(user_text)
         if soft_reply:
-            return soft_reply
-        return random.choice(_GREETING_REPLIES)
+            return repair_mojibake_text(soft_reply)
+        return repair_mojibake_text(random.choice(_GREETING_REPLIES))
     if scene == "cart_updated":
-        return seed + random.choice(_CART_UPDATED_SUFFIXES)
+        return repair_mojibake_text(seed + random.choice(_CART_UPDATED_SUFFIXES))
     if scene == "remove_item":
-        return seed
+        return repair_mojibake_text(seed)
     if scene == "reset":
-        return random.choice(_RESET_REPLIES)
+        return repair_mojibake_text(random.choice(_RESET_REPLIES))
     if scene == "fallback":
         soft_reply = _render_soft_redirect(user_text)
         if soft_reply:
-            return soft_reply
-        return random.choice(_FALLBACK_REPLIES)
+            return repair_mojibake_text(soft_reply)
+        return repair_mojibake_text(random.choice(_FALLBACK_REPLIES))
     if scene == "clarify_item":
         if recommended_items:
             names = ", ".join(item["name"] for item in recommended_items[:3])
-            return f"Em tháº¥y cÃ³ máº¥y mÃ³n gáº§n giá»‘ng: {names}. MÃ¬nh muá»‘n gá»i mÃ³n nÃ o áº¡?"
-        return f"{seed} MÃ¬nh nÃ³i rÃµ tÃªn mÃ³n giÃºp em nhÃ©."
+            return repair_mojibake_text(f"Minh thay co may mon gan giong: {names}. Ban muon goi mon nao?")
+        return repair_mojibake_text(f"{seed} Ban noi ro ten mon giup minh nhe.")
     if scene == "recommendation":
         if recommended_items:
             lines = []
@@ -1165,30 +1217,30 @@ def render_fallback_reply(payload: dict[str, object]) -> str:
                 else:
                     lines.append(f"- {item['name']}")
             items_text = "\n".join(lines)
-            return f"{seed}\n{items_text}\nMÃ¬nh thÃ­ch mÃ³n nÃ o Ä‘á»ƒ em thÃªm vÃ o giá» nhÃ©?"
-        return f"{seed} MÃ¬nh muá»‘n em gá»£i Ã½ thÃªm khÃ´ng áº¡?"
+            return repair_mojibake_text(f"{seed}\n{items_text}\nBan thich mon nao de minh them vao gio nhe?")
+        return repair_mojibake_text(f"{seed} Ban muon minh goi y them khong?")
     if scene == "ask_confirmation":
         if cart_summary:
             details = ", ".join(
-                f"{item['quantity']} {item['name']} ({item['line_total']}Ä‘)"
+                f"{item['quantity']} {item['name']} ({item['line_total']}d)"
                 for item in cart_summary
             )
             total = sum(int(item['line_total']) for item in cart_summary)
-            return (
-                f"Em Ä‘á»c láº¡i giá» hÃ ng nhÃ©: {details}. "
-                f"Tá»•ng cá»™ng {total:,}Ä‘ áº¡. "
-                f"MÃ¬nh nÃ³i 'xÃ¡c nháº­n' Ä‘á»ƒ em lÃªn Ä‘Æ¡n, "
-                f"hoáº·c nÃ³i tÃªn mÃ³n Ä‘á»ƒ thÃªm nha."
+            return repair_mojibake_text(
+                f"Minh doc lai gio hang nhe: {details}. "
+                f"Tong cong {total:,}d. "
+                f"Ban noi 'xac nhan' de minh len don, "
+                f"hoac noi ten mon de them nha."
             )
-        return f"{seed} MÃ¬nh nÃ³i 'xÃ¡c nháº­n' giÃºp em nhÃ©."
+        return repair_mojibake_text(f"{seed} Ban noi 'xac nhan' giup minh nhe.")
     if scene == "order_created":
-        return seed + random.choice(_ORDER_CREATED_SUFFIXES)
+        return repair_mojibake_text(seed + random.choice(_ORDER_CREATED_SUFFIXES))
     if scene == "cart_follow_up":
         if cart_summary:
             details = ", ".join(f"{item['quantity']} {item['name']}" for item in cart_summary)
-            return f"{seed} Giá» hÃ ng hiá»‡n cÃ³ {details} áº¡."
-        return seed
-    return seed
+            return repair_mojibake_text(f"{seed} Gio hang hien co {details}.")
+        return repair_mojibake_text(seed)
+    return repair_mojibake_text(seed)
 
 
 def _render_soft_redirect(user_text: str) -> str | None:
@@ -1198,6 +1250,6 @@ def _render_soft_redirect(user_text: str) -> str | None:
 
     for key, patterns in _SOFT_REDIRECT_PATTERNS.items():
         if any(pattern.search(normalized) for pattern in patterns):
-            return random.choice(_SOFT_REDIRECT_REPLIES[key])
+            return ensure_frontend_safe_reply("fallback", random.choice(_SOFT_REDIRECT_REPLIES[key]))
     return None
 

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import asyncio
+import concurrent.futures
 import io
+import importlib.util
 import logging
 import os
 import re
@@ -89,6 +92,10 @@ ORDERING_FILLERS = [
     "them",
 ]
 
+STREAM_SENTENCE_SPLIT_PATTERN = re.compile(r"(?<=[.!?;:])\s+")
+STREAM_CLAUSE_SPLIT_PATTERN = re.compile(r"\s*(?:,|\bva\b|\bvoi\b)\s+", re.IGNORECASE)
+STREAM_SEGMENT_MAX_CHARS = 120
+
 
 class SpeechNotHeardError(ValueError):
     pass
@@ -106,6 +113,12 @@ class SpeechService:
         self.core_client = core_client
         self._stt_model: WhisperModel | None = None
         self._stt_lock = threading.Lock()
+        self._vieneu_instance: object | None = None
+        self._vieneu_lock = threading.Lock()
+        self._vieneu_executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=1,
+            thread_name_prefix="vieneu-tts",
+        )
         self._stt_prompt_cache: str | None = None
         self._stt_hotwords_cache: str | None = None
         self._lexicon_cache: list[tuple[str, str]] | None = None
@@ -115,16 +128,28 @@ class SpeechService:
         return await self._synthesize_async(text, voice, rate)
 
     async def synthesize_stream(self, text: str, voice: str | None = None, rate: int | None = None):
-        """Stream audio chunks directly from Edge TTS for low latency playback."""
-        # Prepend '. ' to force a ~300ms silent pause before speaking.
-        # This prevents Bluetooth/OS audio wake-up truncation of the first word!
-        normalized_text = ". " + normalize_speech_text(text)
+        """Stream audio chunks for low latency playback."""
+        normalized_text = normalize_speech_text(text)
+        if not normalized_text:
+            return
+
+        if self._should_use_vieneu():
+            try:
+                for segment in split_streaming_segments(normalized_text):
+                    audio = await self._synthesize_with_vieneu_async(segment)
+                    if audio.content:
+                        yield audio.content
+                return
+            except Exception:
+                logger.exception("VieNeu stream failed, falling back to Edge/local TTS.")
+
         actual_voice = voice or self.settings.tts_voice
         actual_rate = rate or parse_tts_rate(self.settings.tts_rate)
-        
+        padded_text = normalized_text if normalized_text.startswith(". ") else f". {normalized_text}"
+
         try:
             communicate = edge_tts.Communicate(
-                text=normalized_text,
+                text=padded_text,
                 voice=pick_edge_voice(self.settings.voice_lang, actual_voice),
                 rate=convert_rate_to_edge(actual_rate),
             )
@@ -132,18 +157,13 @@ class SpeechService:
                 if chunk["type"] == "audio":
                     yield chunk["data"]
         except Exception as edge_error:
-            # Fallback: Generate full audio synchronously and yield as single chunk
-            # Cannot use asyncio.to_thread in streaming context due to executor lifecycle
             try:
                 audio = await self._synthesize_async(normalized_text, voice, rate)
-                yield audio.content
+                if audio.content:
+                    yield audio.content
             except Exception as fallback_error:
-                # Log both errors but don't crash the stream
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.error(f"Edge TTS failed: {edge_error}")
-                logger.error(f"Fallback TTS also failed: {fallback_error}")
-                # Yield empty to close stream gracefully
+                logger.error("Edge TTS failed: %s", edge_error)
+                logger.error("Fallback TTS also failed: %s", fallback_error)
                 return
 
     async def transcribe(self, file: UploadFile, mode: SpeechMode = "order") -> str:
@@ -203,8 +223,83 @@ class SpeechService:
         self._build_stt_hotwords()
         self._get_ordering_lexicon()
 
+    def _should_use_vieneu(self) -> bool:
+        engine = (self.settings.tts_engine or "auto").strip().lower()
+        if engine == "vieneu":
+            return True
+        if engine in {"edge", "local", "pyttsx3"}:
+            return False
+        return self._is_vieneu_available()
+
+    def _is_vieneu_available(self) -> bool:
+        return importlib.util.find_spec("vieneu") is not None
+
+    def _get_vieneu_instance(self):
+        if self._vieneu_instance is not None:
+            return self._vieneu_instance
+
+        with self._vieneu_lock:
+            if self._vieneu_instance is not None:
+                return self._vieneu_instance
+
+            from vieneu import Vieneu  # type: ignore[import-not-found]
+
+            model_path = self.settings.tts_vieneu_model_path.strip()
+            if model_path:
+                try:
+                    self._vieneu_instance = Vieneu(model_path=model_path)
+                except TypeError:
+                    self._vieneu_instance = Vieneu()
+                    logger.warning(
+                        "VieNeu constructor did not accept model_path, using default model from repository config."
+                    )
+            else:
+                self._vieneu_instance = Vieneu()
+
+            logger.info("VieNeu-TTS initialized (model_path=%s)", model_path or "default")
+            return self._vieneu_instance
+
+    async def _synthesize_with_vieneu_async(self, text: str) -> SynthesizedAudio:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(self._vieneu_executor, self._synthesize_with_vieneu_sync, text)
+
+    def _synthesize_with_vieneu_sync(self, text: str) -> SynthesizedAudio:
+        safe_text = text.strip()
+        if not safe_text:
+            return SynthesizedAudio(content=b"", media_type="audio/wav")
+
+        engine = self._get_vieneu_instance()
+        with self._vieneu_lock:
+            synthesized = engine.infer(text=safe_text)
+
+            if isinstance(synthesized, (bytes, bytearray)):
+                raw = bytes(synthesized)
+                if raw:
+                    return SynthesizedAudio(content=raw, media_type="audio/wav")
+
+            save_fn = getattr(engine, "save", None)
+            if callable(save_fn):
+                temp_path = Path(tempfile.NamedTemporaryFile(suffix=".wav", delete=False).name)
+                try:
+                    save_fn(synthesized, str(temp_path))
+                    audio_bytes = temp_path.read_bytes()
+                finally:
+                    if temp_path.exists():
+                        os.unlink(temp_path)
+
+                if audio_bytes:
+                    return SynthesizedAudio(content=audio_bytes, media_type="audio/wav")
+
+        raise RuntimeError("VieNeu khong tao duoc audio.")
+
     async def _synthesize_async(self, text: str, voice: str | None = None, rate: int | None = None) -> SynthesizedAudio:
         normalized_text = normalize_speech_text(text)
+        if self._should_use_vieneu():
+            try:
+                return await self._synthesize_with_vieneu_async(normalized_text)
+            except Exception:
+                logger.exception("VieNeu synth failed, falling back to Edge/local TTS.")
+
         try:
             return await self._synthesize_with_edge_tts(normalized_text, voice, rate)
         except Exception:
@@ -586,6 +681,47 @@ def normalize_speech_text(text: str) -> str:
         .replace("...", ". ")
         .strip()
     )
+
+
+def split_streaming_segments(text: str, max_chars: int = STREAM_SEGMENT_MAX_CHARS) -> list[str]:
+    compact = re.sub(r"\s+", " ", text).strip()
+    if not compact:
+        return []
+
+    segments: list[str] = []
+    for sentence in STREAM_SENTENCE_SPLIT_PATTERN.split(compact):
+        sentence = sentence.strip()
+        if not sentence:
+            continue
+
+        if len(sentence) <= max_chars:
+            segments.append(sentence)
+            continue
+
+        for clause in STREAM_CLAUSE_SPLIT_PATTERN.split(sentence):
+            clause = clause.strip()
+            if not clause:
+                continue
+            if len(clause) <= max_chars:
+                segments.append(clause)
+                continue
+
+            words = clause.split(" ")
+            current_words: list[str] = []
+            current_length = 0
+            for word in words:
+                candidate_length = current_length + (1 if current_words else 0) + len(word)
+                if candidate_length > max_chars and current_words:
+                    segments.append(" ".join(current_words))
+                    current_words = [word]
+                    current_length = len(word)
+                else:
+                    current_words.append(word)
+                    current_length = candidate_length
+            if current_words:
+                segments.append(" ".join(current_words))
+
+    return segments or [compact]
 
 
 def parse_tts_rate(raw_value: str) -> int:

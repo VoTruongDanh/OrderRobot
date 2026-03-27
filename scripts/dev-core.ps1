@@ -19,6 +19,7 @@ $corePort = if ($Port) {
 } else {
   '8011'
 }
+$fallbackCorePort = '18011'
 
 function Get-ListenerProcessInfo {
   param(
@@ -48,32 +49,83 @@ function Get-ListenerProcessInfo {
   }
 }
 
-$baseUrl = "http://127.0.0.1:$corePort"
-$listener = Get-ListenerProcessInfo -Port ([int]$corePort)
-if ($null -ne $listener) {
-  Write-Host "[core] detected existing listener on $baseUrl (pid=$($listener.ProcessId), process=$($listener.ProcessName))"
+function Get-CoreHealth {
+  param(
+    [string]$BaseUrl
+  )
 
-  $isHealthyCore = $false
   try {
-    $health = Invoke-RestMethod -Uri "$baseUrl/health" -Method Get -TimeoutSec 2
-    $isHealthyCore = ($null -ne $health -and $health.status -eq 'ok')
+    return Invoke-RestMethod -Uri "$BaseUrl/health" -Method Get -TimeoutSec 2
   } catch {
-    $isHealthyCore = $false
+    return $null
+  }
+}
+
+function Test-CoreMenuEndpoint {
+  param(
+    [string]$BaseUrl
+  )
+
+  try {
+    $response = Invoke-WebRequest -Uri "$BaseUrl/menu" -Method Get -TimeoutSec 2 -UseBasicParsing
+    if ($response.StatusCode -lt 200 -or $response.StatusCode -ge 300) {
+      return $false
+    }
+    $contentType = [string]$response.Headers['Content-Type']
+    return $contentType -like 'application/json*'
+  } catch {
+    return $false
+  }
+}
+
+function Test-CoreRuntimeCompatible {
+  param(
+    [object]$Health,
+    [bool]$HasMenuEndpoint
+  )
+
+  if ($null -eq $Health) {
+    return $false
   }
 
-  if ($isHealthyCore) {
-    Write-Host "[core] existing core-backend is healthy. Reusing current instance."
+  return ($Health.status -eq 'ok' -and $HasMenuEndpoint)
+}
+
+$candidatePorts = @([string]$corePort)
+if ($corePort -ne $fallbackCorePort) {
+  $candidatePorts += $fallbackCorePort
+}
+
+$resolvedCorePort = $null
+foreach ($candidatePort in $candidatePorts) {
+  $candidateUrl = "http://127.0.0.1:$candidatePort"
+  $listener = Get-ListenerProcessInfo -Port ([int]$candidatePort)
+
+  if ($null -eq $listener) {
+    $resolvedCorePort = $candidatePort
+    break
+  }
+
+  Write-Host "[core] detected existing listener on $candidateUrl (pid=$($listener.ProcessId), process=$($listener.ProcessName))"
+  $health = Get-CoreHealth -BaseUrl $candidateUrl
+  $hasMenuEndpoint = Test-CoreMenuEndpoint -BaseUrl $candidateUrl
+  $compatibleCore = Test-CoreRuntimeCompatible -Health $health -HasMenuEndpoint $hasMenuEndpoint
+  if ($compatibleCore) {
+    Write-Host "[core] existing core-backend is compatible. Reusing current instance."
     exit 0
   }
 
-  Write-Host "[core] port in use by a non-core service or unhealthy process."
-  if ($listener.Path) {
-    Write-Host "[core] process path: $($listener.Path)"
-  }
-  if ($listener.CommandLine) {
-    Write-Host "[core] command line: $($listener.CommandLine)"
-  }
-  throw "Port $corePort is already in use and did not pass health check at $baseUrl/health. Stop that process or set CORE_BACKEND_PORT to a free port."
+  Write-Host "[core] listener on $candidateUrl is not compatible with current core stack. Trying next candidate port..."
+}
+
+if ($null -eq $resolvedCorePort) {
+  throw "Unable to find a free Core backend port. Tried: $($candidatePorts -join ', ')."
+}
+
+$corePort = $resolvedCorePort
+$baseUrl = "http://127.0.0.1:$corePort"
+if ($corePort -ne [string]$Port -and $Port) {
+  Write-Host "[core] requested port $Port was not available; switched to $corePort"
 }
 
 Write-Host "[core] starting core-backend on $baseUrl"

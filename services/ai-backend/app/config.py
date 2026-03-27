@@ -28,6 +28,8 @@ class Settings:
 
     voice_lang: str = "vi-VN"
     voice_style: str = "cute_friendly"
+    tts_engine: str = "auto"  # auto | vieneu | edge | local
+    tts_vieneu_model_path: str = ""
     tts_voice: str = "vietnam"
     tts_rate: str = "165"
     stt_model: str = "medium"
@@ -81,6 +83,8 @@ def get_settings() -> Settings:
         llm_mode=llm_mode,
         voice_lang=os.getenv("VOICE_LANG", "vi-VN").strip(),
         voice_style=os.getenv("VOICE_STYLE", "cute_friendly").strip(),
+        tts_engine=os.getenv("TTS_ENGINE", "auto").strip().lower() or "auto",
+        tts_vieneu_model_path=os.getenv("TTS_VIENEU_MODEL_PATH", "").strip(),
         tts_voice=os.getenv("TTS_VOICE", "vietnam").strip(),
         tts_rate=os.getenv("TTS_RATE", "165").strip(),
         stt_model=os.getenv("STT_MODEL", "medium").strip(),

@@ -20,6 +20,7 @@ $aiPort = if ($Port) {
 } else {
   '8012'
 }
+$fallbackAiPort = '18012'
 
 # Force bridge-only defaults for local dev unless user explicitly overrides.
 if (-not $env:LLM_MODE) {
@@ -57,60 +58,85 @@ function Get-ListenerProcessInfo {
   }
 }
 
-$baseUrl = "http://127.0.0.1:$aiPort"
-$listener = Get-ListenerProcessInfo -Port ([int]$aiPort)
-if ($null -ne $listener) {
-  Write-Host "[ai] detected existing listener on $baseUrl (pid=$($listener.ProcessId), process=$($listener.ProcessName))"
+function Get-AiHealth {
+  param(
+    [string]$BaseUrl
+  )
+
+  try {
+    return Invoke-RestMethod -Uri "$BaseUrl/health" -Method Get -TimeoutSec 2
+  } catch {
+    return $null
+  }
+}
+
+function Test-AiRuntimeCompatible {
+  param(
+    [object]$Health
+  )
+
+  if ($null -eq $Health) {
+    return $false
+  }
+
+  if ($Health.status -ne 'ok') {
+    return $false
+  }
+
+  $hasTtsEngine = $Health.PSObject.Properties.Name -contains 'tts_engine'
+  $hasSttModel = $Health.PSObject.Properties.Name -contains 'stt_model'
+  return ($hasTtsEngine -and $hasSttModel)
+}
+
+$candidatePorts = @([string]$aiPort)
+if ($aiPort -ne $fallbackAiPort) {
+  $candidatePorts += $fallbackAiPort
+}
+
+$resolvedPort = $null
+foreach ($candidatePort in $candidatePorts) {
+  $candidateUrl = "http://127.0.0.1:$candidatePort"
+  $listener = Get-ListenerProcessInfo -Port ([int]$candidatePort)
+  if ($null -eq $listener) {
+    $resolvedPort = $candidatePort
+    break
+  }
+
+  Write-Host "[ai] detected existing listener on $candidateUrl (pid=$($listener.ProcessId), process=$($listener.ProcessName))"
+  $health = Get-AiHealth -BaseUrl $candidateUrl
+  $compatibleBridge = (Test-AiRuntimeCompatible -Health $health) -and ($health.llm_mode -eq 'bridge_only')
+  if ($compatibleBridge) {
+    Write-Host "[ai] existing ai-backend is compatible (realtime + bridge_only). Reusing current instance."
+    exit 0
+  }
 
   if ($ForceRestart.IsPresent) {
-    Write-Host "[ai] force restart enabled. stopping existing ai listener..."
+    Write-Host "[ai] force restart enabled. trying to stop listener on $candidateUrl ..."
     try {
       Stop-Process -Id $listener.ProcessId -Force -ErrorAction Stop
+      Start-Sleep -Milliseconds 600
     } catch {
-      Write-Host "[ai] warning: could not stop pid=$($listener.ProcessId): $($_.Exception.Message). re-checking port..."
-    }
-    Start-Sleep -Milliseconds 600
-    $stillUsed = Get-ListenerProcessInfo -Port ([int]$aiPort)
-    if ($null -ne $stillUsed) {
-      $healthyBridgeMode = $false
-      try {
-        $health = Invoke-RestMethod -Uri "$baseUrl/health" -Method Get -TimeoutSec 2
-        $healthyBridgeMode = ($null -ne $health -and $health.status -eq 'ok' -and $health.llm_mode -eq 'bridge_only')
-      } catch {
-        $healthyBridgeMode = $false
-      }
-
-      if ($healthyBridgeMode) {
-        Write-Host "[ai] existing ai-backend is already healthy in bridge_only mode. Reusing current instance."
-        exit 0
-      }
-
-      throw "Failed to free ai port $aiPort. still occupied by pid=$($stillUsed.ProcessId), process=$($stillUsed.ProcessName)."
-    }
-  } else {
-
-    $isHealthyAi = $false
-    try {
-      $health = Invoke-RestMethod -Uri "$baseUrl/health" -Method Get -TimeoutSec 2
-      $isHealthyAi = ($null -ne $health -and $health.status -eq 'ok')
-    } catch {
-      $isHealthyAi = $false
+      Write-Host "[ai] warning: could not stop pid=$($listener.ProcessId): $($_.Exception.Message)"
     }
 
-    if ($isHealthyAi) {
-      Write-Host "[ai] existing ai-backend is healthy. Reusing current instance."
-      exit 0
+    $stillUsed = Get-ListenerProcessInfo -Port ([int]$candidatePort)
+    if ($null -eq $stillUsed) {
+      $resolvedPort = $candidatePort
+      break
     }
-
-    Write-Host "[ai] port in use by a non-ai service or unhealthy process."
-    if ($listener.Path) {
-      Write-Host "[ai] process path: $($listener.Path)"
-    }
-    if ($listener.CommandLine) {
-      Write-Host "[ai] command line: $($listener.CommandLine)"
-    }
-    throw "Port $aiPort is already in use and did not pass health check at $baseUrl/health. Stop that process or set AI_BACKEND_PORT to a free port."
   }
+
+  Write-Host "[ai] listener on $candidateUrl is not compatible with current realtime stack. Trying next candidate port..."
+}
+
+if ($null -eq $resolvedPort) {
+  throw "Unable to find a free AI backend port. Tried: $($candidatePorts -join ', ')."
+}
+
+$aiPort = $resolvedPort
+$baseUrl = "http://127.0.0.1:$aiPort"
+if ($aiPort -ne [string]$Port -and $Port) {
+  Write-Host "[ai] requested port $Port was not available; switched to $aiPort"
 }
 
 Write-Host "[ai] starting ai-backend on http://127.0.0.1:$aiPort"

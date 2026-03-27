@@ -10,7 +10,9 @@ import {
   readRobotStudioAssetDataUrl,
   removeRobotStudioAsset,
   saveRobotStudioAsset,
+  sendRobotStudioCommand,
   setRobotStudioConfig,
+  type RobotAvatarPartsV1,
   type RobotGraphConditionOperator,
   type RobotGraphConditionSource,
   type RobotGraphNode,
@@ -21,9 +23,11 @@ import {
 } from './config'
 
 type NoticeTone = 'info' | 'success' | 'warning' | 'error'
+type UiLanguage = 'vi' | 'en'
 
 type RobotStudioPanelProps = {
   onNotice?: (notice: { tone: NoticeTone; text: string }) => void
+  uiLanguage?: UiLanguage
 }
 
 type PackFilter = 'all' | RobotSkinPack
@@ -56,6 +60,125 @@ const CONDITION_OPERATOR_OPTIONS: RobotGraphConditionOperator[] = [
   'equals',
   'notEquals',
   'contains',
+]
+
+const KIOSK_HEARTBEAT_KEY = 'orderrobot.kiosk.heartbeat'
+const KIOSK_HEARTBEAT_STALE_MS = 90000
+const ADMIN_LIVE_PREVIEW_SRC = '/stitch_robot_3d_control_center.html?adminPreview=1'
+
+const HEAD_SHAPE_OPTIONS: Array<{ id: RobotAvatarPartsV1['headShape']; label: string }> = [
+  { id: 'soft-square', label: 'Soft Square' },
+  { id: 'visor', label: 'Visor' },
+  { id: 'hex', label: 'Hex' },
+  { id: 'bubble', label: 'Bubble' },
+]
+
+const HEAD_ACCESSORY_OPTIONS: Array<{ id: RobotAvatarPartsV1['headAccessory']; label: string }> = [
+  { id: 'none', label: 'None' },
+  { id: 'antenna', label: 'Antenna' },
+  { id: 'halo', label: 'Halo' },
+  { id: 'crown', label: 'Crown' },
+]
+
+const EYE_STYLE_OPTIONS: Array<{ id: RobotAvatarPartsV1['eyeStyle']; label: string }> = [
+  { id: 'visor', label: 'Visor' },
+  { id: 'round', label: 'Round' },
+  { id: 'anime', label: 'Anime' },
+  { id: 'mono', label: 'Mono' },
+  { id: 'happy', label: 'Happy ^_^' },
+  { id: 'wink', label: 'Wink >_<' },
+  { id: 'surprised', label: 'Surprised O_O' },
+  { id: 'sleepy', label: 'Sleepy -_-' },
+]
+
+const MOUTH_STYLE_OPTIONS: Array<{ id: RobotAvatarPartsV1['mouthStyle']; label: string }> = [
+  { id: 'line', label: 'Line' },
+  { id: 'smile', label: 'Smile' },
+  { id: 'pixel', label: 'Pixel' },
+  { id: 'none', label: 'None' },
+  { id: 'big-smile', label: 'Big Smile :D' },
+  { id: 'surprised-o', label: 'Surprised :O' },
+  { id: 'sad', label: 'Sad :(' },
+  { id: 'tongue-out', label: 'Tongue :P' },
+]
+
+const ARM_STYLE_OPTIONS: Array<{ id: RobotAvatarPartsV1['armStyle']; label: string }> = [
+  { id: 'sleek', label: 'Sleek' },
+  { id: 'chunky', label: 'Chunky' },
+  { id: 'floating', label: 'Floating' },
+]
+
+const ARM_COLOR_OPTIONS: Array<{ id: RobotAvatarPartsV1['armColor']; label: string }> = [
+  { id: 'aqua', label: 'Aqua' },
+  { id: 'sunset', label: 'Sunset' },
+  { id: 'mint', label: 'Mint' },
+  { id: 'violet', label: 'Violet' },
+  { id: 'mono', label: 'Mono' },
+]
+
+const BODY_SHAPE_OPTIONS: Array<{ id: RobotAvatarPartsV1['bodyShape']; label: string }> = [
+  { id: 'core', label: 'Core' },
+  { id: 'shield', label: 'Shield' },
+  { id: 'orb', label: 'Orb' },
+  { id: 'compact', label: 'Compact' },
+]
+
+const OUTFIT_STYLE_OPTIONS: Array<{ id: RobotAvatarPartsV1['outfitStyle']; label: string }> = [
+  { id: 'service', label: 'Service' },
+  { id: 'street', label: 'Street' },
+  { id: 'formal', label: 'Formal' },
+  { id: 'battle', label: 'Battle' },
+]
+
+const AVATAR_PRESETS: Array<{ id: string; label: string; parts: Partial<RobotAvatarPartsV1> }> = [
+  {
+    id: 'preset-aether',
+    label: 'Aether Hero',
+      parts: {
+        headShape: 'visor',
+        headAccessory: 'halo',
+        eyeStyle: 'visor',
+        mouthStyle: 'line',
+        faceFrameScale: 102,
+        faceFrameVisible: true,
+        armStyle: 'sleek',
+        armColor: 'aqua',
+        bodyShape: 'shield',
+        outfitStyle: 'formal',
+      },
+  },
+  {
+    id: 'preset-kawaii',
+    label: 'Kawaii Pop',
+      parts: {
+        headShape: 'bubble',
+        headAccessory: 'crown',
+        eyeStyle: 'anime',
+        mouthStyle: 'smile',
+        faceFrameScale: 108,
+        faceFrameVisible: true,
+        armStyle: 'chunky',
+        armColor: 'violet',
+        bodyShape: 'orb',
+        outfitStyle: 'street',
+      },
+  },
+  {
+    id: 'preset-combat',
+    label: 'Neo Combat',
+      parts: {
+        headShape: 'hex',
+        headAccessory: 'antenna',
+        eyeStyle: 'mono',
+        mouthStyle: 'pixel',
+        faceFrameScale: 96,
+        faceFrameVisible: true,
+        armStyle: 'floating',
+        armColor: 'sunset',
+        bodyShape: 'compact',
+        outfitStyle: 'battle',
+      },
+  },
 ]
 
 function randomId(prefix: string): string {
@@ -102,16 +225,30 @@ function createNode(type: RobotGraphNode['type']): RobotGraphNode {
   return base
 }
 
-export function RobotStudioPanel({ onNotice }: RobotStudioPanelProps) {
+function randomPick<T>(items: readonly T[]): T {
+  return items[Math.floor(Math.random() * items.length)] as T
+}
+
+export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPanelProps) {
   const [config, setConfig] = useState<RobotStudioConfigV1>(() => getRobotStudioConfig())
   const [packFilter, setPackFilter] = useState<PackFilter>('all')
   const [selectedGraphId, setSelectedGraphId] = useState<string>(() => getRobotStudioConfig().graphBindings[0]?.id ?? '')
   const [selectedNodeId, setSelectedNodeId] = useState<string>('')
   const [importText, setImportText] = useState('')
   const [exportText, setExportText] = useState(() => JSON.stringify(getRobotStudioConfig(), null, 2))
+  const [draftDirty, setDraftDirty] = useState(false)
+  const [showAdvanced, setShowAdvanced] = useState(false)
+  const [quickActionId, setQuickActionId] = useState<string>('waveHello')
+  const [quickGraphId, setQuickGraphId] = useState<string>(() => getRobotStudioConfig().graphBindings[0]?.id ?? '')
+  const [kioskConnected, setKioskConnected] = useState(false)
   const [assetLoading, setAssetLoading] = useState(false)
   const [assetPreviewById, setAssetPreviewById] = useState<Record<string, string>>({})
   const dragRef = useRef<DragState | null>(null)
+  const previewIframeRef = useRef<HTMLIFrameElement | null>(null)
+  const t = useCallback(
+    (vi: string, en: string) => (uiLanguage === 'vi' ? vi : en),
+    [uiLanguage],
+  )
 
   const currentGraph = useMemo(
     () => config.graphBindings.find((graph) => graph.id === selectedGraphId) ?? null,
@@ -132,6 +269,71 @@ export function RobotStudioPanel({ onNotice }: RobotStudioPanelProps) {
     return ROBOT_STUDIO_SKIN_LIBRARY.filter((skin) => skin.pack === packFilter)
   }, [packFilter])
 
+  const avatarParts = useMemo<RobotAvatarPartsV1>(
+    () =>
+      config.avatarParts ?? {
+        headShape: 'visor',
+        headAccessory: 'none',
+        eyeStyle: 'visor',
+        mouthStyle: 'line',
+        faceFrameScale: 100,
+        faceFrameVisible: true,
+        armStyle: 'sleek',
+        armColor: 'aqua',
+        bodyShape: 'core',
+        outfitStyle: 'service',
+        randomSeed: 420,
+      },
+    [config.avatarParts],
+  )
+
+  useEffect(() => {
+    const readHeartbeat = () => {
+      const raw = localStorage.getItem(KIOSK_HEARTBEAT_KEY)
+      const parsed = Number(raw ?? 0)
+      const safeTs = Number.isFinite(parsed) ? parsed : 0
+      setKioskConnected(Date.now() - safeTs <= KIOSK_HEARTBEAT_STALE_MS)
+    }
+
+    readHeartbeat()
+    const intervalId = window.setInterval(readHeartbeat, 1200)
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === KIOSK_HEARTBEAT_KEY) {
+        readHeartbeat()
+      }
+    }
+    window.addEventListener('storage', handleStorage)
+    return () => {
+      window.clearInterval(intervalId)
+      window.removeEventListener('storage', handleStorage)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!config.enabledActions.includes(quickActionId)) {
+      setQuickActionId(config.enabledActions[0] ?? ROBOT_STUDIO_ACTION_LIBRARY[0]?.id ?? 'waveHello')
+    }
+  }, [config.enabledActions, quickActionId])
+
+  useEffect(() => {
+    if (!config.graphBindings.some((graph) => graph.id === quickGraphId)) {
+      setQuickGraphId(config.graphBindings[0]?.id ?? '')
+    }
+  }, [config.graphBindings, quickGraphId])
+
+  const syncLivePreviewFrame = useCallback(() => {
+    const target = previewIframeRef.current?.contentWindow
+    if (!target) return
+    target.postMessage(
+      { type: 'orderrobot:robot-studio-config', config },
+      window.location.origin,
+    )
+  }, [config])
+
+  useEffect(() => {
+    syncLivePreviewFrame()
+  }, [syncLivePreviewFrame])
+
   const notify = useCallback(
     (tone: NoticeTone, text: string) => {
       onNotice?.({ tone, text })
@@ -141,9 +343,9 @@ export function RobotStudioPanel({ onNotice }: RobotStudioPanelProps) {
 
   const persistConfig = useCallback(
     (nextConfig: RobotStudioConfigV1, noticeText?: string) => {
-      const saved = setRobotStudioConfig(nextConfig)
-      setConfig(saved)
-      setExportText(JSON.stringify(saved, null, 2))
+      setConfig(nextConfig)
+      setExportText(JSON.stringify(nextConfig, null, 2))
+      setDraftDirty(true)
       if (noticeText) {
         notify('info', noticeText)
       }
@@ -161,15 +363,17 @@ export function RobotStudioPanel({ onNotice }: RobotStudioPanelProps) {
           uploadedAssets: assets,
         }
         setExportText(JSON.stringify(next, null, 2))
-        setRobotStudioConfig(next)
         return next
       })
     } catch (error) {
-      notify('error', error instanceof Error ? error.message : 'Khong tai duoc danh sach asset')
+      notify(
+        'error',
+        error instanceof Error ? error.message : t('Khong tai duoc danh sach asset', 'Cannot load asset list'),
+      )
     } finally {
       setAssetLoading(false)
     }
-  }, [notify])
+  }, [notify, t])
 
   useEffect(() => {
     void refreshAssetCatalog()
@@ -238,6 +442,50 @@ export function RobotStudioPanel({ onNotice }: RobotStudioPanelProps) {
     [config, persistConfig],
   )
 
+  const updateAvatarParts = useCallback(
+    (patch: Partial<RobotAvatarPartsV1>) => {
+      const nextConfig: RobotStudioConfigV1 = {
+        ...config,
+        avatarParts: {
+          ...avatarParts,
+          ...patch,
+        },
+      }
+      persistConfig(nextConfig)
+    },
+    [avatarParts, config, persistConfig],
+  )
+
+  const applyAvatarPreset = useCallback(
+    (presetId: string) => {
+      const preset = AVATAR_PRESETS.find((item) => item.id === presetId)
+      if (!preset) return
+      updateAvatarParts({
+        ...preset.parts,
+        randomSeed: Date.now() % 1000000,
+      })
+      notify('info', t(`Da ap dung preset: ${preset.label}.`, `Preset applied: ${preset.label}.`))
+    },
+    [notify, t, updateAvatarParts],
+  )
+
+  const randomizeAvatarParts = useCallback(() => {
+    updateAvatarParts({
+      headShape: randomPick(HEAD_SHAPE_OPTIONS).id,
+      headAccessory: randomPick(HEAD_ACCESSORY_OPTIONS).id,
+      eyeStyle: randomPick(EYE_STYLE_OPTIONS).id,
+      mouthStyle: randomPick(MOUTH_STYLE_OPTIONS).id,
+      faceFrameScale: Math.max(72, Math.min(136, Math.round(88 + Math.random() * 44))),
+      faceFrameVisible: true,
+      armStyle: randomPick(ARM_STYLE_OPTIONS).id,
+      armColor: randomPick(ARM_COLOR_OPTIONS).id,
+      bodyShape: randomPick(BODY_SHAPE_OPTIONS).id,
+      outfitStyle: randomPick(OUTFIT_STYLE_OPTIONS).id,
+      randomSeed: Date.now() % 1000000,
+    })
+    notify('info', t('Da random bo phan robot.', 'Robot parts randomized.'))
+  }, [notify, t, updateAvatarParts])
+
   const handleAssetUpload = useCallback(
     async (files: FileList | null) => {
       if (!files || files.length === 0) return
@@ -247,14 +495,17 @@ export function RobotStudioPanel({ onNotice }: RobotStudioPanelProps) {
           await saveRobotStudioAsset(file)
         }
         await refreshAssetCatalog()
-        notify('success', 'Da upload va luu asset vao IndexedDB.')
+        notify(
+          'success',
+          t('Da upload va luu asset vao IndexedDB.', 'Assets uploaded and saved to IndexedDB.'),
+        )
       } catch (error) {
-        notify('error', error instanceof Error ? error.message : 'Upload asset that bai.')
+        notify('error', error instanceof Error ? error.message : t('Upload asset that bai.', 'Asset upload failed.'))
       } finally {
         setAssetLoading(false)
       }
     },
-    [notify, refreshAssetCatalog],
+    [notify, refreshAssetCatalog, t],
   )
 
   const handleRemoveAsset = useCallback(
@@ -321,15 +572,18 @@ export function RobotStudioPanel({ onNotice }: RobotStudioPanelProps) {
       ...config,
       graphBindings: [...config.graphBindings, graph],
     }
-    persistConfig(nextConfig, 'Da tao graph moi.')
+    persistConfig(nextConfig, t('Da tao graph moi.', 'New graph created.'))
     setSelectedGraphId(graph.id)
     setSelectedNodeId(graph.startNodeId)
-  }, [config, persistConfig])
+  }, [config, persistConfig, t])
 
   const removeGraph = useCallback(() => {
     if (!currentGraph) return
     if (config.graphBindings.length <= 1) {
-      notify('warning', 'Can it nhat 1 graph de runtime hoat dong.')
+      notify(
+        'warning',
+        t('Can it nhat 1 graph de runtime hoat dong.', 'At least one graph is required for runtime.'),
+      )
       return
     }
     const nextGraphs = config.graphBindings.filter((graph) => graph.id !== currentGraph.id)
@@ -339,8 +593,8 @@ export function RobotStudioPanel({ onNotice }: RobotStudioPanelProps) {
         : binding,
     )
     const nextConfig = { ...config, graphBindings: nextGraphs, triggerBindings: nextBindings }
-    persistConfig(nextConfig, 'Da xoa graph.')
-  }, [config, currentGraph, notify, persistConfig])
+    persistConfig(nextConfig, t('Da xoa graph.', 'Graph deleted.'))
+  }, [config, currentGraph, notify, persistConfig, t])
 
   const addNode = useCallback(
     (type: RobotGraphNode['type']) => {
@@ -358,7 +612,7 @@ export function RobotStudioPanel({ onNotice }: RobotStudioPanelProps) {
   const removeNode = useCallback(() => {
     if (!currentGraph || !currentNode) return
     if (currentGraph.nodes.length <= 1) {
-      notify('warning', 'Graph can it nhat 1 node.')
+      notify('warning', t('Graph can it nhat 1 node.', 'A graph must contain at least one node.'))
       return
     }
 
@@ -376,7 +630,7 @@ export function RobotStudioPanel({ onNotice }: RobotStudioPanelProps) {
         })),
       }
     })
-  }, [currentGraph, currentNode, notify, updateGraph])
+  }, [currentGraph, currentNode, notify, t, updateGraph])
 
   const updateNode = useCallback(
     (nodeId: string, updater: (node: RobotGraphNode) => RobotGraphNode) => {
@@ -453,42 +707,570 @@ export function RobotStudioPanel({ onNotice }: RobotStudioPanelProps) {
   const handleImportJson = useCallback(() => {
     const parsed = parseRobotStudioConfigFromJson(importText)
     if (!parsed) {
-      notify('warning', 'JSON khong hop le, vui long kiem tra lai.')
+      notify('warning', t('JSON khong hop le, vui long kiem tra lai.', 'Invalid JSON, please check and try again.'))
       return
     }
-    persistConfig(parsed, 'Da import preset Robot Studio.')
-  }, [importText, notify, persistConfig])
+    persistConfig(parsed, t('Da import preset Robot Studio.', 'Robot Studio preset imported.'))
+  }, [importText, notify, persistConfig, t])
 
   const resetConfig = useCallback(() => {
     const defaults = createDefaultRobotStudioConfig()
-    persistConfig(defaults, 'Da reset Robot Studio ve mac dinh.')
-  }, [persistConfig])
+    persistConfig(defaults, t('Da reset Robot Studio ve mac dinh.', 'Robot Studio reset to default.'))
+  }, [persistConfig, t])
+
+  const applyNow = useCallback(() => {
+    const saved = setRobotStudioConfig(config)
+    setConfig(saved)
+    setExportText(JSON.stringify(saved, null, 2))
+    setDraftDirty(false)
+    notify(
+      'success',
+      t(
+        'Da ap dung thay doi vao kiosk/index.',
+        'Changes have been applied to kiosk/index.',
+      ),
+    )
+
+    if (!kioskConnected) {
+      notify(
+        'warning',
+        t(
+          'Chua thay kiosk dang mo. Bam "Mo kiosk de xem live" de xem thay doi.',
+          'No active kiosk detected. Click "Open kiosk for live preview" to see updates.',
+        ),
+      )
+      return
+    }
+
+    if (quickActionId) {
+      sendRobotStudioCommand({ type: 'preview-action', actionId: quickActionId })
+    }
+  }, [config, kioskConnected, notify, quickActionId, t])
+
+  const previewQuickAction = useCallback(() => {
+    if (!quickActionId) {
+      notify('warning', t('Chua co action de preview.', 'No action available for preview.'))
+      return
+    }
+    if (draftDirty) {
+      notify(
+        'warning',
+        t(
+          'Ban co thay doi chua ap dung. Bam "Ap dung ngay" truoc khi test action tren kiosk.',
+          'You have unapplied changes. Click "Apply Now" before testing action on kiosk.',
+        ),
+      )
+      return
+    }
+    sendRobotStudioCommand({ type: 'preview-action', actionId: quickActionId })
+    notify(
+      kioskConnected ? 'success' : 'warning',
+      kioskConnected
+        ? t(`Da gui lenh test action: ${quickActionId}.`, `Preview action command sent: ${quickActionId}.`)
+        : t(
+          `Da gui lenh test action: ${quickActionId}. Neu kiosk dang ngu, hay mo kiosk de nhan lenh moi nhat.`,
+          `Preview action command queued: ${quickActionId}. Open kiosk if it is currently inactive.`,
+        ),
+    )
+  }, [draftDirty, kioskConnected, notify, quickActionId, t])
+
+  const runQuickGraph = useCallback(() => {
+    if (!quickGraphId) {
+      notify('warning', t('Chua co graph de chay.', 'No graph available to run.'))
+      return
+    }
+    if (draftDirty) {
+      notify(
+        'warning',
+        t(
+          'Ban co thay doi chua ap dung. Bam "Ap dung ngay" truoc khi chay graph tren kiosk.',
+          'You have unapplied changes. Click "Apply Now" before running graph on kiosk.',
+        ),
+      )
+      return
+    }
+    sendRobotStudioCommand({ type: 'run-graph', graphId: quickGraphId })
+    notify(
+      kioskConnected ? 'success' : 'warning',
+      kioskConnected
+        ? t(`Da gui lenh chay graph: ${quickGraphId}.`, `Run graph command sent: ${quickGraphId}.`)
+        : t(
+          `Da gui lenh chay graph: ${quickGraphId}. Neu kiosk dang ngu, hay mo kiosk de nhan lenh moi nhat.`,
+          `Run graph command queued: ${quickGraphId}. Open kiosk if it is currently inactive.`,
+        ),
+    )
+  }, [draftDirty, kioskConnected, notify, quickGraphId, t])
+
+  const stopQuickGraph = useCallback(() => {
+    sendRobotStudioCommand({ type: 'stop-graph' })
+    notify(
+      kioskConnected ? 'info' : 'warning',
+      kioskConnected
+        ? t('Da gui lenh dung graph.', 'Stop graph command sent.')
+        : t(
+          'Da gui lenh dung graph. Neu kiosk chua mo, lenh se duoc ap dung khi kiosk nhan cap nhat.',
+          'Stop graph command queued. If kiosk is inactive, it will apply on next sync.',
+        ),
+    )
+  }, [kioskConnected, notify, t])
 
   return (
     <section className="admin-panel admin-panel--stacked robot-studio-panel">
+      <article className="admin-subcard robot-studio-subcard robot-studio-subcard--quick">
+        <header className="admin-subcard__head">
+          <div>
+            <h3>Quick Studio</h3>
+            <p>{t('Che do de chinh nhanh: builder 3 phan (dau, tay, than), random mau dep va test robot trong vai click.', 'Fast mode: 3-part builder (head, arms, body), random nice presets, and robot testing in a few clicks.')}</p>
+            <div className="admin-chip-list">
+              <p className={`admin-chip ${kioskConnected ? 'admin-chip--ok' : 'admin-chip--warning'}`}>
+                {kioskConnected
+                  ? t('Kiosk dang ket noi live', 'Kiosk live connection active')
+                  : t('Chua thay kiosk live', 'No live kiosk detected')}
+              </p>
+              <p className={`admin-chip ${draftDirty ? 'admin-chip--warning' : 'admin-chip--ok'}`}>
+                {draftDirty
+                  ? t('Ban nhap chua ap dung', 'Draft not applied')
+                  : t('Da dong bo index', 'Index synced')}
+              </p>
+            </div>
+          </div>
+          <div className="admin-inline-actions">
+            <button className="admin-btn" type="button" onClick={applyNow} disabled={!draftDirty}>
+              {draftDirty ? t('Ap dung ngay', 'Apply Now') : t('Da ap dung', 'Already Applied')}
+            </button>
+            <button
+              className="admin-btn admin-btn--ghost"
+              type="button"
+              onClick={() => setShowAdvanced((current) => !current)}
+            >
+              {showAdvanced ? t('An nang cao', 'Hide Advanced') : t('Hien nang cao', 'Show Advanced')}
+            </button>
+            <a className="admin-link" href="/" target="_blank" rel="noreferrer">
+              {t('Mo kiosk de xem live', 'Open kiosk for live preview')}
+            </a>
+          </div>
+        </header>
+
+        <div className="robot-studio-section">
+          <h4 className="robot-studio-section__title">{t('🎨 Bảng Màu Theme', '🎨 Color Theme Palette')}</h4>
+          <div className="robot-color-theme-gallery">
+            {ROBOT_STUDIO_SKIN_LIBRARY.map((skin) => (
+              <button
+                key={skin.id}
+                type="button"
+                className={`robot-color-swatch ${config.activeSkinId === skin.id ? 'is-active' : ''}`}
+                onClick={() => persistConfig({ ...config, activeSkinId: skin.id })}
+                title={skin.label}
+                aria-label={`${t('Chọn theme', 'Select theme')} ${skin.label}`}
+              >
+                <span className="robot-color-swatch__circle" data-skin-id={skin.id} />
+                <span className="robot-color-swatch__label">{skin.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="admin-fields-grid robot-studio-quick-grid">
+          <label className="admin-field" style={{ display: 'none' }}>
+            <span>{t('Theme mau nen', 'Base color theme')}</span>
+            <select
+              value={config.activeSkinId}
+              onChange={(event) => persistConfig({ ...config, activeSkinId: event.target.value })}
+            >
+              {ROBOT_STUDIO_SKIN_LIBRARY.map((skin) => (
+                <option key={skin.id} value={skin.id}>
+                  {skin.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="admin-field">
+            <span>Quality profile</span>
+            <select
+              value={config.qualityProfile}
+              onChange={(event) =>
+                persistConfig({
+                  ...config,
+                  qualityProfile: event.target.value as RobotStudioConfigV1['qualityProfile'],
+                })
+              }
+            >
+              <option value="cinema">cinema</option>
+              <option value="standard">standard</option>
+              <option value="lite">lite</option>
+            </select>
+          </label>
+          <label className="admin-field">
+            <span>Expressive mode</span>
+            <select
+              value={config.expressiveMode}
+              onChange={(event) =>
+                persistConfig({
+                  ...config,
+                  expressiveMode: event.target.value as RobotStudioConfigV1['expressiveMode'],
+                })
+              }
+            >
+              <option value="full">full</option>
+              <option value="family">family</option>
+              <option value="conservative">conservative</option>
+            </select>
+          </label>
+          <label className="admin-field">
+            <span>{t('Do manh hieu ung', 'Effect intensity')} {config.effectIntensity}%</span>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={1}
+              value={config.effectIntensity}
+              onChange={(event) =>
+                persistConfig({ ...config, effectIntensity: Number(event.target.value) })
+              }
+            />
+          </label>
+        </div>
+
+        <div className="robot-studio-section">
+          <h4 className="robot-studio-section__title">{t('🎭 Chọn Preset Nhanh', '🎭 Quick Presets')}</h4>
+          <div className="robot-preset-showcase">
+            {AVATAR_PRESETS.map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                className="robot-preset-card"
+                onClick={() => applyAvatarPreset(preset.id)}
+              >
+                <span className="robot-preset-card__icon">
+                  {preset.id === 'preset-aether' && '🦸'}
+                  {preset.id === 'preset-kawaii' && '🎀'}
+                  {preset.id === 'preset-combat' && '⚔️'}
+                </span>
+                <span className="robot-preset-card__label">{preset.label}</span>
+              </button>
+            ))}
+            <button
+              type="button"
+              className="robot-preset-card robot-preset-card--random"
+              onClick={randomizeAvatarParts}
+            >
+              <span className="robot-preset-card__icon">🎲</span>
+              <span className="robot-preset-card__label">{t('Random Đẹp', 'Random Nice')}</span>
+            </button>
+          </div>
+        </div>
+
+        <article className="robot-studio-builder-grid">
+          <header className="robot-studio-builder-grid__head">
+            <strong>{t('🤖 Tùy Chỉnh Chi Tiết', '🤖 Detailed Customization')}</strong>
+          </header>
+          <div className="robot-parts-grid">
+            <div className="robot-part-group">
+              <span className="robot-part-group__label">{t('🗿 Đầu', '🗿 Head')}</span>
+              <div className="robot-icon-buttons">
+                {HEAD_SHAPE_OPTIONS.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={`robot-icon-btn ${avatarParts.headShape === item.id ? 'is-active' : ''}`}
+                    onClick={() => updateAvatarParts({ headShape: item.id })}
+                    title={item.label}
+                  >
+                    <span className="robot-icon-btn__symbol">
+                      {item.id === 'soft-square' && '○'}
+                      {item.id === 'visor' && '□'}
+                      {item.id === 'hex' && '⬡'}
+                      {item.id === 'bubble' && '◯'}
+                    </span>
+                    <span className="robot-icon-btn__label">{item.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="robot-part-group">
+              <span className="robot-part-group__label">{t('✨ Phụ kiện', '✨ Accessory')}</span>
+              <div className="robot-icon-buttons">
+                {HEAD_ACCESSORY_OPTIONS.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={`robot-icon-btn ${avatarParts.headAccessory === item.id ? 'is-active' : ''}`}
+                    onClick={() => updateAvatarParts({ headAccessory: item.id })}
+                    title={item.label}
+                  >
+                    <span className="robot-icon-btn__symbol">
+                      {item.id === 'none' && '∅'}
+                      {item.id === 'antenna' && '⚡'}
+                      {item.id === 'halo' && '◉'}
+                      {item.id === 'crown' && '♔'}
+                    </span>
+                    <span className="robot-icon-btn__label">{item.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="robot-part-group">
+              <span className="robot-part-group__label">{t('👁️ Mắt', '👁️ Eyes')}</span>
+              <div className="robot-icon-buttons">
+                {EYE_STYLE_OPTIONS.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={`robot-icon-btn ${avatarParts.eyeStyle === item.id ? 'is-active' : ''}`}
+                    onClick={() => updateAvatarParts({ eyeStyle: item.id })}
+                    title={item.label}
+                  >
+                    <span className="robot-icon-btn__symbol">
+                      {item.id === 'visor' && '▬'}
+                      {item.id === 'round' && '●'}
+                      {item.id === 'anime' && '◉'}
+                      {item.id === 'mono' && '■'}
+                      {item.id === 'happy' && '^_^'}
+                      {item.id === 'wink' && '>_<'}
+                      {item.id === 'surprised' && 'O_O'}
+                      {item.id === 'sleepy' && '-_-'}
+                    </span>
+                    <span className="robot-icon-btn__label">{item.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="robot-part-group">
+              <span className="robot-part-group__label">{t('👄 Miệng', '👄 Mouth')}</span>
+              <div className="robot-icon-buttons">
+                {MOUTH_STYLE_OPTIONS.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={`robot-icon-btn ${avatarParts.mouthStyle === item.id ? 'is-active' : ''}`}
+                    onClick={() => updateAvatarParts({ mouthStyle: item.id })}
+                    title={item.label}
+                  >
+                    <span className="robot-icon-btn__symbol">
+                      {item.id === 'line' && '▬'}
+                      {item.id === 'smile' && '⌣'}
+                      {item.id === 'pixel' && '▪'}
+                      {item.id === 'none' && '∅'}
+                      {item.id === 'big-smile' && ':D'}
+                      {item.id === 'surprised-o' && ':O'}
+                      {item.id === 'sad' && ':('}
+                      {item.id === 'tongue-out' && ':P'}
+                    </span>
+                    <span className="robot-icon-btn__label">{item.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="robot-part-group">
+              <span className="robot-part-group__label">{t('💪 Tay', '💪 Arms')}</span>
+              <div className="robot-icon-buttons">
+                {ARM_STYLE_OPTIONS.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={`robot-icon-btn ${avatarParts.armStyle === item.id ? 'is-active' : ''}`}
+                    onClick={() => updateAvatarParts({ armStyle: item.id })}
+                    title={item.label}
+                  >
+                    <span className="robot-icon-btn__symbol">
+                      {item.id === 'sleek' && '│'}
+                      {item.id === 'chunky' && '▌'}
+                      {item.id === 'floating' && '○'}
+                    </span>
+                    <span className="robot-icon-btn__label">{item.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="robot-part-group">
+              <span className="robot-part-group__label">{t('🎨 Màu tay', '🎨 Arm Color')}</span>
+              <div className="robot-icon-buttons robot-icon-buttons--colors">
+                {ARM_COLOR_OPTIONS.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={`robot-icon-btn robot-icon-btn--color ${avatarParts.armColor === item.id ? 'is-active' : ''}`}
+                    onClick={() => updateAvatarParts({ armColor: item.id })}
+                    title={item.label}
+                  >
+                    <span className="robot-icon-btn__color-circle" data-arm-color={item.id} />
+                    <span className="robot-icon-btn__label">{item.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="robot-part-group">
+              <span className="robot-part-group__label">{t('🤖 Thân', '🤖 Body')}</span>
+              <div className="robot-icon-buttons">
+                {BODY_SHAPE_OPTIONS.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={`robot-icon-btn ${avatarParts.bodyShape === item.id ? 'is-active' : ''}`}
+                    onClick={() => updateAvatarParts({ bodyShape: item.id })}
+                    title={item.label}
+                  >
+                    <span className="robot-icon-btn__symbol">
+                      {item.id === 'core' && '■'}
+                      {item.id === 'shield' && '◆'}
+                      {item.id === 'orb' && '●'}
+                      {item.id === 'compact' && '▪'}
+                    </span>
+                    <span className="robot-icon-btn__label">{item.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="robot-part-group robot-part-group--full">
+              <span className="robot-part-group__label">{t('🖼️ Khung mặt', '🖼️ Face Frame')} {avatarParts.faceFrameScale}%</span>
+              <div className="robot-slider-group">
+                <input
+                  type="range"
+                  min={65}
+                  max={145}
+                  step={1}
+                  value={avatarParts.faceFrameScale}
+                  onChange={(event) => updateAvatarParts({ faceFrameScale: Number(event.target.value) })}
+                />
+                <label className="robot-inline-check">
+                  <input
+                    type="checkbox"
+                    checked={avatarParts.faceFrameVisible}
+                    onChange={(event) => updateAvatarParts({ faceFrameVisible: event.target.checked })}
+                  />
+                  <span>{avatarParts.faceFrameVisible ? t('Hiển thị', 'Visible') : t('Ẩn', 'Hidden')}</span>
+                </label>
+              </div>
+            </div>
+            <div className="admin-field admin-field--full">
+              <span>{t('🎨 Trang phục (Outfit Style)', '🎨 Outfit Style')}</span>
+              <div className="robot-outfit-selector">
+                {OUTFIT_STYLE_OPTIONS.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={`robot-outfit-card ${avatarParts.outfitStyle === item.id ? 'is-active' : ''}`}
+                    onClick={() => updateAvatarParts({ outfitStyle: item.id })}
+                  >
+                    <span className="robot-outfit-card__icon">
+                      {item.id === 'service' && '👔'}
+                      {item.id === 'street' && '👕'}
+                      {item.id === 'formal' && '🎩'}
+                      {item.id === 'battle' && '⚔️'}
+                    </span>
+                    <span className="robot-outfit-card__label">{item.label}</span>
+                    <span className="robot-outfit-card__gradient" data-outfit={item.id} />
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article className="robot-studio-mini-preview" aria-label={t('Xem truoc robot trong admin', 'Robot preview in admin')}>
+          <div className="robot-studio-mini-preview__meta">
+            <strong>{t('Preview Modular Robot (Admin)', 'Modular robot preview (Admin)')}</strong>
+            <span>
+              {t('Dau', 'Head')}: {avatarParts.headShape}
+            </span>
+            <span>
+              {t('Mat/Mieng', 'Eyes/Mouth')}: {avatarParts.eyeStyle}/{avatarParts.mouthStyle}
+            </span>
+            <span>
+              {t('Tay/Than', 'Arms/Body')}: {avatarParts.armStyle}/{avatarParts.bodyShape}
+            </span>
+            <span>
+              {t('Khung', 'Frame')}: {avatarParts.faceFrameVisible ? t('Hien', 'On') : t('An', 'Off')} · {avatarParts.faceFrameScale}%
+            </span>
+          </div>
+          <div className="robot-studio-mini-preview__stage robot-studio-mini-preview__stage--live">
+            <iframe
+              ref={previewIframeRef}
+              className="robot-studio-mini-preview__iframe"
+              title={t('Xem truoc dong bo index', 'Index-synced preview')}
+              src={ADMIN_LIVE_PREVIEW_SRC}
+              onLoad={syncLivePreviewFrame}
+              loading="lazy"
+            />
+          </div>
+        </article>
+
+        <div className="admin-fields-grid robot-studio-quick-grid">
+          <label className="admin-field">
+            <span>{t('Test nhanh action', 'Quick action test')}</span>
+            <select value={quickActionId} onChange={(event) => setQuickActionId(event.target.value)}>
+              {config.enabledActions.map((actionId) => (
+                <option key={actionId} value={actionId}>
+                  {actionId}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="admin-field">
+            <span>{t('Test nhanh graph', 'Quick graph test')}</span>
+            <select value={quickGraphId} onChange={(event) => setQuickGraphId(event.target.value)}>
+              {config.graphBindings.map((graph) => (
+                <option key={graph.id} value={graph.id}>
+                  {graph.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="admin-inline-actions robot-studio-quick-actions">
+            <button className="admin-btn admin-btn--ghost" type="button" onClick={previewQuickAction}>
+              {t('Test action', 'Test action')}
+            </button>
+            <button className="admin-btn admin-btn--ghost" type="button" onClick={runQuickGraph}>
+              {t('Chay graph', 'Run graph')}
+            </button>
+            <button className="admin-btn admin-btn--ghost" type="button" onClick={stopQuickGraph}>
+              {t('Dung graph', 'Stop graph')}
+            </button>
+          </div>
+        </div>
+
+        <p className="admin-service-card__detail">
+          {t(
+            'Luu y: thay doi o day la ban nhap. Chi khi bam "Ap dung ngay" moi dong bo sang kiosk/index.',
+            'Note: changes here are draft only. They sync to kiosk/index only after clicking "Apply Now".',
+          )}
+        </p>
+      </article>
+
+      {showAdvanced ? (
+        <>
       <article className="admin-subcard robot-studio-subcard">
         <header className="admin-subcard__head">
           <div>
-            <h3>Wardrobe Library</h3>
-            <p>20 skin da duoc chia pack + cho upload texture PNG/WEBP/SVG.</p>
+            <h3>{t('Legacy Palette + Asset', 'Legacy palette + assets')}</h3>
+            <p>{t('Skin cu de lam nen mau + upload texture PNG/WEBP/SVG cho body.', 'Legacy skins as color base + PNG/WEBP/SVG body texture upload.')}</p>
           </div>
           <div className="admin-inline-actions">
             <label className="admin-btn admin-btn--ghost robot-upload-btn">
-              {assetLoading ? 'Dang xu ly asset...' : 'Upload Asset'}
+              {assetLoading ? t('Dang xu ly asset...', 'Processing assets...') : t('Upload Asset', 'Upload Asset')}
               <input type="file" accept=".png,.webp,.svg,image/png,image/webp,image/svg+xml" multiple onChange={(event) => void handleAssetUpload(event.target.files)} />
             </label>
             <button className="admin-btn" type="button" onClick={() => void refreshAssetCatalog()}>
-              Lam moi asset
+              {t('Lam moi asset', 'Refresh assets')}
             </button>
           </div>
         </header>
 
         <div className="robot-studio-toolbar">
           <label className="admin-field">
-            <span>Loc pack</span>
+            <span>{t('Loc pack', 'Filter pack')}</span>
             <select value={packFilter} onChange={(event) => setPackFilter(event.target.value as PackFilter)}>
               {PACK_OPTIONS.map((item) => (
-                <option key={item.id} value={item.id}>{item.label}</option>
+                <option key={item.id} value={item.id}>
+                  {item.id === 'all' ? t('Tat ca', 'All') : item.label}
+                </option>
               ))}
             </select>
           </label>
@@ -502,17 +1284,17 @@ export function RobotStudioPanel({ onNotice }: RobotStudioPanelProps) {
               <p>{skin.pack}</p>
               <div className="robot-skin-card__actions">
                 <button className="admin-btn admin-btn--ghost" type="button" onClick={() => persistConfig({ ...config, activeSkinId: skin.id })}>
-                  Chon skin
+                  {t('Chon skin', 'Select skin')}
                 </button>
                 <label className="robot-inline-check">
                   <input type="checkbox" checked={config.enabledSkinIds.includes(skin.id)} onChange={(event) => setSkinEnabled(skin.id, event.target.checked)} />
-                  Bat skin
+                  {t('Bat skin', 'Enable skin')}
                 </label>
               </div>
               <label className="admin-field">
                 <span>Texture bind</span>
                 <select value={config.skinAssetBindings[skin.id] ?? ''} onChange={(event) => bindSkinAsset(skin.id, event.target.value)}>
-                  <option value="">Khong</option>
+                  <option value="">{t('Khong', 'None')}</option>
                   {config.uploadedAssets.map((asset) => (
                     <option key={asset.id} value={asset.id}>{asset.name}</option>
                   ))}
@@ -523,7 +1305,7 @@ export function RobotStudioPanel({ onNotice }: RobotStudioPanelProps) {
         </div>
 
         <div className="robot-asset-list">
-          {config.uploadedAssets.length === 0 ? <p className="robot-empty">Chua co asset upload.</p> : null}
+          {config.uploadedAssets.length === 0 ? <p className="robot-empty">{t('Chua co asset upload.', 'No uploaded assets yet.')}</p> : null}
           {config.uploadedAssets.map((asset) => (
             <article key={asset.id} className="robot-asset-item">
               {assetPreviewById[asset.id] ? <img src={assetPreviewById[asset.id]} alt={asset.name} /> : <div className="robot-asset-placeholder">IMG</div>}
@@ -531,7 +1313,9 @@ export function RobotStudioPanel({ onNotice }: RobotStudioPanelProps) {
                 <strong>{asset.name}</strong>
                 <p>{asset.kind.toUpperCase()} · {Math.round(asset.size / 1024)} KB</p>
               </div>
-              <button className="admin-btn admin-btn--ghost" type="button" onClick={() => void handleRemoveAsset(asset.id)}>Xoa</button>
+              <button className="admin-btn admin-btn--ghost" type="button" onClick={() => void handleRemoveAsset(asset.id)}>
+                {t('Xoa', 'Delete')}
+              </button>
             </article>
           ))}
         </div>
@@ -541,7 +1325,7 @@ export function RobotStudioPanel({ onNotice }: RobotStudioPanelProps) {
         <header className="admin-subcard__head">
           <div>
             <h3>Action Library</h3>
-            <p>Bat/tat 25 action va chinh intensity, speed, cooldown.</p>
+            <p>{t('Bat/tat 25 action va chinh intensity, speed, cooldown.', 'Enable/disable 25 actions and tune intensity, speed, and cooldown.')}</p>
           </div>
         </header>
         <div className="robot-action-grid">
@@ -578,11 +1362,11 @@ export function RobotStudioPanel({ onNotice }: RobotStudioPanelProps) {
         <header className="admin-subcard__head">
           <div>
             <h3>Graph Timeline Editor</h3>
-            <p>Canvas node-graph co branch dieu kien theo scene/intent/menu/presence.</p>
+            <p>{t('Canvas node-graph co branch dieu kien theo scene/intent/menu/presence.', 'Node-graph canvas with condition branches by scene/intent/menu/presence.')}</p>
           </div>
           <div className="admin-inline-actions">
-            <button className="admin-btn" type="button" onClick={addGraph}>Them graph</button>
-            <button className="admin-btn admin-btn--ghost" type="button" onClick={removeGraph}>Xoa graph</button>
+            <button className="admin-btn" type="button" onClick={addGraph}>{t('Them graph', 'Add graph')}</button>
+            <button className="admin-btn admin-btn--ghost" type="button" onClick={removeGraph}>{t('Xoa graph', 'Delete graph')}</button>
           </div>
         </header>
         <div className="robot-studio-toolbar">
@@ -915,9 +1699,9 @@ export function RobotStudioPanel({ onNotice }: RobotStudioPanelProps) {
         <header className="admin-subcard__head">
           <div>
             <h3>Trigger Binding</h3>
-            <p>Map su kien tu button, voice, presence vao action/graph.</p>
+            <p>{t('Map su kien tu button, voice, presence vao action/graph.', 'Map button, voice, and presence events to actions/graphs.')}</p>
           </div>
-          <button className="admin-btn" type="button" onClick={addTrigger}>Them trigger</button>
+          <button className="admin-btn" type="button" onClick={addTrigger}>{t('Them trigger', 'Add trigger')}</button>
         </header>
         <div className="robot-trigger-list">
           {config.triggerBindings.map((binding) => (
@@ -947,7 +1731,9 @@ export function RobotStudioPanel({ onNotice }: RobotStudioPanelProps) {
                 <input type="checkbox" checked={binding.enabled} onChange={(event) => persistConfig({ ...config, triggerBindings: config.triggerBindings.map((item) => item.id === binding.id ? { ...item, enabled: event.target.checked } : item) })} />
                 Enabled
               </label>
-              <button className="admin-btn admin-btn--ghost" type="button" onClick={() => removeTrigger(binding.id)}>Xoa</button>
+              <button className="admin-btn admin-btn--ghost" type="button" onClick={() => removeTrigger(binding.id)}>
+                {t('Xoa', 'Delete')}
+              </button>
             </article>
           ))}
         </div>
@@ -957,11 +1743,11 @@ export function RobotStudioPanel({ onNotice }: RobotStudioPanelProps) {
         <header className="admin-subcard__head">
           <div>
             <h3>Runtime Profile</h3>
-            <p>Manual quality profile, expressive mode, export/import preset JSON.</p>
+            <p>{t('Manual quality profile, expressive mode, export/import preset JSON.', 'Tune quality profile, expressive mode, and export/import JSON presets.')}</p>
           </div>
           <div className="admin-inline-actions">
-            <button className="admin-btn admin-btn--ghost" type="button" onClick={resetConfig}>Reset default</button>
-            <button className="admin-btn" type="button" onClick={handleImportJson}>Import JSON</button>
+            <button className="admin-btn admin-btn--ghost" type="button" onClick={resetConfig}>{t('Reset default', 'Reset default')}</button>
+            <button className="admin-btn" type="button" onClick={handleImportJson}>{t('Import JSON', 'Import JSON')}</button>
           </div>
         </header>
         <div className="admin-fields-grid">
@@ -989,7 +1775,7 @@ export function RobotStudioPanel({ onNotice }: RobotStudioPanelProps) {
 
         <label className="admin-field admin-field--full">
           <span>Import JSON</span>
-          <textarea value={importText} onChange={(event) => setImportText(event.target.value)} placeholder="Paste robotStudio.v1 JSON vao day..." rows={6} />
+          <textarea value={importText} onChange={(event) => setImportText(event.target.value)} placeholder={t('Paste robotStudio.v1 JSON vao day...', 'Paste robotStudio.v1 JSON here...')} rows={6} />
         </label>
 
         <label className="admin-field admin-field--full">
@@ -997,6 +1783,17 @@ export function RobotStudioPanel({ onNotice }: RobotStudioPanelProps) {
           <textarea value={exportText} readOnly rows={10} />
         </label>
       </article>
+        </>
+      ) : (
+        <article className="admin-subcard robot-studio-subcard">
+          <p className="admin-service-card__detail">
+            {t(
+              'Ban dang o che do nhanh. Bat "Hien nang cao" neu can Graph Editor, Trigger Binding va Import/Export JSON.',
+              'You are in quick mode. Turn on "Show Advanced" for Graph Editor, Trigger Binding, and Import/Export JSON.',
+            )}
+          </p>
+        </article>
+      )}
     </section>
   )
 }

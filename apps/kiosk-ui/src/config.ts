@@ -13,6 +13,7 @@ const ADMIN_MIC_NOISE_FILTER_STRENGTH_KEY = 'admin.mic.noiseFilterStrength'
 const ADMIN_ROBOT_SCALE_PERCENT_KEY = 'admin.robot.scalePercent'
 const ADMIN_CAMERA_PREVIEW_VISIBLE_KEY = 'admin.camera.previewVisible'
 export const ADMIN_ROBOT_STUDIO_CONFIG_KEY = 'admin.robot.studio.v1'
+export const ADMIN_ROBOT_STUDIO_COMMAND_KEY = 'admin.robot.studio.command.v1'
 
 const ROBOT_STUDIO_ASSET_DB_NAME = 'orderrobot-robot-studio-assets'
 const ROBOT_STUDIO_ASSET_STORE_NAME = 'assets'
@@ -24,6 +25,14 @@ export type RobotSkinPack = 'maid' | 'waiter' | 'cute' | 'anime'
 export type RobotGraphNodeType = 'action' | 'wait' | 'condition'
 export type RobotGraphConditionSource = 'scene' | 'intent' | 'menu' | 'presence' | 'emotion' | 'action'
 export type RobotGraphConditionOperator = 'equals' | 'notEquals' | 'contains'
+export type RobotHeadShape = 'soft-square' | 'visor' | 'hex' | 'bubble'
+export type RobotHeadAccessory = 'none' | 'antenna' | 'halo' | 'crown'
+export type RobotEyeStyle = 'visor' | 'round' | 'anime' | 'mono' | 'happy' | 'wink' | 'surprised' | 'sleepy'
+export type RobotMouthStyle = 'line' | 'smile' | 'pixel' | 'none' | 'big-smile' | 'surprised-o' | 'sad' | 'tongue-out'
+export type RobotArmStyle = 'sleek' | 'chunky' | 'floating'
+export type RobotArmColor = 'aqua' | 'sunset' | 'mint' | 'violet' | 'mono'
+export type RobotBodyShape = 'core' | 'shield' | 'orb' | 'compact'
+export type RobotOutfitStyle = 'service' | 'street' | 'formal' | 'battle'
 
 export type RobotStudioSkinMeta = { id: string; label: string; pack: RobotSkinPack }
 export type RobotStudioActionMeta = {
@@ -74,6 +83,11 @@ export type RobotActionSetting = {
   cooldownMs: number
 }
 
+export type RobotStudioCommand =
+  | { type: 'preview-action'; actionId: string }
+  | { type: 'run-graph'; graphId: string }
+  | { type: 'stop-graph' }
+
 export type RobotStudioAssetMeta = {
   id: string
   name: string
@@ -84,6 +98,20 @@ export type RobotStudioAssetMeta = {
 }
 
 type RobotStudioAssetRecord = RobotStudioAssetMeta & { blob: Blob }
+
+export type RobotAvatarPartsV1 = {
+  headShape: RobotHeadShape
+  headAccessory: RobotHeadAccessory
+  eyeStyle: RobotEyeStyle
+  mouthStyle: RobotMouthStyle
+  faceFrameScale: number
+  faceFrameVisible: boolean
+  armStyle: RobotArmStyle
+  armColor: RobotArmColor
+  bodyShape: RobotBodyShape
+  outfitStyle: RobotOutfitStyle
+  randomSeed: number
+}
 
 export type RobotStudioConfigV1 = {
   schema: 'robotStudio.v1'
@@ -98,7 +126,17 @@ export type RobotStudioConfigV1 = {
   actionSettings: Record<string, RobotActionSetting>
   uploadedAssets: RobotStudioAssetMeta[]
   skinAssetBindings: Record<string, string>
+  avatarParts: RobotAvatarPartsV1
 }
+
+const ROBOT_HEAD_SHAPE_OPTIONS = ['soft-square', 'visor', 'hex', 'bubble'] as const
+const ROBOT_HEAD_ACCESSORY_OPTIONS = ['none', 'antenna', 'halo', 'crown'] as const
+const ROBOT_EYE_STYLE_OPTIONS = ['visor', 'round', 'anime', 'mono'] as const
+const ROBOT_MOUTH_STYLE_OPTIONS = ['line', 'smile', 'pixel', 'none'] as const
+const ROBOT_ARM_STYLE_OPTIONS = ['sleek', 'chunky', 'floating'] as const
+const ROBOT_ARM_COLOR_OPTIONS = ['aqua', 'sunset', 'mint', 'violet', 'mono'] as const
+const ROBOT_BODY_SHAPE_OPTIONS = ['core', 'shield', 'orb', 'compact'] as const
+const ROBOT_OUTFIT_STYLE_OPTIONS = ['service', 'street', 'formal', 'battle'] as const
 
 export const ROBOT_STUDIO_SKIN_LIBRARY: RobotStudioSkinMeta[] = [
   { id: 'maid-classic', label: 'Maid Classic', pack: 'maid' },
@@ -211,6 +249,21 @@ function clampCooldown(value: number): number {
   return Math.max(0, Math.min(15000, Math.round(value)))
 }
 
+function clampAvatarSeed(value: number): number {
+  if (!Number.isFinite(value)) return 420
+  return Math.max(0, Math.min(999999, Math.round(value)))
+}
+
+function clampFaceFrameScale(value: number): number {
+  if (!Number.isFinite(value)) return 100
+  return Math.max(65, Math.min(145, Math.round(value)))
+}
+
+function pickEnumOption<T extends string>(value: unknown, options: readonly T[], fallback: T): T {
+  const safe = String(value || '') as T
+  return options.includes(safe) ? safe : fallback
+}
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
@@ -263,6 +316,22 @@ function defaultTriggerBindings(): RobotTriggerBinding[] {
   ]
 }
 
+export function createDefaultRobotAvatarParts(): RobotAvatarPartsV1 {
+  return {
+    headShape: 'visor',
+    headAccessory: 'none',
+    eyeStyle: 'visor',
+    mouthStyle: 'line',
+    faceFrameScale: 100,
+    faceFrameVisible: true,
+    armStyle: 'sleek',
+    armColor: 'aqua',
+    bodyShape: 'core',
+    outfitStyle: 'service',
+    randomSeed: 420,
+  }
+}
+
 export function createDefaultRobotStudioConfig(): RobotStudioConfigV1 {
   const defaultActionIds = ROBOT_STUDIO_ACTION_LIBRARY.map((item) => item.id)
   const defaultSkinIds = ROBOT_STUDIO_SKIN_LIBRARY.map((item) => item.id)
@@ -279,6 +348,7 @@ export function createDefaultRobotStudioConfig(): RobotStudioConfigV1 {
     actionSettings: defaultActionSettings(defaultActionIds),
     uploadedAssets: [],
     skinAssetBindings: {},
+    avatarParts: createDefaultRobotAvatarParts(),
   }
 }
 function normalizeRobotStudioConfig(raw: unknown): RobotStudioConfigV1 {
@@ -361,6 +431,8 @@ function normalizeRobotStudioConfig(raw: unknown): RobotStudioConfigV1 {
   const enabledSkinIds = Array.isArray(raw.enabledSkinIds)
     ? raw.enabledSkinIds.map((item) => String(item)).filter((item) => skinIds.has(item))
     : defaults.enabledSkinIds
+  const avatarRaw = isObject(raw.avatarParts) ? raw.avatarParts : {}
+  const avatarDefaults = defaults.avatarParts
 
   return {
     schema: 'robotStudio.v1',
@@ -375,6 +447,22 @@ function normalizeRobotStudioConfig(raw: unknown): RobotStudioConfigV1 {
     actionSettings,
     uploadedAssets,
     skinAssetBindings,
+    avatarParts: {
+      headShape: pickEnumOption(avatarRaw.headShape, ROBOT_HEAD_SHAPE_OPTIONS, avatarDefaults.headShape),
+      headAccessory: pickEnumOption(avatarRaw.headAccessory, ROBOT_HEAD_ACCESSORY_OPTIONS, avatarDefaults.headAccessory),
+      eyeStyle: pickEnumOption(avatarRaw.eyeStyle, ROBOT_EYE_STYLE_OPTIONS, avatarDefaults.eyeStyle),
+      mouthStyle: pickEnumOption(avatarRaw.mouthStyle, ROBOT_MOUTH_STYLE_OPTIONS, avatarDefaults.mouthStyle),
+      faceFrameScale: clampFaceFrameScale(Number(avatarRaw.faceFrameScale ?? avatarDefaults.faceFrameScale)),
+      faceFrameVisible:
+        typeof avatarRaw.faceFrameVisible === 'boolean'
+          ? avatarRaw.faceFrameVisible
+          : avatarDefaults.faceFrameVisible,
+      armStyle: pickEnumOption(avatarRaw.armStyle, ROBOT_ARM_STYLE_OPTIONS, avatarDefaults.armStyle),
+      armColor: pickEnumOption(avatarRaw.armColor, ROBOT_ARM_COLOR_OPTIONS, avatarDefaults.armColor),
+      bodyShape: pickEnumOption(avatarRaw.bodyShape, ROBOT_BODY_SHAPE_OPTIONS, avatarDefaults.bodyShape),
+      outfitStyle: pickEnumOption(avatarRaw.outfitStyle, ROBOT_OUTFIT_STYLE_OPTIONS, avatarDefaults.outfitStyle),
+      randomSeed: clampAvatarSeed(Number(avatarRaw.randomSeed ?? avatarDefaults.randomSeed)),
+    },
   }
 }
 
@@ -411,7 +499,8 @@ export function subscribeAdminConfigChanges(onChange: () => void): () => void {
     if (
       event.key === ADMIN_ENV_STORAGE_KEY ||
       event.key === ADMIN_ENV_UPDATED_AT_KEY ||
-      event.key === ADMIN_ROBOT_STUDIO_CONFIG_KEY
+      event.key === ADMIN_ROBOT_STUDIO_CONFIG_KEY ||
+      event.key === ADMIN_ROBOT_STUDIO_COMMAND_KEY
     ) {
       onChange()
     }
@@ -543,6 +632,22 @@ export function setRobotStudioConfig(nextConfig: RobotStudioConfigV1): RobotStud
   localStorage.setItem(ADMIN_ROBOT_STUDIO_CONFIG_KEY, JSON.stringify(normalized))
   emitAdminConfigUpdated({ robotStudioConfig: normalized })
   return normalized
+}
+
+export function sendRobotStudioCommand(command: RobotStudioCommand): void {
+  const safe =
+    command.type === 'preview-action'
+      ? { type: 'preview-action' as const, actionId: String(command.actionId || '').trim() }
+      : command.type === 'run-graph'
+        ? { type: 'run-graph' as const, graphId: String(command.graphId || '').trim() }
+        : { type: 'stop-graph' as const }
+
+  if (safe.type === 'preview-action' && !safe.actionId) return
+  if (safe.type === 'run-graph' && !safe.graphId) return
+
+  const payload = { ...safe, issuedAt: Date.now() }
+  localStorage.setItem(ADMIN_ROBOT_STUDIO_COMMAND_KEY, JSON.stringify(payload))
+  emitAdminConfigUpdated({ robotStudioCommand: payload })
 }
 
 export function updateRobotStudioConfig(

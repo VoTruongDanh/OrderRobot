@@ -58,6 +58,8 @@ async def preload_speech_model() -> None:
     def report_preload_failure(background_task: asyncio.Task[None]) -> None:
         try:
             background_task.result()
+        except asyncio.CancelledError:
+            logger.debug("STT preload task cancelled during shutdown.")
         except Exception:
             logger.exception("STT preload failed")
 
@@ -79,6 +81,7 @@ async def health() -> dict[str, object]:
         "llm_mode": settings.llm_mode,
         "bridge_base_url": settings.bridge_base_url,
         "voice_style": settings.voice_style,
+        "tts_engine": settings.tts_engine,
         "stt_model": settings.stt_model,
         "tts_voice": settings.tts_voice,
         "tts_rate": settings.tts_rate,

@@ -52,6 +52,7 @@
       };
 
       this.ensureFaceDecor();
+      this.ensureHeadAccessoryNode();
       this.ensureEffectLayer();
       this.seedEffectPool();
       this.loadScalePercent(this.config.storageKeys.scalePercent);
@@ -168,9 +169,101 @@
       this.face.dataset.noseScrunch = 'false';
     }
 
+    ensureHeadAccessoryNode() {
+      if (!this.head) return null;
+      let node = this.head.querySelector('#robot-head-accessory');
+      if (!node) {
+        node = document.createElement('div');
+        node.id = 'robot-head-accessory';
+        this.head.appendChild(node);
+      }
+      return node;
+    }
+
+    applyVariantClass(element, prefix, allowed, value, fallback) {
+      if (!element) return fallback;
+      const safe = allowed.includes(value) ? value : fallback;
+      const classes = Array.from(element.classList);
+      classes.forEach((className) => {
+        if (className.startsWith(`${prefix}-`)) {
+          element.classList.remove(className);
+        }
+      });
+      element.classList.add(`${prefix}-${safe}`);
+      return safe;
+    }
+
+    applyAvatarParts(partsInput) {
+      const defaults = this.config.defaultRobotStudioConfig?.avatarParts || {
+        headShape: 'visor',
+        headAccessory: 'none',
+        eyeStyle: 'visor',
+        mouthStyle: 'line',
+        faceFrameScale: 100,
+        faceFrameVisible: true,
+        armStyle: 'sleek',
+        armColor: 'aqua',
+        bodyShape: 'core',
+        outfitStyle: 'service',
+        randomSeed: 420,
+      };
+      const raw = partsInput && typeof partsInput === 'object' ? partsInput : {};
+      const safe = {
+        headShape: String(raw.headShape || defaults.headShape),
+        headAccessory: String(raw.headAccessory || defaults.headAccessory),
+        eyeStyle: String(raw.eyeStyle || defaults.eyeStyle),
+        mouthStyle: String(raw.mouthStyle || defaults.mouthStyle),
+        faceFrameScale: Number.isFinite(Number(raw.faceFrameScale)) ? Math.max(65, Math.min(145, Math.round(Number(raw.faceFrameScale)))) : defaults.faceFrameScale,
+        faceFrameVisible: typeof raw.faceFrameVisible === 'boolean' ? raw.faceFrameVisible : defaults.faceFrameVisible,
+        armStyle: String(raw.armStyle || defaults.armStyle),
+        armColor: String(raw.armColor || defaults.armColor),
+        bodyShape: String(raw.bodyShape || defaults.bodyShape),
+        outfitStyle: String(raw.outfitStyle || defaults.outfitStyle),
+        randomSeed: Number.isFinite(Number(raw.randomSeed)) ? Math.max(0, Math.min(999999, Math.round(Number(raw.randomSeed)))) : defaults.randomSeed,
+      };
+
+      this.applyVariantClass(this.head, 'head-shape', ['soft-square', 'visor', 'hex', 'bubble'], safe.headShape, defaults.headShape);
+      this.applyVariantClass(this.leftArm, 'arm-style', ['sleek', 'chunky', 'floating'], safe.armStyle, defaults.armStyle);
+      this.applyVariantClass(this.rightArm, 'arm-style', ['sleek', 'chunky', 'floating'], safe.armStyle, defaults.armStyle);
+      this.applyVariantClass(this.body, 'body-shape', ['core', 'shield', 'orb', 'compact'], safe.bodyShape, defaults.bodyShape);
+      this.applyVariantClass(this.body, 'outfit-style', ['service', 'street', 'formal', 'battle'], safe.outfitStyle, defaults.outfitStyle);
+
+      if (this.face) {
+        this.face.dataset.eyeStyle = this.applyVariantClass(this.face, 'eye-style', ['visor', 'round', 'anime', 'mono', 'happy', 'wink', 'surprised', 'sleepy'], safe.eyeStyle, defaults.eyeStyle).replace('eye-style-', '');
+        this.face.dataset.mouthStyle = this.applyVariantClass(this.face, 'mouth-style', ['line', 'smile', 'pixel', 'none', 'big-smile', 'surprised-o', 'sad', 'tongue-out'], safe.mouthStyle, defaults.mouthStyle).replace('mouth-style-', '');
+      }
+      document.documentElement.style.setProperty('--robot-face-frame-scale', String(safe.faceFrameScale / 100));
+      document.documentElement.style.setProperty('--robot-face-frame-opacity', safe.faceFrameVisible ? '1' : '0');
+
+      const armColorById = {
+        aqua: '#22d3ee',
+        sunset: '#fb7185',
+        mint: '#34d399',
+        violet: '#a78bfa',
+        mono: '#94a3b8',
+      };
+      const armColor = armColorById[safe.armColor] || armColorById[defaults.armColor] || '#22d3ee';
+      document.documentElement.style.setProperty('--robot-arm-custom-color', armColor);
+
+      const outfitOverlayById = {
+        service: 'linear-gradient(180deg, rgba(255,255,255,0.1), rgba(255,255,255,0))',
+        street: 'linear-gradient(135deg, rgba(16,185,129,0.24), rgba(34,197,94,0.04))',
+        formal: 'linear-gradient(135deg, rgba(148,163,184,0.24), rgba(30,41,59,0.08))',
+        battle: 'linear-gradient(135deg, rgba(251,113,133,0.26), rgba(30,41,59,0.12))',
+      };
+      document.documentElement.style.setProperty('--robot-outfit-overlay', outfitOverlayById[safe.outfitStyle] || outfitOverlayById[defaults.outfitStyle] || 'none');
+
+      const accessory = this.ensureHeadAccessoryNode();
+      if (accessory) {
+        this.applyVariantClass(accessory, 'head-accessory', ['none', 'antenna', 'halo', 'crown'], safe.headAccessory, defaults.headAccessory);
+      }
+    }
+
     setFaceState(state) {
       if (!this.face) return;
-      this.face.className = `w-24 h-10 bg-slate-900 rounded-full flex flex-col items-center justify-center gap-1 overflow-hidden transition-all duration-300 state-${state}`;
+      const eyeStyle = String(this.face.dataset.eyeStyle || 'visor');
+      const mouthStyle = String(this.face.dataset.mouthStyle || 'line');
+      this.face.className = `face-screen-panel absolute inset-0 flex flex-col items-center justify-center gap-3 transition-all duration-300 relative eye-style-${eyeStyle} mouth-style-${mouthStyle} state-${state}`;
     }
 
     setFaceDetails(details = {}) {
@@ -213,6 +306,22 @@
         this.effectLayer.appendChild(element);
         pool.push(element);
       }
+    }
+
+    getFaceAnchorPoint() {
+      if (this.face && typeof this.face.getBoundingClientRect === 'function') {
+        const rect = this.face.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+          return {
+            x: rect.left + rect.width / 2,
+            y: rect.top + rect.height / 2,
+          };
+        }
+      }
+      return {
+        x: window.innerWidth * 0.5,
+        y: window.innerHeight * 0.42,
+      };
     }
 
     spawnEffect(type, options = {}) {
@@ -271,22 +380,37 @@
 
     spawnBurst(type, count) {
       const total = this.getScaledEffectCount(count);
+      const origin = this.getFaceAnchorPoint();
+      const spreadScale = this.getQualityProfile() === 'lite' ? 0.65 : this.getQualityProfile() === 'standard' ? 0.85 : 1;
+      const spreadX = window.innerWidth * 0.48 * spreadScale;
+      const spreadY = window.innerHeight * 0.44 * spreadScale;
       for (let i = 0; i < total; i += 1) {
+        const radial = Math.pow(Math.random(), 0.58);
+        const angle = Math.random() * Math.PI * 2;
+        const deltaX = Math.cos(angle) * spreadX * radial + (Math.random() * 60 - 30);
+        const deltaY = Math.sin(angle) * spreadY * radial + (Math.random() * 44 - 22);
         this.spawnEffect(type, {
-          x: window.innerWidth * 0.5 + (Math.random() * 220 - 110),
-          y: window.innerHeight * 0.42 + (Math.random() * 110 - 55),
+          x: origin.x + (Math.random() * 46 - 23),
+          y: origin.y + (Math.random() * 28 - 14),
+          driftX: deltaX,
+          // Animation uses translateY(-riseY), so invert sign to support full 360 spread.
+          riseY: -deltaY,
+          durationMs: 760 + Math.random() * 780 + radial * 260,
         });
       }
     }
 
     spawnRain(type, count) {
       const total = this.getScaledEffectCount(count);
+      const qualityScale = this.getQualityProfile() === 'lite' ? 0.65 : this.getQualityProfile() === 'standard' ? 0.82 : 1;
       for (let i = 0; i < total; i += 1) {
         this.spawnEffect(type, {
           x: Math.random() * window.innerWidth,
-          y: -40 - Math.random() * 100,
-          durationMs: 1200 + Math.random() * 900,
-          driftX: Math.random() * 100 - 50,
+          y: -20 - Math.random() * 120,
+          durationMs: (1280 + Math.random() * 1100) * qualityScale,
+          driftX: (Math.random() * 140 - 70) * qualityScale,
+          // Negative riseY means particles travel downward across the viewport.
+          riseY: -(window.innerHeight * (0.72 + Math.random() * 0.55) * qualityScale),
         });
       }
     }
@@ -312,18 +436,24 @@
     }
 
     async enterDiscoMode() {
-      this.discoBall.classList.remove('retract');
-      this.discoBall.classList.add('active');
+      if (this.discoBall?.classList) {
+        this.discoBall.classList.remove('retract');
+        this.discoBall.classList.add('active');
+      }
       document.body.classList.add('disco-on');
       await new Promise((resolve) => setTimeout(resolve, 450));
     }
 
     async exitDiscoMode() {
-      this.discoBall.classList.remove('active');
-      this.discoBall.classList.add('retract');
+      if (this.discoBall?.classList) {
+        this.discoBall.classList.remove('active');
+        this.discoBall.classList.add('retract');
+      }
       await new Promise((resolve) => setTimeout(resolve, 340));
       document.body.classList.remove('disco-on');
-      this.discoBall.classList.remove('retract');
+      if (this.discoBall?.classList) {
+        this.discoBall.classList.remove('retract');
+      }
     }
 
     loadStudioConfig() {
@@ -454,22 +584,35 @@
     }
 
     async triggerCinematic(type) {
-      if (this.isCinematicRunning) return;
+      if (this.isCinematicRunning) return false;
       this.isCinematicRunning = true;
-      if (this.getIsMenuOpen()) {
-        this.onRequestCloseMenu();
+      try {
+        if (this.getIsMenuOpen()) {
+          this.onRequestCloseMenu();
+        }
+        return await this.actions.trigger(type, { force: true });
+      } catch (error) {
+        console.warn('[OrderRobot] triggerCinematic failed:', error);
+        return false;
+      } finally {
+        this.isCinematicRunning = false;
+        this.reset();
       }
-      await this.actions.trigger(type, { force: true });
-      this.isCinematicRunning = false;
-      this.reset();
     }
 
     async runGraph(graphId, context = {}) {
       const graph = this.graphById.get(graphId);
-      if (!graph) return;
+      if (!graph) return false;
       this.runtimeStats.graphTriggered += 1;
-      await this.actions.runGraph(graph, context);
-      this.reset();
+      try {
+        await this.actions.runGraph(graph, context);
+        return true;
+      } catch (error) {
+        console.warn('[OrderRobot] runGraph failed:', error);
+        return false;
+      } finally {
+        this.reset();
+      }
     }
 
     stopGraph() {
@@ -511,11 +654,15 @@
       this.core.style.background = '';
       this.body.style.transform = '';
       this.neck.style.transform = '';
-      this.discoBall.classList.remove('active', 'retract');
+      if (this.discoBall?.classList) {
+        this.discoBall.classList.remove('active', 'retract');
+      }
       document.body.classList.remove('disco-on');
       this.setFaceState('normal');
       this.setFaceDetails({ wink: false, blush: false, noseScrunch: false, mouth: 'neutral' });
-      this.viewport.classList.remove('shake-heavy');
+      if (this.viewport?.classList) {
+        this.viewport.classList.remove('shake-heavy');
+      }
       this.applySkin(this.currentSkinId);
     }
 
@@ -523,26 +670,47 @@
       const applied = global.OrderRobot.skins.applySkin(skinId);
       this.currentSkinId = applied;
       localStorage.setItem(this.config.storageKeys.skinId, applied);
+      this.applyAvatarParts(this.activeStudioConfig?.avatarParts);
 
-      const gradient = getComputedStyle(document.documentElement).getPropertyValue('--robot-outfit-gradient');
+      const rootStyle = getComputedStyle(document.documentElement);
+      const gradient = rootStyle.getPropertyValue('--robot-outfit-gradient').trim();
+      const outfitOverlay = rootStyle.getPropertyValue('--robot-outfit-overlay').trim();
+      const accentColor = rootStyle.getPropertyValue('--robot-accent-color').trim() || '#334155';
+      const coreColor = rootStyle.getPropertyValue('--robot-core-color').trim() || '#00d2fd';
+      const coreGlow = rootStyle.getPropertyValue('--robot-core-glow').trim() || 'rgba(0,210,253,0.5)';
       if (gradient) {
         this.body.style.background = gradient;
-        this.head.style.background = '#ffffff';
+        this.body.style.backgroundImage = outfitOverlay && outfitOverlay !== 'none' ? `${outfitOverlay}, ${gradient}` : gradient;
+        this.body.style.backgroundBlendMode = outfitOverlay && outfitOverlay !== 'none' ? 'soft-light,normal' : '';
       }
+      this.head.style.background = 'linear-gradient(180deg,#ffffff 0%,#e2e8f0 100%)';
+      this.head.style.border = `1px solid ${accentColor}`;
+      this.head.style.boxShadow = `0 14px 28px ${coreGlow}`;
+      this.neck.style.background = accentColor;
+      this.neck.style.boxShadow = `0 0 16px ${coreGlow}`;
+      this.leftArm.style.background = 'linear-gradient(180deg,#ffffff 0%,#e5e7eb 68%,var(--robot-arm-custom-color) 100%)';
+      this.rightArm.style.background = 'linear-gradient(180deg,#ffffff 0%,#e5e7eb 68%,var(--robot-arm-custom-color) 100%)';
+      this.core.style.background = coreColor;
+      this.core.style.boxShadow = `0 0 18px ${coreGlow}`;
+      this.robot.style.filter = `drop-shadow(0 16px 30px ${coreGlow})`;
 
       const skinAssetId = this.activeStudioConfig.skinAssetBindings?.[applied];
       if (skinAssetId) {
         global.OrderRobot.skins.resolveUploadedAssetDataUrl(skinAssetId).then((dataUrl) => {
           if (!dataUrl) return;
+          const overlayLayer = outfitOverlay && outfitOverlay !== 'none' ? `${outfitOverlay},` : '';
           const gradientLayer = gradient ? `${gradient},` : '';
-          this.body.style.backgroundImage = `${gradientLayer}url(${dataUrl})`;
+          this.body.style.backgroundImage = `${overlayLayer}${gradientLayer}url(${dataUrl})`;
           this.body.style.backgroundSize = 'cover';
-          this.body.style.backgroundBlendMode = 'overlay';
+          this.body.style.backgroundBlendMode = overlayLayer ? 'soft-light,normal,overlay' : 'overlay';
         }).catch(() => {
           // ignore asset errors
         });
       } else {
-        this.body.style.backgroundImage = '';
+        this.body.style.backgroundImage = gradient
+          ? (outfitOverlay && outfitOverlay !== 'none' ? `${outfitOverlay}, ${gradient}` : gradient)
+          : '';
+        this.body.style.backgroundBlendMode = outfitOverlay && outfitOverlay !== 'none' ? 'soft-light,normal' : '';
       }
 
       return applied;

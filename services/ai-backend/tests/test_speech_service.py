@@ -7,9 +7,11 @@ from app.models import MenuItem
 from app.services.speech_service import (
     SpeechNotHeardError,
     SpeechService,
+    SynthesizedAudio,
     best_lexicon_match,
     normalize_vietnamese_text,
     pick_edge_voice,
+    split_streaming_segments,
     should_fallback_to_windows_tts,
 )
 
@@ -179,6 +181,15 @@ def test_pick_edge_voice_prefers_vietnamese_neural_voice() -> None:
     assert pick_edge_voice("vi-VN", "male") == "vi-VN-NamMinhNeural"
 
 
+def test_split_streaming_segments_breaks_long_sentence() -> None:
+    segments = split_streaming_segments(
+        "xin chao ban, minh co the goi y nhieu mon ngon cho ban hom nay neu ban muon thu ngay",
+        max_chars=24,
+    )
+    assert segments
+    assert all(len(segment) <= 24 for segment in segments)
+
+
 def test_transcript_post_processing_recovers_menu_like_phrase() -> None:
     service = SpeechService(build_settings())
 
@@ -245,3 +256,26 @@ def test_best_lexicon_match_handles_vietnamese_normalization() -> None:
 
     assert display == "Cà phê muối"
     assert score >= 0.8
+
+
+@pytest.mark.anyio
+async def test_synthesize_prefers_vieneu_when_engine_forced(monkeypatch) -> None:
+    settings = build_settings()
+    settings.tts_engine = "vieneu"
+    service = SpeechService(settings)
+
+    monkeypatch.setattr(
+        service,
+        "_synthesize_with_vieneu_sync",
+        lambda _text: SynthesizedAudio(content=b"RIFFvieneu", media_type="audio/wav"),
+    )
+
+    async def fake_edge(*_args, **_kwargs):
+        raise AssertionError("Edge TTS should not run when VieNeu succeeds")
+
+    monkeypatch.setattr(service, "_synthesize_with_edge_tts", fake_edge)
+
+    audio = await service.synthesize("xin chao")
+
+    assert audio.content == b"RIFFvieneu"
+    assert audio.media_type == "audio/wav"
