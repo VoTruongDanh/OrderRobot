@@ -190,6 +190,7 @@
         }
       });
       element.classList.add(`${prefix}-${safe}`);
+      console.log(`[applyVariantClass] prefix=${prefix}, value=${value}, safe=${safe}, allowed=${allowed.join(',')}, final class=${prefix}-${safe}`);
       return safe;
     }
 
@@ -229,8 +230,12 @@
       this.applyVariantClass(this.body, 'outfit-style', ['service', 'street', 'formal', 'battle'], safe.outfitStyle, defaults.outfitStyle);
 
       if (this.face) {
-        this.face.dataset.eyeStyle = this.applyVariantClass(this.face, 'eye-style', ['visor', 'round', 'anime', 'mono', 'happy', 'wink', 'surprised', 'sleepy'], safe.eyeStyle, defaults.eyeStyle).replace('eye-style-', '');
-        this.face.dataset.mouthStyle = this.applyVariantClass(this.face, 'mouth-style', ['line', 'smile', 'pixel', 'none', 'big-smile', 'surprised-o', 'sad', 'tongue-out'], safe.mouthStyle, defaults.mouthStyle).replace('mouth-style-', '');
+        const appliedEyeStyle = this.applyVariantClass(this.face, 'eye-style', ['visor', 'round', 'anime', 'mono', 'happy', 'wink', 'surprised', 'sleepy'], safe.eyeStyle, defaults.eyeStyle);
+        const appliedMouthStyle = this.applyVariantClass(this.face, 'mouth-style', ['line', 'smile', 'pixel', 'none', 'big-smile', 'surprised-o', 'sad', 'tongue-out'], safe.mouthStyle, defaults.mouthStyle);
+        this.face.dataset.eyeStyle = appliedEyeStyle.replace('eye-style-', '');
+        this.face.dataset.mouthStyle = appliedMouthStyle.replace('mouth-style-', '');
+        console.log('[RobotController] Applied eye style:', appliedEyeStyle, 'Classes:', Array.from(this.face.classList));
+        console.log('[RobotController] Applied mouth style:', appliedMouthStyle, 'Classes:', Array.from(this.face.classList));
       }
       document.documentElement.style.setProperty('--robot-face-frame-scale', String(safe.faceFrameScale / 100));
       document.documentElement.style.setProperty('--robot-face-frame-opacity', safe.faceFrameVisible ? '1' : '0');
@@ -471,6 +476,7 @@
 
     applyStudioConfig(configInput) {
       const incoming = configInput || {};
+      console.log('[applyStudioConfig] incoming config:', JSON.stringify(incoming.avatarParts || {}, null, 2));
       const base = this.config.defaultRobotStudioConfig || {};
       const requiredLegacyActions = [
         'maidCurtseyBloom',
@@ -505,8 +511,13 @@
           ...(base.actionSettings || {}),
           ...(incomingActionSettings || {}),
         },
+        avatarParts: {
+          ...(base.avatarParts || {}),
+          ...(incoming.avatarParts || {}),
+        },
       };
       this.activeStudioConfig = merged;
+      console.log('[applyStudioConfig] merged avatarParts:', JSON.stringify(merged.avatarParts || {}, null, 2));
       const enabledSkinIds = Array.isArray(merged.enabledSkinIds) ? merged.enabledSkinIds : [];
       if (enabledSkinIds.length > 0 && !enabledSkinIds.includes(merged.activeSkinId)) {
         this.activeStudioConfig.activeSkinId = enabledSkinIds[0];

@@ -36,6 +36,7 @@ core_client = CoreBackendClient(settings.core_backend_url, settings.request_time
 speech_service = SpeechService(settings, core_client)
 conversation_engine = ConversationEngine(settings, core_client, speech_service)
 logger = logging.getLogger(__name__)
+SUPPORTED_TTS_ENGINES = {"auto", "vieneu", "edge", "local", "pyttsx3"}
 
 app = FastAPI(title="Order Robot AI Backend", version="1.0.0")
 
@@ -85,6 +86,14 @@ async def health() -> dict[str, object]:
         "stt_model": settings.stt_model,
         "tts_voice": settings.tts_voice,
         "tts_rate": settings.tts_rate,
+        "tts_vieneu_model_path": settings.tts_vieneu_model_path,
+        "tts_vieneu_voice_id": settings.tts_vieneu_voice_id,
+        "tts_vieneu_ref_audio": settings.tts_vieneu_ref_audio,
+        "tts_vieneu_has_ref_text": bool(settings.tts_vieneu_ref_text.strip()),
+        "tts_vieneu_temperature": settings.tts_vieneu_temperature,
+        "tts_vieneu_top_k": settings.tts_vieneu_top_k,
+        "tts_vieneu_max_chars": settings.tts_vieneu_max_chars,
+        "vieneu_installed": speech_service._is_vieneu_available(),
         "active_sessions": await conversation_engine.active_session_count(),
     }
 
@@ -145,15 +154,60 @@ async def debug_bridge_chat(payload: BridgeDebugChatRequest) -> BridgeDebugChatR
 @app.post("/config/tts")
 async def update_tts_config(payload: TTSConfigRequest) -> dict[str, str]:
     """Update TTS voice and rate at runtime without restarting backend."""
+    should_reset_vieneu = False
+
     if payload.voice is not None:
         settings.tts_voice = payload.voice
     if payload.rate is not None:
         settings.tts_rate = str(payload.rate)
-    
+    if payload.engine is not None:
+        normalized_engine = payload.engine.strip().lower()
+        if normalized_engine in SUPPORTED_TTS_ENGINES:
+            settings.tts_engine = normalized_engine
+    if payload.vieneu_model_path is not None:
+        normalized_model_path = payload.vieneu_model_path.strip()
+        if normalized_model_path != settings.tts_vieneu_model_path:
+            should_reset_vieneu = True
+        settings.tts_vieneu_model_path = normalized_model_path
+    if payload.vieneu_voice_id is not None:
+        settings.tts_vieneu_voice_id = payload.vieneu_voice_id.strip()
+    if payload.vieneu_ref_audio is not None:
+        settings.tts_vieneu_ref_audio = payload.vieneu_ref_audio.strip()
+    if payload.vieneu_ref_text is not None:
+        settings.tts_vieneu_ref_text = payload.vieneu_ref_text.strip()
+    if payload.vieneu_temperature is not None:
+        settings.tts_vieneu_temperature = payload.vieneu_temperature
+    if payload.vieneu_top_k is not None:
+        settings.tts_vieneu_top_k = payload.vieneu_top_k
+    if payload.vieneu_max_chars is not None:
+        settings.tts_vieneu_max_chars = payload.vieneu_max_chars
+
+    if should_reset_vieneu:
+        speech_service.reset_vieneu_runtime()
+
     return {
         "status": "ok",
+        "tts_engine": settings.tts_engine,
         "tts_voice": settings.tts_voice,
         "tts_rate": settings.tts_rate,
+        "tts_vieneu_model_path": settings.tts_vieneu_model_path,
+        "tts_vieneu_voice_id": settings.tts_vieneu_voice_id,
+        "tts_vieneu_ref_audio": settings.tts_vieneu_ref_audio,
+        "tts_vieneu_temperature": str(settings.tts_vieneu_temperature),
+        "tts_vieneu_top_k": str(settings.tts_vieneu_top_k),
+        "tts_vieneu_max_chars": str(settings.tts_vieneu_max_chars),
+    }
+
+
+@app.get("/speech/vieneu/voices")
+async def list_vieneu_voices() -> dict[str, object]:
+    vieneu_installed = speech_service._is_vieneu_available()
+    voices = await speech_service.list_vieneu_voices()
+    return {
+        "status": "ok",
+        "tts_engine": settings.tts_engine,
+        "vieneu_installed": vieneu_installed,
+        "voices": voices,
     }
 
 
@@ -248,8 +302,14 @@ async def save_session_feedback(session_id: str, payload: FeedbackRequest) -> di
 
 @app.post("/speech/synthesize")
 async def synthesize_speech(payload: SpeechSynthesisRequest) -> Response:
+    vieneu_overrides = build_vieneu_overrides(payload)
     try:
-        audio = await speech_service.synthesize(payload.text, payload.voice, payload.rate)
+        audio = await speech_service.synthesize(
+            payload.text,
+            payload.voice,
+            payload.rate,
+            vieneu_overrides=vieneu_overrides,
+        )
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Khong the tao giong noi: {exc}") from exc
 
@@ -258,9 +318,15 @@ async def synthesize_speech(payload: SpeechSynthesisRequest) -> Response:
 
 @app.post("/speech/synthesize/stream")
 async def synthesize_speech_stream(payload: SpeechSynthesisRequest) -> StreamingResponse:
+    vieneu_overrides = build_vieneu_overrides(payload)
     try:
         async def audio_stream():
-            async for chunk in speech_service.synthesize_stream(payload.text, payload.voice, payload.rate):
+            async for chunk in speech_service.synthesize_stream(
+                payload.text,
+                payload.voice,
+                payload.rate,
+                vieneu_overrides=vieneu_overrides,
+            ):
                 yield chunk
 
         return StreamingResponse(audio_stream(), media_type="audio/mpeg")
@@ -416,3 +482,24 @@ async def transcribe_speech_ws(websocket: WebSocket) -> None:
                 continue
     except WebSocketDisconnect:
         return
+
+
+def build_vieneu_overrides(payload: SpeechSynthesisRequest) -> dict[str, object] | None:
+    overrides: dict[str, object] = {}
+
+    if payload.engine is not None:
+        overrides["engine"] = payload.engine
+    if payload.vieneu_voice_id is not None:
+        overrides["vieneu_voice_id"] = payload.vieneu_voice_id
+    if payload.vieneu_ref_audio is not None:
+        overrides["vieneu_ref_audio"] = payload.vieneu_ref_audio
+    if payload.vieneu_ref_text is not None:
+        overrides["vieneu_ref_text"] = payload.vieneu_ref_text
+    if payload.vieneu_temperature is not None:
+        overrides["vieneu_temperature"] = payload.vieneu_temperature
+    if payload.vieneu_top_k is not None:
+        overrides["vieneu_top_k"] = payload.vieneu_top_k
+    if payload.vieneu_max_chars is not None:
+        overrides["vieneu_max_chars"] = payload.vieneu_max_chars
+
+    return overrides or None

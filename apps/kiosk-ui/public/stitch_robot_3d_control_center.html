@@ -1125,6 +1125,149 @@
             color: #3730a3;
         }
 
+        .order-status-hud {
+            position: fixed;
+            inset: 0;
+            z-index: 160;
+            display: grid;
+            place-items: center;
+            pointer-events: none;
+        }
+        .order-status-hud[hidden] {
+            display: none;
+        }
+        .order-status-backdrop {
+            position: absolute;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.38);
+            backdrop-filter: blur(2px);
+        }
+        .order-status-card,
+        .order-rating-card {
+            position: relative;
+            pointer-events: auto;
+            width: min(92vw, 420px);
+            border-radius: 18px;
+            border: 1px solid rgba(148, 163, 184, 0.3);
+            background: rgba(255, 255, 255, 0.96);
+            box-shadow: 0 20px 56px rgba(15, 23, 42, 0.28);
+            padding: 16px 16px 14px;
+            display: grid;
+            gap: 10px;
+        }
+        .order-status-title {
+            margin: 0;
+            font-size: 1rem;
+            font-weight: 800;
+            letter-spacing: 0.02em;
+            color: #0f172a;
+        }
+        .order-status-sub {
+            margin: 0;
+            font-size: 0.8rem;
+            color: #475569;
+        }
+        .order-popup-lines {
+            display: grid;
+            gap: 6px;
+            max-height: 136px;
+            overflow: auto;
+            padding-right: 2px;
+        }
+        .order-popup-line {
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            gap: 6px;
+            align-items: center;
+            border-radius: 10px;
+            background: rgba(248, 250, 252, 0.95);
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            padding: 6px 8px;
+            font-size: 0.76rem;
+            color: #334155;
+        }
+        .order-popup-line strong {
+            color: #0f172a;
+        }
+        .order-popup-total {
+            margin: 0;
+            font-size: 0.82rem;
+            font-weight: 700;
+            color: #0f172a;
+        }
+        .order-popup-qr-wrap {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: 10px;
+            align-items: center;
+        }
+        .order-popup-qr {
+            width: 108px;
+            height: 108px;
+            border-radius: 12px;
+            border: 1px solid rgba(15, 23, 42, 0.2);
+            background: #fff;
+            padding: 8px;
+            display: grid;
+            grid-template-columns: repeat(21, 1fr);
+            grid-template-rows: repeat(21, 1fr);
+            gap: 1px;
+        }
+        .order-popup-qr-cell {
+            border-radius: 1px;
+            background: transparent;
+        }
+        .order-popup-qr-cell.on {
+            background: #0f172a;
+        }
+        .order-popup-countdown {
+            margin: 0;
+            font-size: 0.78rem;
+            font-weight: 700;
+            color: #0f766e;
+        }
+        .rating-stars {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            gap: 8px;
+        }
+        .rating-star-btn {
+            border-radius: 10px;
+            border: 1px solid rgba(148, 163, 184, 0.36);
+            background: #fff;
+            color: #334155;
+            font-size: 0.82rem;
+            font-weight: 700;
+            padding: 8px 0;
+            cursor: pointer;
+            transition: all 0.18s ease;
+        }
+        .rating-star-btn.active,
+        .rating-star-btn:hover {
+            background: #fef3c7;
+            border-color: #f59e0b;
+            color: #92400e;
+        }
+        .rating-comment-input {
+            width: 100%;
+            resize: vertical;
+            min-height: 64px;
+            max-height: 140px;
+            border-radius: 10px;
+            border: 1px solid rgba(148, 163, 184, 0.32);
+            background: #fff;
+            padding: 8px 10px;
+            font-size: 0.78rem;
+            color: #0f172a;
+            line-height: 1.35;
+        }
+        .rating-popup-countdown {
+            margin: 0;
+            font-size: 0.78rem;
+            font-weight: 700;
+            color: #4338ca;
+        }
+
         .cart-mini-panel {
             position: fixed;
             left: 16px;
@@ -1367,6 +1510,33 @@
 </div>
 <p class="cart-mini-total" id="cart-mini-total">Tong: 0 d</p>
 </section>
+<section class="order-status-hud" id="order-status-hud" hidden aria-label="Order status popup">
+<div class="order-status-backdrop"></div>
+<article class="order-status-card" id="order-popup-card">
+<p class="order-status-title">Don hang da tao</p>
+<p class="order-status-sub" id="order-popup-order-id">Ma don: --</p>
+<div class="order-popup-lines" id="order-popup-lines"></div>
+<p class="order-popup-total" id="order-popup-total">Tong: 0 d</p>
+<div class="order-popup-qr-wrap">
+<div class="order-popup-qr" id="order-popup-qr"></div>
+<p class="order-status-sub" id="order-popup-qr-label">Ma QR ao thanh toan.</p>
+</div>
+<p class="order-popup-countdown" id="order-popup-countdown">Tu dong dong sau 6s</p>
+</article>
+<article class="order-rating-card" id="rating-popup-card" hidden>
+<p class="order-status-title">Danh gia trai nghiem</p>
+<p class="order-status-sub">Vui long chon tu 1 den 5 sao cho don vua dat.</p>
+<div class="rating-stars" id="rating-stars">
+<button class="rating-star-btn" data-rating="1" type="button">1 Sao</button>
+<button class="rating-star-btn" data-rating="2" type="button">2 Sao</button>
+<button class="rating-star-btn" data-rating="3" type="button">3 Sao</button>
+<button class="rating-star-btn" data-rating="4" type="button">4 Sao</button>
+<button class="rating-star-btn" data-rating="5" type="button">5 Sao</button>
+</div>
+<textarea class="rating-comment-input" id="rating-comment-input" placeholder="Nhan xet ngan (khong bat buoc)"></textarea>
+<p class="rating-popup-countdown" id="rating-popup-countdown">Tu dong gui sau 6s</p>
+</article>
+</section>
 <!-- Top Layers -->
 <div class="fixed top-0 left-1/2 z-[60] pointer-events-none -translate-x-1/2" id="disco-ball">
 <div class="w-0.5 h-32 bg-slate-300 mx-auto"></div>
@@ -1476,6 +1646,18 @@
     const chatMiniList = document.getElementById('chat-mini-list');
     const cartMiniList = document.getElementById('cart-mini-list');
     const cartMiniTotal = document.getElementById('cart-mini-total');
+    const orderStatusHud = document.getElementById('order-status-hud');
+    const orderPopupCard = document.getElementById('order-popup-card');
+    const orderPopupOrderId = document.getElementById('order-popup-order-id');
+    const orderPopupLines = document.getElementById('order-popup-lines');
+    const orderPopupTotal = document.getElementById('order-popup-total');
+    const orderPopupQr = document.getElementById('order-popup-qr');
+    const orderPopupQrLabel = document.getElementById('order-popup-qr-label');
+    const orderPopupCountdown = document.getElementById('order-popup-countdown');
+    const ratingPopupCard = document.getElementById('rating-popup-card');
+    const ratingStars = document.getElementById('rating-stars');
+    const ratingCommentInput = document.getElementById('rating-comment-input');
+    const ratingPopupCountdown = document.getElementById('rating-popup-countdown');
     const ROBOT_SCALE_STORAGE_KEY = 'admin.robot.scalePercent';
     const CAMERA_PREVIEW_VISIBLE_STORAGE_KEY = 'admin.camera.previewVisible';
     const ADMIN_ENV_STORAGE_KEY = 'admin.env.fields';
@@ -1484,10 +1666,14 @@
     const ROBOT_STUDIO_CONFIG_STORAGE_KEY = 'admin.robot.studio.v1';
     const ROBOT_STUDIO_COMMAND_STORAGE_KEY = 'admin.robot.studio.command.v1';
     const KIOSK_HEARTBEAT_STORAGE_KEY = 'orderrobot.kiosk.heartbeat';
+    const CHAT_HISTORY_STORAGE_KEY = 'orderrobot.kiosk.chat-history.v1';
     const AUTO_GREETING_COOLDOWN_MS = 25000;
+    const ORDER_POPUP_COUNTDOWN_SEC = 6;
+    const ORDER_RATING_COUNTDOWN_SEC = 6;
     const PRESENCE_CHECK_INTERVAL_MS = 700;
     const PRESENCE_MOTION_THRESHOLD = 16;
     const PRESENCE_ABSENCE_FRAMES = 4;
+    const CHAT_CLEAR_AFTER_ABSENCE_MS = 30000;
     const BACKEND_STT_FINALIZE_SILENCE_MS = 950;
     const BACKEND_STT_CHUNK_MS = 260;
     const AI_RUNTIME_FALLBACK_URL = 'http://127.0.0.1:18012';
@@ -1510,6 +1696,8 @@
     let presenceAbsenceFrames = PRESENCE_ABSENCE_FRAMES;
     let presenceHoldMs = 7200;
     let presenceEnteredAt = 0;
+    let presenceLeftAt = 0;
+    let chatClearedAfterAbsence = false;
     let previousFrameLuma = null;
     let activeGreetingAudio = null;
     let miniCameraStream = null;
@@ -1536,6 +1724,10 @@
     let micNoiseFilterStrength = 60;
     let lastSpeechActivityAt = 0;
     let kioskHeartbeatTimer = null;
+    let orderPopupTimer = null;
+    let ratingPopupTimer = null;
+    let activeOrderFlowToken = 0;
+    const handledOrderIds = [];
     const pendingUserTurns = [];
     const chatHistory = [];
     let cartState = [];
@@ -1806,7 +1998,7 @@
     }
 
     function readConfiguredAiApiUrl() {
-        const fallback = 'http://127.0.0.1:8012';
+        const fallback = AI_RUNTIME_FALLBACK_URL;
         try {
             const raw = localStorage.getItem(ADMIN_ENV_STORAGE_KEY);
             if (!raw) return fallback;
@@ -1818,15 +2010,103 @@
         }
     }
 
+    function readAdminEnvFields() {
+        try {
+            const raw = localStorage.getItem(ADMIN_ENV_STORAGE_KEY);
+            if (!raw) return {};
+            const parsed = JSON.parse(raw);
+            return parsed && typeof parsed === 'object' ? parsed : {};
+        } catch {
+            return {};
+        }
+    }
+
+    function toSafeInt(value, min, max) {
+        const numeric = Number.parseInt(String(value ?? '').trim(), 10);
+        if (!Number.isFinite(numeric)) return null;
+        if (numeric < min || numeric > max) return null;
+        return numeric;
+    }
+
+    function toSafeFloat(value, min, max) {
+        const numeric = Number.parseFloat(String(value ?? '').trim());
+        if (!Number.isFinite(numeric)) return null;
+        if (numeric < min || numeric > max) return null;
+        return Number(numeric.toFixed(2));
+    }
+
+    function buildSpeechSynthesisPayload(text) {
+        const payload = { text: String(text || '').trim() };
+        const env = readAdminEnvFields();
+
+        const ttsEngine = String(env.TTS_ENGINE || '').trim().toLowerCase();
+        if (ttsEngine) {
+            payload.tts_engine = ttsEngine;
+        }
+
+        const ttsVoice = String(env.TTS_VOICE || '').trim();
+        if (ttsVoice) {
+            payload.voice = ttsVoice;
+        }
+
+        const ttsRate = toSafeInt(env.TTS_RATE, 100, 300);
+        if (ttsRate !== null) {
+            payload.rate = ttsRate;
+        }
+
+        const vieneuVoiceId = String(env.TTS_VIENEU_VOICE_ID || '').trim();
+        if (vieneuVoiceId) {
+            payload.tts_vieneu_voice_id = vieneuVoiceId;
+        }
+
+        const vieneuRefAudio = String(env.TTS_VIENEU_REF_AUDIO || '').trim();
+        if (vieneuRefAudio) {
+            payload.tts_vieneu_ref_audio = vieneuRefAudio;
+        }
+
+        const vieneuRefText = String(env.TTS_VIENEU_REF_TEXT || '').trim();
+        if (vieneuRefText) {
+            payload.tts_vieneu_ref_text = vieneuRefText;
+        }
+
+        const vieneuTemperature = toSafeFloat(env.TTS_VIENEU_TEMPERATURE, 0.1, 2.0);
+        if (vieneuTemperature !== null) {
+            payload.tts_vieneu_temperature = vieneuTemperature;
+        }
+
+        const vieneuTopK = toSafeInt(env.TTS_VIENEU_TOP_K, 1, 200);
+        if (vieneuTopK !== null) {
+            payload.tts_vieneu_top_k = vieneuTopK;
+        }
+
+        const vieneuMaxChars = toSafeInt(env.TTS_VIENEU_MAX_CHARS, 32, 512);
+        if (vieneuMaxChars !== null) {
+            payload.tts_vieneu_max_chars = vieneuMaxChars;
+        }
+
+        return payload;
+    }
+
+    function isVieneuForced(payload) {
+        const engine = String(payload?.tts_engine || payload?.engine || '').trim().toLowerCase();
+        return engine === 'vieneu';
+    }
+
     function getAiApiUrlCandidates() {
         const configured = readConfiguredAiApiUrl();
         return Array.from(
             new Set([
-                configured,
-                'http://127.0.0.1:8012',
-                'http://localhost:8012',
                 AI_RUNTIME_FALLBACK_URL,
                 'http://localhost:18012',
+                configured,
+                'http://127.0.0.1:18013',
+                'http://localhost:18013',
+                'http://127.0.0.1:18014',
+                'http://localhost:18014',
+                'http://127.0.0.1:18015',
+                'http://localhost:18015',
+                'http://127.0.0.1:8012',
+                'http://localhost:8012',
             ]),
         ).map((item) => normalizeAiApiUrl(item)).filter(Boolean);
     }
@@ -1856,6 +2136,30 @@
         aiApiProbeTask = (async () => {
             const candidates = getAiApiUrlCandidates();
 
+            // 1) Prefer true VieNeu runtime when available.
+            for (const candidate of candidates) {
+                const health = await probeAiApiHealth(candidate);
+                const status = String(health?.status || '').toLowerCase();
+                const ttsEngine = String(health?.tts_engine || '').trim().toLowerCase();
+                const hasRealtimeStack =
+                    ttsEngine.length > 0 &&
+                    typeof health?.stt_model === 'string';
+                if (status === 'ok' && hasRealtimeStack && ttsEngine === 'vieneu') {
+                    resolvedAiApiUrl = candidate;
+                    resolvedAiApiHealth = health;
+                    resolvedAiHasRealtimeStack = true;
+                    window.__ORDERROBOT_AI_RUNTIME = {
+                        url: resolvedAiApiUrl,
+                        health,
+                        hasRealtimeStack: true,
+                        preferredEngine: 'vieneu',
+                    };
+                    console.info('[ai-runtime] selected preferred VieNeu endpoint:', resolvedAiApiUrl, health);
+                    return resolvedAiApiUrl;
+                }
+            }
+
+            // 2) Fallback to any compatible realtime stack.
             for (const candidate of candidates) {
                 const health = await probeAiApiHealth(candidate);
                 const status = String(health?.status || '').toLowerCase();
@@ -1867,25 +2171,19 @@
                     resolvedAiApiUrl = candidate;
                     resolvedAiApiHealth = health;
                     resolvedAiHasRealtimeStack = true;
-                    window.__ORDERROBOT_AI_RUNTIME = { url: resolvedAiApiUrl, health, hasRealtimeStack: true };
+                    window.__ORDERROBOT_AI_RUNTIME = {
+                        url: resolvedAiApiUrl,
+                        health,
+                        hasRealtimeStack: true,
+                        preferredEngine: String(health?.tts_engine || '').trim().toLowerCase() || 'unknown',
+                    };
                     console.info('[ai-runtime] selected compatible endpoint:', resolvedAiApiUrl, health);
                     return resolvedAiApiUrl;
                 }
             }
 
-            for (const candidate of candidates) {
-                const health = await probeAiApiHealth(candidate);
-                if (String(health?.status || '').toLowerCase() === 'ok') {
-                    resolvedAiApiUrl = candidate;
-                    resolvedAiApiHealth = health;
-                    resolvedAiHasRealtimeStack = false;
-                    window.__ORDERROBOT_AI_RUNTIME = { url: resolvedAiApiUrl, health, hasRealtimeStack: false };
-                    console.info('[ai-runtime] selected healthy fallback endpoint:', resolvedAiApiUrl, health);
-                    return resolvedAiApiUrl;
-                }
-            }
-
-            resolvedAiApiUrl = candidates[0] || 'http://127.0.0.1:8012';
+            // Avoid selecting legacy non-realtime endpoint because it causes TTS fallback voices.
+            resolvedAiApiUrl = candidates[0] || AI_RUNTIME_FALLBACK_URL;
             resolvedAiApiHealth = null;
             resolvedAiHasRealtimeStack = false;
             window.__ORDERROBOT_AI_RUNTIME = { url: resolvedAiApiUrl, health: null, hasRealtimeStack: false };
@@ -1932,6 +2230,104 @@
         return toSafeText(value).replaceAll('\n', ' ');
     }
 
+    const MOJIBAKE_MARKERS = ['Ã', 'Ä', 'á»', 'áº', 'Æ', 'â€'];
+
+    const ASSISTANT_TONE_EXACT_ENTRIES = [
+        ['Chao mung ban. Hom nay ban muon thu mon nao de minh tu van ngay?', 'Chào mừng bạn. Hôm nay bạn muốn thử món nào để mình tư vấn ngay?'],
+        ['Chao mung ban. Hom nay ban muon thu mon nao?', 'Chào mừng bạn. Hôm nay bạn muốn thử món nào?'],
+        ['Xin chao. Ban muon goi mon gi hom nay?', 'Xin chào. Bạn muốn gọi món gì hôm nay?'],
+        ['Minh da them vao gio hang. Ban muon goi them gi khong?', 'Mình đã thêm vào giỏ hàng. Bạn muốn gọi thêm gì không?'],
+        ['Minh chua nghe ro. Ban noi ten mon hoac yeu cau ngan gon giup minh nhe.', 'Mình chưa nghe rõ. Bạn nói tên món hoặc yêu cầu ngắn gọn giúp mình nhé.'],
+        ['Minh da lam moi gio hang roi. Ban muon goi mon nao tiep theo?', 'Mình đã làm mới giỏ hàng rồi. Bạn muốn gọi món nào tiếp theo?'],
+        ['Minh da xoa gio hang cu roi. Ban muon minh goi y mon nao tiep khong?', 'Mình đã xoá giỏ hàng cũ rồi. Bạn muốn mình gợi ý món nào tiếp không?'],
+        ['Minh doc lai gio hang de ban xac nhan nhe.', 'Mình đọc lại giỏ hàng để bạn xác nhận nhé.'],
+        ['Minh thay co may mon gan giong. Ban muon goi mon nao?', 'Mình thấy có mấy món gần giống. Bạn muốn gọi món nào?'],
+        ['Minh co vai goi y de uong, de chon cho ban day.', 'Mình có vài gợi ý để uống, để chọn cho bạn đây.'],
+        ['Minh tim duoc vai mon hop gu cua ban roi.', 'Mình tìm được vài món hợp gu của bạn rồi.'],
+        ['Minh da them vao gio hang. Ban muon goi them gi khong?', 'Mình đã thêm vào giỏ hàng. Bạn muốn gọi thêm gì không?'],
+        ['Don cua ban da tao thanh cong. Cam on ban.', 'Đơn của bạn đã tạo thành công. Cảm ơn bạn.'],
+        ['Gio hang van dang giu. Ban muon minh doc lai khong?', 'Giỏ hàng vẫn đang giữ. Bạn muốn mình đọc lại không?'],
+    ];
+
+    function normalizeNoToneKey(value) {
+        const normalized = String(value || '')
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/[đĐ]/g, 'd')
+            .toLowerCase()
+            .replace(/[^a-z0-9\s]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+        return normalized;
+    }
+
+    const ASSISTANT_NO_TONE_TEXT_MAP = new Map(
+        ASSISTANT_TONE_EXACT_ENTRIES.map(([source, target]) => [normalizeNoToneKey(source), target]),
+    );
+
+    const ASSISTANT_TONE_REGEX_RULES = [
+        {
+            pattern: /^Minh da them (.+) vao gio hang\.?$/i,
+            replace: (match) => `Mình đã thêm ${match[1]} vào giỏ hàng.`,
+        },
+        {
+            pattern: /^Minh da them (.+)\. Minh doc lai gio hang de ban xac nhan nhe\.?$/i,
+            replace: (match) => `Mình đã thêm ${match[1]}. Mình đọc lại giỏ hàng để bạn xác nhận nhé.`,
+        },
+        {
+            pattern: /^Xin loi, (.+) dang tam het\. Minh goi y ban doi sang mon khac nhe\.?$/i,
+            replace: (match) => `Xin lỗi, ${match[1]} đang tạm hết. Mình gợi ý bạn đổi sang món khác nhé.`,
+        },
+        {
+            pattern: /^Da xong\. Minh da len don thanh cong voi ma (.+)\. Cam on ban nha\.?$/i,
+            replace: (match) => `Đã xong. Mình đã lên đơn thành công với mã ${match[1]}. Cảm ơn bạn nhé.`,
+        },
+        {
+            pattern: /^Minh da bo (.+) khoi gio hang roi\. Ban muon sua gi them khong\??$/i,
+            replace: (match) => `Mình đã bỏ ${match[1]} khỏi giỏ hàng rồi. Bạn muốn sửa gì thêm không?`,
+        },
+        {
+            pattern: /^Minh nghe chua ro\. Ban co the noi ten mon, khau vi nhu it ngot, hoac bao minh tu van mon de uong nhe\.?$/i,
+            replace: () => 'Mình nghe chưa rõ. Bạn có thể nói tên món, khẩu vị như ít ngọt, hoặc bảo mình tư vấn món để uống nhé.',
+        },
+    ];
+
+    function repairMojibakeText(value) {
+        const text = String(value || '');
+        if (!text) return '';
+        if (!MOJIBAKE_MARKERS.some((marker) => text.includes(marker))) {
+            return text;
+        }
+        try {
+            const bytes = new Uint8Array(text.length);
+            for (let i = 0; i < text.length; i += 1) {
+                bytes[i] = text.charCodeAt(i) & 0xff;
+            }
+            const decoded = new TextDecoder('utf-8').decode(bytes).trim();
+            if (decoded && !MOJIBAKE_MARKERS.some((marker) => decoded.includes(marker))) {
+                return decoded;
+            }
+        } catch {}
+        return text;
+    }
+
+    function normalizeAssistantDisplayText(role, text) {
+        const raw = repairMojibakeText(text).trim();
+        if (!raw) return '';
+        if (role !== 'assistant') return raw;
+
+        for (const rule of ASSISTANT_TONE_REGEX_RULES) {
+            const match = raw.match(rule.pattern);
+            if (match) {
+                const replaced = String(rule.replace(match) || '').trim();
+                if (replaced) return replaced;
+            }
+        }
+
+        const mapped = ASSISTANT_NO_TONE_TEXT_MAP.get(normalizeNoToneKey(raw));
+        return mapped || raw;
+    }
+
     function renderChatMini() {
         if (!chatMiniList) return;
         const latest = chatHistory.slice(-8);
@@ -1948,13 +2344,360 @@
     }
 
     function appendChat(role, text) {
-        const cleanText = String(text || '').trim();
+        const cleanText = normalizeAssistantDisplayText(role, text);
         if (!cleanText) return;
-        chatHistory.push({ role, text: cleanText, at: Date.now() });
-        if (chatHistory.length > 20) {
-            chatHistory.splice(0, chatHistory.length - 20);
+        const now = Date.now();
+        const last = chatHistory[chatHistory.length - 1];
+        if (
+            last
+            && last.role === role
+            && String(last.text || '') === cleanText
+            && (now - Number(last.at || 0)) < 7000
+        ) {
+            return;
         }
+        chatHistory.push({ role, text: cleanText, at: now });
+        if (chatHistory.length > 80) {
+            chatHistory.splice(0, chatHistory.length - 80);
+        }
+        persistChatHistory();
         renderChatMini();
+    }
+
+    function persistChatHistory() {
+        try {
+            localStorage.setItem(
+                CHAT_HISTORY_STORAGE_KEY,
+                JSON.stringify(chatHistory.slice(-80)),
+            );
+        } catch {}
+    }
+
+    function loadChatHistory() {
+        try {
+            const raw = localStorage.getItem(CHAT_HISTORY_STORAGE_KEY);
+            if (!raw) return;
+            const parsed = JSON.parse(raw);
+            if (!Array.isArray(parsed)) return;
+            chatHistory.length = 0;
+            parsed.forEach((entry) => {
+                if (!entry || typeof entry !== 'object') return;
+                const role = String(entry.role || '').toLowerCase() === 'user' ? 'user' : 'assistant';
+                const text = normalizeAssistantDisplayText(role, entry.text);
+                if (!text) return;
+                const last = chatHistory[chatHistory.length - 1];
+                if (last && last.role === role && String(last.text || '') === text) {
+                    return;
+                }
+                chatHistory.push({
+                    role,
+                    text,
+                    at: Number(entry.at || Date.now()),
+                });
+            });
+            if (chatHistory.length > 80) {
+                chatHistory.splice(0, chatHistory.length - 80);
+            }
+        } catch {}
+    }
+
+    function clearChatHistory() {
+        chatHistory.length = 0;
+        try {
+            localStorage.removeItem(CHAT_HISTORY_STORAGE_KEY);
+        } catch {}
+        renderChatMini();
+    }
+
+    function clearOrderFlowTimers() {
+        if (orderPopupTimer) {
+            window.clearInterval(orderPopupTimer);
+            orderPopupTimer = null;
+        }
+        if (ratingPopupTimer) {
+            window.clearInterval(ratingPopupTimer);
+            ratingPopupTimer = null;
+        }
+    }
+
+    function hideOrderFlow() {
+        clearOrderFlowTimers();
+        if (orderStatusHud) {
+            orderStatusHud.hidden = true;
+        }
+        if (orderPopupCard) {
+            orderPopupCard.hidden = true;
+        }
+        if (ratingPopupCard) {
+            ratingPopupCard.hidden = true;
+        }
+    }
+
+    function hashTextForQr(value) {
+        const text = String(value || '');
+        let hash = 2166136261;
+        for (let i = 0; i < text.length; i += 1) {
+            hash ^= text.charCodeAt(i);
+            hash = Math.imul(hash, 16777619);
+        }
+        return hash >>> 0;
+    }
+
+    function buildVirtualQrCells(seedText) {
+        if (!orderPopupQr) return;
+        const size = 21;
+        const cells = new Array(size * size).fill(0);
+
+        const drawFinder = (sx, sy) => {
+            for (let y = 0; y < 7; y += 1) {
+                for (let x = 0; x < 7; x += 1) {
+                    const row = sy + y;
+                    const col = sx + x;
+                    const idx = row * size + col;
+                    const border = x === 0 || y === 0 || x === 6 || y === 6;
+                    const center = x >= 2 && x <= 4 && y >= 2 && y <= 4;
+                    cells[idx] = border || center ? 1 : 0;
+                }
+            }
+        };
+
+        drawFinder(0, 0);
+        drawFinder(size - 7, 0);
+        drawFinder(0, size - 7);
+
+        let state = hashTextForQr(seedText) || 123456789;
+        const nextBit = () => {
+            state ^= state << 13;
+            state ^= state >>> 17;
+            state ^= state << 5;
+            return state & 1;
+        };
+
+        for (let row = 0; row < size; row += 1) {
+            for (let col = 0; col < size; col += 1) {
+                const inTopLeft = row < 7 && col < 7;
+                const inTopRight = row < 7 && col >= size - 7;
+                const inBottomLeft = row >= size - 7 && col < 7;
+                if (inTopLeft || inTopRight || inBottomLeft) continue;
+                cells[row * size + col] = nextBit();
+            }
+        }
+
+        orderPopupQr.innerHTML = cells.map((on) =>
+            `<span class="order-popup-qr-cell ${on ? 'on' : ''}"></span>`
+        ).join('');
+    }
+
+    function toFeedbackHistoryPayload() {
+        return chatHistory.slice(-60).map((entry) => {
+            const role = entry.role === 'user' ? 'user' : 'assistant';
+            return `${role}: ${entry.text}`;
+        });
+    }
+
+    async function saveOrderFeedbackPayload(payload) {
+        try {
+            const aiApiUrl = await ensureAiApiUrlReady();
+            const sessionId = String(payload.sessionId || payload.orderId || `SES-${Date.now()}`);
+            const response = await fetch(`${aiApiUrl}/sessions/${encodeURIComponent(sessionId)}/feedback`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    rating: payload.rating,
+                    comment: payload.comment || null,
+                    transcript_history: toFeedbackHistoryPayload(),
+                    needs_improvement: payload.rating <= 3,
+                    improvement_tags: payload.rating <= 3 ? ['post_order_low_rating'] : [],
+                    review_status: 'new',
+                }),
+            });
+            if (!response.ok) {
+                console.warn('[order-feedback] save failed:', response.status);
+            }
+        } catch (error) {
+            console.warn('[order-feedback] save failed:', error);
+        }
+    }
+
+    function normalizeOrderItems(items) {
+        if (!Array.isArray(items)) return [];
+        return items
+            .map((item) => {
+                const quantity = Math.max(0, Number(item?.quantity || 0));
+                const lineTotal = Math.max(0, Number(item?.line_total || 0));
+                const unitPrice = Math.max(0, Number(item?.unit_price || (quantity > 0 ? lineTotal / quantity : 0)));
+                return {
+                    item_id: String(item?.item_id || ''),
+                    name: String(item?.name || 'Mon'),
+                    quantity,
+                    line_total: lineTotal,
+                    unit_price: unitPrice,
+                };
+            })
+            .filter((item) => item.quantity > 0);
+    }
+
+    function shouldHandleOrderId(orderId) {
+        const safeOrderId = String(orderId || '').trim();
+        if (!safeOrderId) return true;
+        if (handledOrderIds.includes(safeOrderId)) return false;
+        handledOrderIds.push(safeOrderId);
+        if (handledOrderIds.length > 32) {
+            handledOrderIds.splice(0, handledOrderIds.length - 32);
+        }
+        return true;
+    }
+
+    async function showOrderPopupStep(orderData, flowToken) {
+        if (!orderStatusHud || !orderPopupCard) return;
+
+        const items = normalizeOrderItems(orderData.items);
+        if (items.length === 0) return;
+
+        const orderId = String(orderData.orderId || '--');
+        const total = items.reduce((sum, item) => sum + Number(item.line_total || 0), 0);
+        const qrSeed = `${orderId}|${Math.round(total)}|${items.length}`;
+
+        orderStatusHud.hidden = false;
+        orderPopupCard.hidden = false;
+        if (ratingPopupCard) {
+            ratingPopupCard.hidden = true;
+        }
+
+        if (orderPopupOrderId) {
+            orderPopupOrderId.textContent = `Ma don: ${orderId}`;
+        }
+        if (orderPopupLines) {
+            orderPopupLines.innerHTML = items.map((item) => `
+                <article class="order-popup-line">
+                    <span>x${item.quantity}</span>
+                    <strong>${toSafeInlineText(item.name)}</strong>
+                    <span>${formatCurrencyVnd(item.line_total)}</span>
+                </article>
+            `).join('');
+        }
+        if (orderPopupTotal) {
+            orderPopupTotal.textContent = `Tong thanh toan: ${formatCurrencyVnd(total)}`;
+        }
+        if (orderPopupQrLabel) {
+            orderPopupQrLabel.textContent = `QR ao cho don ${orderId}`;
+        }
+        buildVirtualQrCells(qrSeed);
+
+        await new Promise((resolve) => {
+            let remaining = ORDER_POPUP_COUNTDOWN_SEC;
+            if (orderPopupCountdown) {
+                orderPopupCountdown.textContent = `Popup thong tin don tu dong dong sau ${remaining}s`;
+            }
+            clearOrderFlowTimers();
+            orderPopupTimer = window.setInterval(() => {
+                if (flowToken !== activeOrderFlowToken) {
+                    clearOrderFlowTimers();
+                    resolve();
+                    return;
+                }
+                remaining -= 1;
+                if (orderPopupCountdown) {
+                    orderPopupCountdown.textContent = `Popup thong tin don tu dong dong sau ${Math.max(0, remaining)}s`;
+                }
+                if (remaining <= 0) {
+                    clearOrderFlowTimers();
+                    resolve();
+                }
+            }, 1000);
+        });
+
+        if (flowToken !== activeOrderFlowToken) return;
+        orderPopupCard.hidden = true;
+    }
+
+    async function showRatingPopupStep(orderData, flowToken) {
+        if (!orderStatusHud || !ratingPopupCard || !ratingStars) return;
+
+        ratingPopupCard.hidden = false;
+        let selectedRating = 5;
+        if (ratingCommentInput) {
+            ratingCommentInput.value = '';
+        }
+
+        const ratingButtons = Array.from(ratingStars.querySelectorAll('.rating-star-btn'));
+        const markRatingActive = (rating) => {
+            ratingButtons.forEach((button) => {
+                const value = Number(button.getAttribute('data-rating') || 0);
+                button.classList.toggle('active', value <= rating);
+            });
+        };
+        markRatingActive(selectedRating);
+
+        await new Promise((resolve) => {
+            let remaining = ORDER_RATING_COUNTDOWN_SEC;
+            let finished = false;
+
+            const finish = () => {
+                if (finished) return;
+                finished = true;
+                clearOrderFlowTimers();
+                ratingButtons.forEach((button) => {
+                    button.onclick = null;
+                });
+                resolve();
+            };
+
+            ratingButtons.forEach((button) => {
+                button.onclick = () => {
+                    selectedRating = Math.max(1, Math.min(5, Number(button.getAttribute('data-rating') || 5)));
+                    markRatingActive(selectedRating);
+                    finish();
+                };
+            });
+
+            if (ratingPopupCountdown) {
+                ratingPopupCountdown.textContent = `Popup danh gia tu dong gui sau ${remaining}s`;
+            }
+
+            clearOrderFlowTimers();
+            ratingPopupTimer = window.setInterval(() => {
+                if (flowToken !== activeOrderFlowToken) {
+                    finish();
+                    return;
+                }
+                remaining -= 1;
+                if (ratingPopupCountdown) {
+                    ratingPopupCountdown.textContent = `Popup danh gia tu dong gui sau ${Math.max(0, remaining)}s`;
+                }
+                if (remaining <= 0) {
+                    finish();
+                }
+            }, 1000);
+        });
+
+        if (flowToken !== activeOrderFlowToken) return;
+
+        const commentText = String(ratingCommentInput?.value || '').trim();
+        await saveOrderFeedbackPayload({
+            sessionId: orderData.sessionId,
+            orderId: orderData.orderId,
+            rating: selectedRating,
+            comment: commentText || `Danh gia sau don ${orderData.orderId || ''}`.trim(),
+        });
+    }
+
+    async function runOrderCompletionFlow(orderData) {
+        const items = normalizeOrderItems(orderData.items);
+        if (items.length === 0) return;
+        if (!shouldHandleOrderId(orderData.orderId)) return;
+
+        activeOrderFlowToken += 1;
+        const flowToken = activeOrderFlowToken;
+        try {
+            await showOrderPopupStep({ ...orderData, items }, flowToken);
+            if (flowToken !== activeOrderFlowToken) return;
+            await showRatingPopupStep({ ...orderData, items }, flowToken);
+        } finally {
+            if (flowToken === activeOrderFlowToken) {
+                hideOrderFlow();
+            }
+        }
     }
 
     function updateMiniCart(cart) {
@@ -2302,6 +3045,8 @@
         interruptBotSpeech();
         const speechAbortController = new AbortController();
         activeBotSpeechAbortController = speechAbortController;
+        const speechPayload = buildSpeechSynthesisPayload(safeText);
+        const forcedVieneu = isVieneuForced(speechPayload);
 
         const streamPlayer = createStreamingAudioPlayer();
         if (streamPlayer) {
@@ -2310,7 +3055,7 @@
                 const response = await fetch(`${aiApiUrl}/speech/synthesize/stream`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text: safeText }),
+                    body: JSON.stringify(speechPayload),
                     signal: speechAbortController.signal,
                 });
                 if (!response.ok || !response.body) {
@@ -2349,7 +3094,7 @@
         const response = await fetch(`${aiApiUrl}/speech/synthesize`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: safeText }),
+            body: JSON.stringify(speechPayload),
             signal: speechAbortController.signal,
         });
         if (!response.ok) {
@@ -2373,6 +3118,9 @@
             } catch {
                 if (speechAbortController.signal.aborted) {
                     return;
+                }
+                if (forcedVieneu) {
+                    throw new Error('VieNeu playback failed and browser fallback is disabled while forcing VieNeu.');
                 }
                 if ('speechSynthesis' in window) {
                     const utterance = new SpeechSynthesisUtterance(safeText);
@@ -2464,6 +3212,7 @@
             while (pendingUserTurns.length > 0) {
                 const userText = pendingUserTurns.shift();
                 if (!userText) continue;
+                const cartSnapshotBeforeTurn = normalizeOrderItems(cartState);
 
                 appendChat('user', userText);
                 setVoiceStatus('Dang gui len backend...');
@@ -2545,8 +3294,20 @@
                         ? Array.from(new Set(backendActionHints))
                         : localActionHints;
                     if (replyPayload?.order_created) {
+                        const finishedSessionId = currentSessionId;
+                        const finishedOrderId = String(replyPayload?.order_id || '').trim();
+                        const orderItemsForPopup = cartSnapshotBeforeTurn.length > 0
+                            ? cartSnapshotBeforeTurn
+                            : normalizeOrderItems(replyPayload?.cart);
                         currentSessionId = null;
-                        setVoiceStatus(`Da chot don ${replyPayload.order_id || ''}`.trim());
+                        setVoiceStatus(`Da chot don ${finishedOrderId || ''}`.trim());
+                        if (orderItemsForPopup.length > 0) {
+                            void runOrderCompletionFlow({
+                                sessionId: finishedSessionId,
+                                orderId: finishedOrderId,
+                                items: orderItemsForPopup,
+                            });
+                        }
                     }
                     if (replyText) {
                         appendChat('assistant', replyText);
@@ -3065,6 +3826,8 @@
                 if (!presenceDetected) {
                     presenceDetected = true;
                     presenceEnteredAt = now;
+                    presenceLeftAt = 0;
+                    chatClearedAfterAbsence = false;
                     setVoiceStatus('Da thay khach, robot bat dau chao va nghe.');
                     void robotController.dispatchTrigger('presence.enter', {
                         presence: 'enter',
@@ -3099,6 +3862,19 @@
                 }
                 presenceDetected = false;
                 presenceEnteredAt = 0;
+                if (!presenceLeftAt) {
+                    presenceLeftAt = now;
+                }
+            }
+
+            if (
+                !presenceDetected
+                && presenceLeftAt > 0
+                && !chatClearedAfterAbsence
+                && (now - presenceLeftAt) >= CHAT_CLEAR_AFTER_ABSENCE_MS
+            ) {
+                clearChatHistory();
+                chatClearedAfterAbsence = true;
             }
         }, PRESENCE_CHECK_INTERVAL_MS);
     }
@@ -3345,7 +4121,9 @@
         loadCameraPreviewVisible();
     }
     resetRobot();
+    loadChatHistory();
     renderChatMini();
+    hideOrderFlow();
     updateMiniCart([]);
     if (isAdminPreviewMode) {
         setVoiceStatus('Admin preview mode');
@@ -3448,6 +4226,7 @@
             } catch {}
             voiceRecognition = null;
         }
+        hideOrderFlow();
         stopBackendSpeechListening({ finalize: false });
     });
 </script>

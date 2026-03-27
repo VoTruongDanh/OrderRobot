@@ -26,26 +26,29 @@ function Get-ListenerProcessInfo {
     [int]$Port
   )
 
-  $connection = Get-NetTCPConnection -LocalAddress '127.0.0.1' -LocalPort $Port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
-  if ($null -eq $connection) {
+  $portPattern = "^\s*TCP\s+127\.0\.0\.1:$Port\s+\S+\s+LISTENING\s+(\d+)\s*$"
+  $matched = $null
+  try {
+    $matched = netstat -ano -p tcp | Select-String -Pattern $portPattern | Select-Object -First 1
+  } catch {
+    $matched = $null
+  }
+
+  if ($null -eq $matched) {
     return $null
   }
 
-  $ownerPid = [int]$connection.OwningProcess
-  $process = Get-Process -Id $ownerPid -ErrorAction SilentlyContinue
-  $commandLine = $null
-
-  try {
-    $commandLine = (Get-WmiObject Win32_Process -Filter "ProcessId = $ownerPid" -ErrorAction Stop).CommandLine
-  } catch {
-    $commandLine = $null
+  $ownerPid = 0
+  if (-not [int]::TryParse($matched.Matches[0].Groups[1].Value, [ref]$ownerPid)) {
+    return $null
   }
+  $process = Get-Process -Id $ownerPid -ErrorAction SilentlyContinue
 
   return [PSCustomObject]@{
     ProcessId = $ownerPid
     ProcessName = if ($null -ne $process) { $process.ProcessName } else { 'unknown' }
     Path = if ($null -ne $process) { $process.Path } else { $null }
-    CommandLine = $commandLine
+    CommandLine = $null
   }
 }
 
@@ -130,9 +133,23 @@ if ($corePort -ne [string]$Port -and $Port) {
 
 Write-Host "[core] starting core-backend on $baseUrl"
 
-python -m uvicorn app.main:app `
-  --reload `
-  --reload-dir $coreBackendDir `
-  --reload-dir $dataDir `
-  --port $corePort `
-  --app-dir $coreBackendDir
+$previousErrorActionPreference = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+$previousNativeErrorPreference = $null
+if (Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue) {
+  $previousNativeErrorPreference = $PSNativeCommandUseErrorActionPreference
+  $PSNativeCommandUseErrorActionPreference = $false
+}
+try {
+  & python -m uvicorn app.main:app `
+    --reload `
+    --reload-dir $coreBackendDir `
+    --reload-dir $dataDir `
+    --port $corePort `
+    --app-dir $coreBackendDir 2>&1 | ForEach-Object { Write-Host $_ }
+} finally {
+  if ($null -ne $previousNativeErrorPreference) {
+    $PSNativeCommandUseErrorActionPreference = $previousNativeErrorPreference
+  }
+  $ErrorActionPreference = $previousErrorActionPreference
+}

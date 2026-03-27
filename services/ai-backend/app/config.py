@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 
 ROOT_DIR = Path(__file__).resolve().parents[3]
 load_dotenv(ROOT_DIR / ".env")
+DEFAULT_VIENEU_CPU_MODEL = "pnnbao-ump/VieNeu-TTS-0.3B-q4-gguf"
 
 
 @dataclass(slots=True)
@@ -29,7 +30,13 @@ class Settings:
     voice_lang: str = "vi-VN"
     voice_style: str = "cute_friendly"
     tts_engine: str = "auto"  # auto | vieneu | edge | local
-    tts_vieneu_model_path: str = ""
+    tts_vieneu_model_path: str = DEFAULT_VIENEU_CPU_MODEL
+    tts_vieneu_voice_id: str = ""
+    tts_vieneu_ref_audio: str = ""
+    tts_vieneu_ref_text: str = ""
+    tts_vieneu_temperature: float = 1.0
+    tts_vieneu_top_k: int = 50
+    tts_vieneu_max_chars: int = 256
     tts_voice: str = "vietnam"
     tts_rate: str = "165"
     stt_model: str = "medium"
@@ -84,7 +91,13 @@ def get_settings() -> Settings:
         voice_lang=os.getenv("VOICE_LANG", "vi-VN").strip(),
         voice_style=os.getenv("VOICE_STYLE", "cute_friendly").strip(),
         tts_engine=os.getenv("TTS_ENGINE", "auto").strip().lower() or "auto",
-        tts_vieneu_model_path=os.getenv("TTS_VIENEU_MODEL_PATH", "").strip(),
+        tts_vieneu_model_path=os.getenv("TTS_VIENEU_MODEL_PATH", DEFAULT_VIENEU_CPU_MODEL).strip(),
+        tts_vieneu_voice_id=os.getenv("TTS_VIENEU_VOICE_ID", "").strip(),
+        tts_vieneu_ref_audio=os.getenv("TTS_VIENEU_REF_AUDIO", "").strip(),
+        tts_vieneu_ref_text=os.getenv("TTS_VIENEU_REF_TEXT", "").strip(),
+        tts_vieneu_temperature=max(0.1, min(2.0, float(os.getenv("TTS_VIENEU_TEMPERATURE", "1.0")))),
+        tts_vieneu_top_k=max(1, min(200, int(os.getenv("TTS_VIENEU_TOP_K", "50")))),
+        tts_vieneu_max_chars=max(32, min(512, int(os.getenv("TTS_VIENEU_MAX_CHARS", "256")))),
         tts_voice=os.getenv("TTS_VOICE", "vietnam").strip(),
         tts_rate=os.getenv("TTS_RATE", "165").strip(),
         stt_model=os.getenv("STT_MODEL", "medium").strip(),

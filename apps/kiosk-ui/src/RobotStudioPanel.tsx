@@ -346,6 +346,8 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
       setConfig(nextConfig)
       setExportText(JSON.stringify(nextConfig, null, 2))
       setDraftDirty(true)
+      // Save to localStorage immediately to prevent stale config from being read
+      setRobotStudioConfig(nextConfig)
       if (noticeText) {
         notify('info', noticeText)
       }
@@ -1196,7 +1198,6 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
               className="robot-studio-mini-preview__iframe"
               title={t('Xem truoc dong bo index', 'Index-synced preview')}
               src={ADMIN_LIVE_PREVIEW_SRC}
-              onLoad={syncLivePreviewFrame}
               loading="lazy"
             />
           </div>

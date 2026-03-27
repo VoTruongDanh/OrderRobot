@@ -131,8 +131,8 @@ export type RobotStudioConfigV1 = {
 
 const ROBOT_HEAD_SHAPE_OPTIONS = ['soft-square', 'visor', 'hex', 'bubble'] as const
 const ROBOT_HEAD_ACCESSORY_OPTIONS = ['none', 'antenna', 'halo', 'crown'] as const
-const ROBOT_EYE_STYLE_OPTIONS = ['visor', 'round', 'anime', 'mono'] as const
-const ROBOT_MOUTH_STYLE_OPTIONS = ['line', 'smile', 'pixel', 'none'] as const
+const ROBOT_EYE_STYLE_OPTIONS = ['visor', 'round', 'anime', 'mono', 'happy', 'wink', 'surprised', 'sleepy'] as const
+const ROBOT_MOUTH_STYLE_OPTIONS = ['line', 'smile', 'pixel', 'none', 'big-smile', 'surprised-o', 'sad', 'tongue-out'] as const
 const ROBOT_ARM_STYLE_OPTIONS = ['sleek', 'chunky', 'floating'] as const
 const ROBOT_ARM_COLOR_OPTIONS = ['aqua', 'sunset', 'mint', 'violet', 'mono'] as const
 const ROBOT_BODY_SHAPE_OPTIONS = ['core', 'shield', 'orb', 'compact'] as const
@@ -548,7 +548,7 @@ export function getCoreApiUrl(): string {
 }
 
 export function getAiApiUrl(): string {
-  return getEnvConfig('VITE_AI_API_URL', 'http://127.0.0.1:8012')
+  return getEnvConfig('VITE_AI_API_URL', 'http://127.0.0.1:18012')
 }
 
 export function getMenuApiUrl(): string {

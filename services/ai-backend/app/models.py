@@ -77,12 +77,91 @@ class TTSConfigRequest(BaseModel):
         le=300,
         validation_alias=AliasChoices("rate", "tts_rate"),
     )
+    engine: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("engine", "tts_engine"),
+    )
+    vieneu_model_path: str | None = Field(
+        default=None,
+        max_length=1024,
+        validation_alias=AliasChoices("vieneu_model_path", "tts_vieneu_model_path"),
+    )
+    vieneu_voice_id: str | None = Field(
+        default=None,
+        max_length=120,
+        validation_alias=AliasChoices("vieneu_voice_id", "tts_vieneu_voice_id"),
+    )
+    vieneu_ref_audio: str | None = Field(
+        default=None,
+        max_length=1024,
+        validation_alias=AliasChoices("vieneu_ref_audio", "tts_vieneu_ref_audio"),
+    )
+    vieneu_ref_text: str | None = Field(
+        default=None,
+        max_length=1000,
+        validation_alias=AliasChoices("vieneu_ref_text", "tts_vieneu_ref_text"),
+    )
+    vieneu_temperature: float | None = Field(
+        default=None,
+        ge=0.1,
+        le=2.0,
+        validation_alias=AliasChoices("vieneu_temperature", "tts_vieneu_temperature"),
+    )
+    vieneu_top_k: int | None = Field(
+        default=None,
+        ge=1,
+        le=200,
+        validation_alias=AliasChoices("vieneu_top_k", "tts_vieneu_top_k"),
+    )
+    vieneu_max_chars: int | None = Field(
+        default=None,
+        ge=32,
+        le=512,
+        validation_alias=AliasChoices("vieneu_max_chars", "tts_vieneu_max_chars"),
+    )
 
 
 class SpeechSynthesisRequest(BaseModel):
     text: str = Field(min_length=1, max_length=1200)
     voice: str | None = None
     rate: int | None = Field(default=None, ge=100, le=300)
+    engine: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("engine", "tts_engine"),
+    )
+    vieneu_voice_id: str | None = Field(
+        default=None,
+        max_length=120,
+        validation_alias=AliasChoices("vieneu_voice_id", "tts_vieneu_voice_id"),
+    )
+    vieneu_ref_audio: str | None = Field(
+        default=None,
+        max_length=1024,
+        validation_alias=AliasChoices("vieneu_ref_audio", "tts_vieneu_ref_audio"),
+    )
+    vieneu_ref_text: str | None = Field(
+        default=None,
+        max_length=1000,
+        validation_alias=AliasChoices("vieneu_ref_text", "tts_vieneu_ref_text"),
+    )
+    vieneu_temperature: float | None = Field(
+        default=None,
+        ge=0.1,
+        le=2.0,
+        validation_alias=AliasChoices("vieneu_temperature", "tts_vieneu_temperature"),
+    )
+    vieneu_top_k: int | None = Field(
+        default=None,
+        ge=1,
+        le=200,
+        validation_alias=AliasChoices("vieneu_top_k", "tts_vieneu_top_k"),
+    )
+    vieneu_max_chars: int | None = Field(
+        default=None,
+        ge=32,
+        le=512,
+        validation_alias=AliasChoices("vieneu_max_chars", "tts_vieneu_max_chars"),
+    )
 
 
 class SpeechTranscriptionResponse(BaseModel):

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+import inspect
 import io
 import importlib.util
 import logging
@@ -12,6 +13,7 @@ import sys
 import tempfile
 import threading
 import unicodedata
+import wave
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 from pathlib import Path
@@ -95,6 +97,7 @@ ORDERING_FILLERS = [
 STREAM_SENTENCE_SPLIT_PATTERN = re.compile(r"(?<=[.!?;:])\s+")
 STREAM_CLAUSE_SPLIT_PATTERN = re.compile(r"\s*(?:,|\bva\b|\bvoi\b)\s+", re.IGNORECASE)
 STREAM_SEGMENT_MAX_CHARS = 120
+DEFAULT_VIENEU_CPU_MODEL = "pnnbao-ump/VieNeu-TTS-0.3B-q4-gguf"
 
 
 class SpeechNotHeardError(ValueError):
@@ -124,23 +127,40 @@ class SpeechService:
         self._lexicon_cache: list[tuple[str, str]] | None = None
         self._menu_items_cache: list[MenuItem] | None = None
 
-    async def synthesize(self, text: str, voice: str | None = None, rate: int | None = None) -> SynthesizedAudio:
-        return await self._synthesize_async(text, voice, rate)
+    async def synthesize(
+        self,
+        text: str,
+        voice: str | None = None,
+        rate: int | None = None,
+        vieneu_overrides: dict[str, object] | None = None,
+    ) -> SynthesizedAudio:
+        return await self._synthesize_async(text, voice, rate, vieneu_overrides=vieneu_overrides)
 
-    async def synthesize_stream(self, text: str, voice: str | None = None, rate: int | None = None):
+    async def synthesize_stream(
+        self,
+        text: str,
+        voice: str | None = None,
+        rate: int | None = None,
+        vieneu_overrides: dict[str, object] | None = None,
+    ):
         """Stream audio chunks for low latency playback."""
         normalized_text = normalize_speech_text(text)
         if not normalized_text:
             return
+        resolved_engine = self._resolve_tts_engine(vieneu_overrides)
 
-        if self._should_use_vieneu():
+        if self._should_use_vieneu(vieneu_overrides):
             try:
-                for segment in split_streaming_segments(normalized_text):
-                    audio = await self._synthesize_with_vieneu_async(segment)
-                    if audio.content:
-                        yield audio.content
+                async for chunk in self._synthesize_with_vieneu_stream_async(
+                    normalized_text,
+                    vieneu_overrides=vieneu_overrides,
+                ):
+                    if chunk:
+                        yield chunk
                 return
-            except Exception:
+            except Exception as exc:
+                if resolved_engine == "vieneu":
+                    raise RuntimeError(f"VieNeu stream failed: {exc}") from exc
                 logger.exception("VieNeu stream failed, falling back to Edge/local TTS.")
 
         actual_voice = voice or self.settings.tts_voice
@@ -223,8 +243,20 @@ class SpeechService:
         self._build_stt_hotwords()
         self._get_ordering_lexicon()
 
-    def _should_use_vieneu(self) -> bool:
-        engine = (self.settings.tts_engine or "auto").strip().lower()
+    def _resolve_tts_engine(self, vieneu_overrides: dict[str, object] | None = None) -> str:
+        override_engine = ""
+        if vieneu_overrides:
+            raw_engine = vieneu_overrides.get("engine")
+            if raw_engine is not None:
+                override_engine = str(raw_engine).strip().lower()
+
+        engine = override_engine or (self.settings.tts_engine or "auto").strip().lower()
+        if engine in {"auto", "vieneu", "edge", "local", "pyttsx3"}:
+            return engine
+        return "auto"
+
+    def _should_use_vieneu(self, vieneu_overrides: dict[str, object] | None = None) -> bool:
+        engine = self._resolve_tts_engine(vieneu_overrides)
         if engine == "vieneu":
             return True
         if engine in {"edge", "local", "pyttsx3"}:
@@ -244,33 +276,227 @@ class SpeechService:
 
             from vieneu import Vieneu  # type: ignore[import-not-found]
 
-            model_path = self.settings.tts_vieneu_model_path.strip()
+            configured_model_path = self.settings.tts_vieneu_model_path.strip()
+            model_path = configured_model_path or DEFAULT_VIENEU_CPU_MODEL
             if model_path:
-                try:
-                    self._vieneu_instance = Vieneu(model_path=model_path)
-                except TypeError:
-                    self._vieneu_instance = Vieneu()
-                    logger.warning(
-                        "VieNeu constructor did not accept model_path, using default model from repository config."
-                    )
+                init_attempts = (
+                    {"backbone_repo": model_path},
+                    {"model_path": model_path},
+                    {},
+                )
             else:
-                self._vieneu_instance = Vieneu()
+                init_attempts = ({},)
 
-            logger.info("VieNeu-TTS initialized (model_path=%s)", model_path or "default")
+            last_error: Exception | None = None
+            for kwargs in init_attempts:
+                try:
+                    self._vieneu_instance = Vieneu(**kwargs)
+                    if kwargs:
+                        logger.info("VieNeu initialized with kwargs=%s", kwargs)
+                    break
+                except Exception as exc:
+                    last_error = exc
+                    logger.warning("VieNeu init failed with kwargs=%s: %s", kwargs, exc)
+
+            if self._vieneu_instance is None and last_error is not None:
+                raise last_error
+
+            logger.info(
+                "VieNeu-TTS initialized (requested=%s, effective=%s)",
+                configured_model_path or "default",
+                model_path or "default",
+            )
             return self._vieneu_instance
 
-    async def _synthesize_with_vieneu_async(self, text: str) -> SynthesizedAudio:
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(self._vieneu_executor, self._synthesize_with_vieneu_sync, text)
+    async def list_vieneu_voices(self) -> list[dict[str, str]]:
+        if not self._is_vieneu_available():
+            return []
+        try:
+            return await anyio.to_thread.run_sync(self._list_vieneu_voices_sync)
+        except Exception:
+            logger.exception("Unable to list VieNeu preset voices.")
+            return []
 
-    def _synthesize_with_vieneu_sync(self, text: str) -> SynthesizedAudio:
+    def _list_vieneu_voices_sync(self) -> list[dict[str, str]]:
+        engine = self._get_vieneu_instance()
+        result: object = []
+        with self._vieneu_lock:
+            list_fn = getattr(engine, "list_preset_voices", None)
+            if callable(list_fn):
+                result = list_fn()
+            else:
+                # Backward compatibility for older/newer SDK variants.
+                for attr_name in ("preset_voices", "voice_presets", "voices"):
+                    if hasattr(engine, attr_name):
+                        result = getattr(engine, attr_name)
+                        break
+
+        raw_items: list[object] = []
+        if isinstance(result, dict):
+            raw_items = list(result.items())
+        elif isinstance(result, (list, tuple, set)):
+            raw_items = list(result)
+
+        voices: list[dict[str, str]] = []
+        for index, item in enumerate(raw_items):
+            if isinstance(item, (tuple, list)) and len(item) >= 2:
+                description = str(item[0] or "").strip() or f"Voice {index + 1}"
+                voice_id = str(item[1] or "").strip()
+            else:
+                description = str(item or "").strip() or f"Voice {index + 1}"
+                voice_id = description
+            if not voice_id:
+                continue
+            voices.append({"id": voice_id, "description": description})
+        # Stable order + deduplicate by voice id.
+        unique: dict[str, dict[str, str]] = {}
+        for voice in voices:
+            unique[voice["id"]] = voice
+        return [unique[key] for key in sorted(unique.keys(), key=lambda item: item.lower())]
+
+    def reset_vieneu_runtime(self) -> None:
+        stale_instance = None
+        with self._vieneu_lock:
+            stale_instance = self._vieneu_instance
+            self._vieneu_instance = None
+
+        if stale_instance is None:
+            return
+
+        close_fn = getattr(stale_instance, "close", None)
+        if callable(close_fn):
+            try:
+                close_fn()
+            except Exception:
+                logger.debug("Ignoring VieNeu close error while resetting runtime.", exc_info=True)
+
+    async def _synthesize_with_vieneu_async(
+        self,
+        text: str,
+        vieneu_overrides: dict[str, object] | None = None,
+    ) -> SynthesizedAudio:
+        loop = asyncio.get_running_loop()
+        if vieneu_overrides is None:
+            return await loop.run_in_executor(
+                self._vieneu_executor,
+                self._synthesize_with_vieneu_sync,
+                text,
+            )
+        return await loop.run_in_executor(
+            self._vieneu_executor,
+            self._synthesize_with_vieneu_sync,
+            text,
+            vieneu_overrides,
+        )
+
+    async def _synthesize_with_vieneu_stream_async(
+        self,
+        text: str,
+        vieneu_overrides: dict[str, object] | None = None,
+    ):
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue[object] = asyncio.Queue()
+        done_sentinel = object()
+
+        def push(item: object) -> None:
+            future = asyncio.run_coroutine_threadsafe(queue.put(item), loop)
+            future.result()
+
+        def worker() -> None:
+            try:
+                for chunk in self._synthesize_with_vieneu_stream_sync(
+                    text,
+                    vieneu_overrides=vieneu_overrides,
+                ):
+                    push(chunk)
+            except Exception as exc:  # pragma: no cover - exercised in runtime flow
+                push(exc)
+            finally:
+                push(done_sentinel)
+
+        threading.Thread(target=worker, daemon=True, name="vieneu-stream").start()
+
+        while True:
+            item = await queue.get()
+            if item is done_sentinel:
+                break
+            if isinstance(item, Exception):
+                raise item
+            if isinstance(item, (bytes, bytearray)):
+                chunk = bytes(item)
+                if chunk:
+                    yield chunk
+
+    def _synthesize_with_vieneu_stream_sync(
+        self,
+        text: str,
+        vieneu_overrides: dict[str, object] | None = None,
+    ):
+        safe_text = text.strip()
+        if not safe_text:
+            return
+
+        engine = self._get_vieneu_instance()
+        infer_stream_fn = getattr(engine, "infer_stream", None)
+        if not callable(infer_stream_fn):
+            fallback_audio = self._synthesize_with_vieneu_sync(safe_text, vieneu_overrides=vieneu_overrides)
+            if fallback_audio.content:
+                yield fallback_audio.content
+            return
+
+        infer_kwargs = self._build_vieneu_infer_kwargs(
+            engine,
+            safe_text,
+            vieneu_overrides=vieneu_overrides,
+        )
+        sample_rate = self._resolve_vieneu_sample_rate(engine)
+        yielded_any = False
+
+        with self._vieneu_lock:
+            stream_result = call_with_supported_kwargs(infer_stream_fn, infer_kwargs)
+
+            if isinstance(stream_result, (bytes, bytearray)):
+                payload = bytes(stream_result)
+                if payload:
+                    yielded_any = True
+                    yield payload
+            elif isinstance(stream_result, np.ndarray):
+                payload = self._to_wav_chunk_bytes(stream_result, sample_rate)
+                if payload:
+                    yielded_any = True
+                    yield payload
+            elif stream_result is not None:
+                for item in stream_result:
+                    payload = self._to_wav_chunk_bytes(item, sample_rate)
+                    if payload:
+                        yielded_any = True
+                        yield payload
+
+        if yielded_any:
+            return
+
+        # Fallback for SDK variants that expose infer_stream but may return no chunks.
+        fallback_audio = self._synthesize_with_vieneu_sync(safe_text, vieneu_overrides=vieneu_overrides)
+        if fallback_audio.content:
+            yield fallback_audio.content
+
+    def _synthesize_with_vieneu_sync(
+        self,
+        text: str,
+        vieneu_overrides: dict[str, object] | None = None,
+    ) -> SynthesizedAudio:
         safe_text = text.strip()
         if not safe_text:
             return SynthesizedAudio(content=b"", media_type="audio/wav")
 
         engine = self._get_vieneu_instance()
         with self._vieneu_lock:
-            synthesized = engine.infer(text=safe_text)
+            infer_kwargs = self._build_vieneu_infer_kwargs(
+                engine,
+                safe_text,
+                vieneu_overrides=vieneu_overrides,
+            )
+            synthesized = call_with_supported_kwargs(engine.infer, infer_kwargs)
 
             if isinstance(synthesized, (bytes, bytearray)):
                 raw = bytes(synthesized)
@@ -292,12 +518,132 @@ class SpeechService:
 
         raise RuntimeError("VieNeu khong tao duoc audio.")
 
-    async def _synthesize_async(self, text: str, voice: str | None = None, rate: int | None = None) -> SynthesizedAudio:
+    def _build_vieneu_infer_kwargs(
+        self,
+        engine: object,
+        text: str,
+        vieneu_overrides: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        infer_kwargs: dict[str, object] = {"text": text}
+
+        override_voice_id = coerce_optional_string(vieneu_overrides.get("vieneu_voice_id")) if vieneu_overrides else None
+        override_ref_audio = coerce_optional_string(vieneu_overrides.get("vieneu_ref_audio")) if vieneu_overrides else None
+        override_ref_text = coerce_optional_string(vieneu_overrides.get("vieneu_ref_text")) if vieneu_overrides else None
+        override_temperature = vieneu_overrides.get("vieneu_temperature") if vieneu_overrides else None
+        override_top_k = vieneu_overrides.get("vieneu_top_k") if vieneu_overrides else None
+        override_max_chars = vieneu_overrides.get("vieneu_max_chars") if vieneu_overrides else None
+
+        voice_id = override_voice_id or self.settings.tts_vieneu_voice_id.strip()
+        ref_audio = override_ref_audio or self.settings.tts_vieneu_ref_audio.strip()
+        ref_text = override_ref_text or self.settings.tts_vieneu_ref_text.strip()
+
+        infer_kwargs["temperature"] = clamp_float(
+            override_temperature,
+            self.settings.tts_vieneu_temperature,
+            min_value=0.1,
+            max_value=2.0,
+        )
+        infer_kwargs["top_k"] = clamp_int(
+            override_top_k,
+            self.settings.tts_vieneu_top_k,
+            min_value=1,
+            max_value=200,
+        )
+        infer_kwargs["max_chars"] = clamp_int(
+            override_max_chars,
+            self.settings.tts_vieneu_max_chars,
+            min_value=32,
+            max_value=512,
+        )
+
+        if ref_audio and ref_text:
+            infer_kwargs["ref_audio"] = ref_audio
+            infer_kwargs["ref_text"] = ref_text
+        elif ref_audio and not ref_text:
+            logger.warning("Ignoring VieNeu ref_audio because ref_text is empty.")
+
+        if "ref_audio" not in infer_kwargs and voice_id:
+            get_voice_fn = getattr(engine, "get_preset_voice", None)
+            if callable(get_voice_fn):
+                try:
+                    infer_kwargs["voice"] = get_voice_fn(voice_id)
+                except Exception:
+                    logger.warning("VieNeu preset voice '%s' not found. Falling back to default voice.", voice_id)
+            else:
+                logger.debug("VieNeu engine does not support preset voice lookup.")
+
+        return infer_kwargs
+
+    def _resolve_vieneu_sample_rate(self, engine: object) -> int:
+        raw_rate = getattr(engine, "sample_rate", 24000)
+        try:
+            parsed = int(raw_rate)
+        except (TypeError, ValueError):
+            return 24000
+        if parsed < 8000 or parsed > 192000:
+            return 24000
+        return parsed
+
+    def _to_wav_chunk_bytes(self, chunk: object, sample_rate: int) -> bytes:
+        if chunk is None:
+            return b""
+        if isinstance(chunk, (bytes, bytearray)):
+            return bytes(chunk)
+
+        try:
+            waveform = np.asarray(chunk)
+        except Exception:
+            return b""
+
+        if waveform.size == 0:
+            return b""
+
+        if waveform.ndim > 1:
+            waveform = waveform.reshape(-1)
+
+        if np.issubdtype(waveform.dtype, np.floating):
+            pcm16 = np.clip(waveform.astype(np.float32), -1.0, 1.0)
+            pcm16 = (pcm16 * 32767.0).astype(np.int16)
+        elif np.issubdtype(waveform.dtype, np.integer):
+            if waveform.dtype == np.int16:
+                pcm16 = waveform.astype(np.int16, copy=False)
+            else:
+                pcm16 = np.clip(waveform.astype(np.int64), -32768, 32767).astype(np.int16)
+        else:
+            return b""
+
+        if pcm16.size == 0:
+            return b""
+
+        pcm16 = np.ascontiguousarray(pcm16)
+        buffer = io.BytesIO()
+        with wave.open(buffer, "wb") as wav_writer:
+            wav_writer.setnchannels(1)
+            wav_writer.setsampwidth(2)
+            wav_writer.setframerate(sample_rate)
+            wav_writer.writeframes(pcm16.tobytes())
+        return buffer.getvalue()
+
+    async def _synthesize_async(
+        self,
+        text: str,
+        voice: str | None = None,
+        rate: int | None = None,
+        vieneu_overrides: dict[str, object] | None = None,
+    ) -> SynthesizedAudio:
         normalized_text = normalize_speech_text(text)
-        if self._should_use_vieneu():
+        resolved_engine = self._resolve_tts_engine(vieneu_overrides)
+        if self._should_use_vieneu(vieneu_overrides):
             try:
-                return await self._synthesize_with_vieneu_async(normalized_text)
-            except Exception:
+                return await self._synthesize_with_vieneu_async(
+                    normalized_text,
+                    vieneu_overrides=vieneu_overrides,
+                )
+            except Exception as exc:
+                # When user explicitly selects VieNeu, surface error instead of silently
+                # falling back to default TTS voice (which causes "custom voice ignored").
+                if resolved_engine == "vieneu":
+                    raise RuntimeError(f"VieNeu synth failed: {exc}") from exc
                 logger.exception("VieNeu synth failed, falling back to Edge/local TTS.")
 
         try:
@@ -729,6 +1075,62 @@ def parse_tts_rate(raw_value: str) -> int:
         return int(raw_value)
     except ValueError:
         return 165
+
+
+def coerce_optional_string(value: object | None) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def clamp_int(
+    value: object | None,
+    fallback: int,
+    *,
+    min_value: int,
+    max_value: int,
+) -> int:
+    try:
+        raw = int(value) if value is not None else int(fallback)
+    except (TypeError, ValueError):
+        raw = int(fallback)
+    return max(min_value, min(max_value, raw))
+
+
+def clamp_float(
+    value: object | None,
+    fallback: float,
+    *,
+    min_value: float,
+    max_value: float,
+) -> float:
+    try:
+        raw = float(value) if value is not None else float(fallback)
+    except (TypeError, ValueError):
+        raw = float(fallback)
+    return max(min_value, min(max_value, raw))
+
+
+def call_with_supported_kwargs(func: object, kwargs: dict[str, object]):
+    if not callable(func):
+        raise RuntimeError("VieNeu infer function is not callable.")
+
+    try:
+        signature = inspect.signature(func)
+    except (TypeError, ValueError):
+        return func(**kwargs)  # type: ignore[misc]
+
+    has_var_keyword = any(
+        parameter.kind == inspect.Parameter.VAR_KEYWORD
+        for parameter in signature.parameters.values()
+    )
+    if has_var_keyword:
+        return func(**kwargs)  # type: ignore[misc]
+
+    allowed_names = set(signature.parameters.keys())
+    filtered_kwargs = {key: value for key, value in kwargs.items() if key in allowed_names}
+    return func(**filtered_kwargs)  # type: ignore[misc]
 
 
 def convert_rate_to_sapi(rate: int) -> int:

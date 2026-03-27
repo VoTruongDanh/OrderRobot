@@ -13,6 +13,11 @@ puppeteer.use(StealthPlugin());
 const HOST = process.env.HOST || '127.0.0.1';
 const PORT = Number(process.env.PORT || process.env.BRIDGE_GATEWAY_PORT || 1122);
 const PREFERRED_BROWSER = process.env.BRIDGE_PREFERRED_BROWSER || 'chrome';
+const BRIDGE_LAUNCH_MINIMIZED = isTruthyEnv(process.env.BRIDGE_LAUNCH_MINIMIZED, true);
+const BRIDGE_LAUNCH_OFFSCREEN = isTruthyEnv(process.env.BRIDGE_LAUNCH_OFFSCREEN, true);
+const BRIDGE_HIDE_WINDOW = isTruthyEnv(process.env.BRIDGE_HIDE_WINDOW, true);
+const BRIDGE_HIDDEN_WINDOW_X = Number(process.env.BRIDGE_HIDDEN_WINDOW_X || -50000);
+const BRIDGE_HIDDEN_WINDOW_Y = Number(process.env.BRIDGE_HIDDEN_WINDOW_Y || -50000);
 const CHAT_URL = 'https://chatgpt.com/?temporary-chat=true';
 const PROFILE_DIR = path.resolve(process.cwd(), '.bridge-chrome-profile');
 
@@ -20,6 +25,14 @@ let browser = null;
 let chatPage = null;
 let isShuttingDown = false;
 let isBusy = false;
+
+function isTruthyEnv(value, defaultValue = false) {
+  if (value === undefined || value === null || String(value).trim() === '') {
+    return Boolean(defaultValue);
+  }
+  const normalized = String(value).trim().toLowerCase();
+  return ['1', 'true', 'yes', 'y', 'on'].includes(normalized);
+}
 
 // --- Find Chrome/Edge executable ---
 function getExecutable() {
@@ -71,21 +84,26 @@ async function launchBrowser() {
       args: [
         '--no-first-run',
         '--no-default-browser-check',
-        '--start-maximized',
+        ...(!BRIDGE_LAUNCH_MINIMIZED && !BRIDGE_LAUNCH_OFFSCREEN && !BRIDGE_HIDE_WINDOW ? ['--start-maximized'] : []),
+        ...(BRIDGE_LAUNCH_MINIMIZED || BRIDGE_LAUNCH_OFFSCREEN || BRIDGE_HIDE_WINDOW ? ['--window-size=900,700'] : []),
         '--disable-blink-features=AutomationControlled',
         '--disable-background-timer-throttling',
         '--disable-backgrounding-occluded-windows',
         '--disable-renderer-backgrounding',
         '--disable-features=CalculateNativeWinOcclusion',
+        ...(BRIDGE_LAUNCH_MINIMIZED ? ['--start-minimized'] : []),
+        ...(BRIDGE_LAUNCH_OFFSCREEN ? ['--window-position=-32000,-32000'] : []),
       ],
       ignoreDefaultArgs: ['--enable-automation'],
     });
 
     const pages = await browser.pages();
     chatPage = pages[0] || await browser.newPage();
+    await forceHideBrowserWindow(chatPage);
 
     console.log(`[Bridge] 🌐 Navigating to ChatGPT...`);
     await chatPage.goto(CHAT_URL, { waitUntil: 'networkidle2', timeout: 60000 });
+    await forceHideBrowserWindow(chatPage);
 
     const pid = browser.process()?.pid;
     console.log(`[Bridge] ✅ Browser ready! PID: ${pid}`);
@@ -109,6 +127,47 @@ async function launchBrowser() {
       setTimeout(() => { if (!isShuttingDown) launchBrowser(); }, 5000);
     }
     return false;
+  }
+}
+
+async function forceHideBrowserWindow(page) {
+  if (!page || (!BRIDGE_HIDE_WINDOW && !BRIDGE_LAUNCH_OFFSCREEN && !BRIDGE_LAUNCH_MINIMIZED)) return;
+
+  try {
+    const client = await page.target().createCDPSession();
+    const { windowId } = await client.send('Browser.getWindowForTarget');
+
+    if (BRIDGE_LAUNCH_MINIMIZED || BRIDGE_HIDE_WINDOW) {
+      try {
+        await client.send('Browser.setWindowBounds', {
+          windowId,
+          bounds: { windowState: 'minimized' },
+        });
+      } catch {}
+    }
+
+    if (BRIDGE_LAUNCH_OFFSCREEN || BRIDGE_HIDE_WINDOW) {
+      // Push browser very far away from visible desktop area.
+      const safeX = Number.isFinite(BRIDGE_HIDDEN_WINDOW_X) ? BRIDGE_HIDDEN_WINDOW_X : -50000;
+      const safeY = Number.isFinite(BRIDGE_HIDDEN_WINDOW_Y) ? BRIDGE_HIDDEN_WINDOW_Y : -50000;
+      for (let i = 0; i < 3; i++) {
+        try {
+          await client.send('Browser.setWindowBounds', {
+            windowId,
+            bounds: {
+              left: safeX,
+              top: safeY,
+              width: 900,
+              height: 700,
+              windowState: 'normal',
+            },
+          });
+        } catch {}
+        await new Promise((resolve) => setTimeout(resolve, 120));
+      }
+    }
+  } catch (err) {
+    console.warn(`[Bridge] hide-window warning: ${err?.message || err}`);
   }
 }
 
@@ -402,6 +461,7 @@ httpServer.listen(PORT, HOST, () => {
   console.log(`🔥 Bridge Server on port ${PORT} (Puppeteer Direct Mode)`);
   console.log(`🚫 NO extension, NO injection, NO WebSocket from page`);
   console.log(`🛡️ Stealth plugin active — undetectable by ChatGPT`);
+  console.log(`[Bridge] launch_minimized=${BRIDGE_LAUNCH_MINIMIZED} launch_offscreen=${BRIDGE_LAUNCH_OFFSCREEN}`);
   console.log(`======================================================\n`);
 
   setTimeout(async () => {

@@ -190,6 +190,37 @@ def test_split_streaming_segments_breaks_long_sentence() -> None:
     assert all(len(segment) <= 24 for segment in segments)
 
 
+def test_should_use_vieneu_honors_engine_override() -> None:
+    service = SpeechService(build_settings())
+    service.settings.tts_engine = "vieneu"
+
+    assert service._should_use_vieneu({"engine": "edge"}) is False
+    assert service._should_use_vieneu({"engine": "vieneu"}) is True
+
+
+def test_build_vieneu_infer_kwargs_prefers_ref_audio_over_preset_voice() -> None:
+    service = SpeechService(build_settings())
+    service.settings.tts_vieneu_voice_id = "Tuyen"
+
+    class FakeEngine:
+        def get_preset_voice(self, voice_id: str):
+            return {"id": voice_id}
+
+    kwargs = service._build_vieneu_infer_kwargs(
+        FakeEngine(),
+        "xin chao",
+        vieneu_overrides={
+            "vieneu_ref_audio": "C:/sample.wav",
+            "vieneu_ref_text": "mau clone",
+        },
+    )
+
+    assert kwargs["text"] == "xin chao"
+    assert kwargs["ref_audio"] == "C:/sample.wav"
+    assert kwargs["ref_text"] == "mau clone"
+    assert "voice" not in kwargs
+
+
 def test_transcript_post_processing_recovers_menu_like_phrase() -> None:
     service = SpeechService(build_settings())
 
