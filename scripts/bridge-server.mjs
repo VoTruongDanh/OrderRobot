@@ -13,6 +13,7 @@ puppeteer.use(StealthPlugin());
 const HOST = process.env.HOST || '127.0.0.1';
 const PORT = Number(process.env.PORT || process.env.BRIDGE_GATEWAY_PORT || 1122);
 const PREFERRED_BROWSER = process.env.BRIDGE_PREFERRED_BROWSER || 'chrome';
+const HIDE_CHAT_WINDOW = process.env.BRIDGE_HIDE_CHAT_WINDOW !== '0';
 const CHAT_URL = 'https://chatgpt.com/?temporary-chat=true';
 const PROFILE_DIR = path.resolve(process.cwd(), '.bridge-chrome-profile');
 
@@ -63,21 +64,28 @@ async function launchBrowser() {
   console.log(`[Bridge] 🚀 Launching ${PREFERRED_BROWSER}...`);
 
   try {
+    const launchArgs = [
+      '--no-first-run',
+      '--no-default-browser-check',
+      '--disable-blink-features=AutomationControlled',
+      '--disable-background-timer-throttling',
+      '--disable-backgrounding-occluded-windows',
+      '--disable-renderer-backgrounding',
+      '--disable-features=CalculateNativeWinOcclusion',
+    ];
+
+    if (HIDE_CHAT_WINDOW) {
+      launchArgs.push('--window-position=-32000,-32000', '--window-size=1200,800');
+    } else {
+      launchArgs.push('--start-maximized');
+    }
+
     browser = await puppeteer.launch({
       executablePath: executable,
       headless: false,
       defaultViewport: null,
       userDataDir: PROFILE_DIR, // Persistent profile for login session
-      args: [
-        '--no-first-run',
-        '--no-default-browser-check',
-        '--start-maximized',
-        '--disable-blink-features=AutomationControlled',
-        '--disable-background-timer-throttling',
-        '--disable-backgrounding-occluded-windows',
-        '--disable-renderer-backgrounding',
-        '--disable-features=CalculateNativeWinOcclusion',
-      ],
+      args: launchArgs,
       ignoreDefaultArgs: ['--enable-automation'],
     });
 
@@ -397,6 +405,18 @@ function readJsonBody(req) {
 }
 
 // --- Start ---
+httpServer.on('error', (err) => {
+  if (err && err.code === 'EADDRINUSE') {
+    console.error(`[Bridge] ❌ Port ${PORT} is already in use on ${HOST}.`);
+    console.error('[Bridge] Try stopping the old bridge process or run `npm run dev:bridge:dev` to force restart.');
+    process.exit(1);
+    return;
+  }
+
+  console.error('[Bridge] ❌ HTTP server error:', err?.message || err);
+  process.exit(1);
+});
+
 httpServer.listen(PORT, HOST, () => {
   console.log(`\n======================================================`);
   console.log(`🔥 Bridge Server on port ${PORT} (Puppeteer Direct Mode)`);
