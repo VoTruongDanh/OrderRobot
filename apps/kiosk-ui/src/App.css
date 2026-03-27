@@ -11,8 +11,23 @@ body,
 #root {
   margin: 0;
   width: 100%;
+  min-height: 100%;
+}
+
+body.route-kiosk,
+body.route-kiosk #root {
   height: 100%;
   overflow: hidden;
+}
+
+body.route-admin,
+body.route-debug {
+  overflow-y: auto;
+}
+
+body.route-admin #root,
+body.route-debug #root {
+  min-height: 100vh;
 }
 
 .sample-shell {

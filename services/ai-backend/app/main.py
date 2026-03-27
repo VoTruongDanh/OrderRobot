@@ -36,6 +36,7 @@ core_client = CoreBackendClient(settings.core_backend_url, settings.request_time
 speech_service = SpeechService(settings, core_client)
 conversation_engine = ConversationEngine(settings, core_client, speech_service)
 logger = logging.getLogger(__name__)
+SUPPORTED_TTS_ENGINES = {"auto", "vieneu", "edge", "local", "pyttsx3"}
 
 app = FastAPI(title="Order Robot AI Backend", version="1.0.0")
 
@@ -58,6 +59,8 @@ async def preload_speech_model() -> None:
     def report_preload_failure(background_task: asyncio.Task[None]) -> None:
         try:
             background_task.result()
+        except asyncio.CancelledError:
+            logger.debug("STT preload task cancelled during shutdown.")
         except Exception:
             logger.exception("STT preload failed")
 
@@ -79,9 +82,18 @@ async def health() -> dict[str, object]:
         "llm_mode": settings.llm_mode,
         "bridge_base_url": settings.bridge_base_url,
         "voice_style": settings.voice_style,
+        "tts_engine": settings.tts_engine,
         "stt_model": settings.stt_model,
         "tts_voice": settings.tts_voice,
         "tts_rate": settings.tts_rate,
+        "tts_vieneu_model_path": settings.tts_vieneu_model_path,
+        "tts_vieneu_voice_id": settings.tts_vieneu_voice_id,
+        "tts_vieneu_ref_audio": settings.tts_vieneu_ref_audio,
+        "tts_vieneu_has_ref_text": bool(settings.tts_vieneu_ref_text.strip()),
+        "tts_vieneu_temperature": settings.tts_vieneu_temperature,
+        "tts_vieneu_top_k": settings.tts_vieneu_top_k,
+        "tts_vieneu_max_chars": settings.tts_vieneu_max_chars,
+        "vieneu_installed": speech_service._is_vieneu_available(),
         "active_sessions": await conversation_engine.active_session_count(),
     }
 
@@ -142,15 +154,60 @@ async def debug_bridge_chat(payload: BridgeDebugChatRequest) -> BridgeDebugChatR
 @app.post("/config/tts")
 async def update_tts_config(payload: TTSConfigRequest) -> dict[str, str]:
     """Update TTS voice and rate at runtime without restarting backend."""
+    should_reset_vieneu = False
+
     if payload.voice is not None:
         settings.tts_voice = payload.voice
     if payload.rate is not None:
         settings.tts_rate = str(payload.rate)
-    
+    if payload.engine is not None:
+        normalized_engine = payload.engine.strip().lower()
+        if normalized_engine in SUPPORTED_TTS_ENGINES:
+            settings.tts_engine = normalized_engine
+    if payload.vieneu_model_path is not None:
+        normalized_model_path = payload.vieneu_model_path.strip()
+        if normalized_model_path != settings.tts_vieneu_model_path:
+            should_reset_vieneu = True
+        settings.tts_vieneu_model_path = normalized_model_path
+    if payload.vieneu_voice_id is not None:
+        settings.tts_vieneu_voice_id = payload.vieneu_voice_id.strip()
+    if payload.vieneu_ref_audio is not None:
+        settings.tts_vieneu_ref_audio = payload.vieneu_ref_audio.strip()
+    if payload.vieneu_ref_text is not None:
+        settings.tts_vieneu_ref_text = payload.vieneu_ref_text.strip()
+    if payload.vieneu_temperature is not None:
+        settings.tts_vieneu_temperature = payload.vieneu_temperature
+    if payload.vieneu_top_k is not None:
+        settings.tts_vieneu_top_k = payload.vieneu_top_k
+    if payload.vieneu_max_chars is not None:
+        settings.tts_vieneu_max_chars = payload.vieneu_max_chars
+
+    if should_reset_vieneu:
+        speech_service.reset_vieneu_runtime()
+
     return {
         "status": "ok",
+        "tts_engine": settings.tts_engine,
         "tts_voice": settings.tts_voice,
         "tts_rate": settings.tts_rate,
+        "tts_vieneu_model_path": settings.tts_vieneu_model_path,
+        "tts_vieneu_voice_id": settings.tts_vieneu_voice_id,
+        "tts_vieneu_ref_audio": settings.tts_vieneu_ref_audio,
+        "tts_vieneu_temperature": str(settings.tts_vieneu_temperature),
+        "tts_vieneu_top_k": str(settings.tts_vieneu_top_k),
+        "tts_vieneu_max_chars": str(settings.tts_vieneu_max_chars),
+    }
+
+
+@app.get("/speech/vieneu/voices")
+async def list_vieneu_voices() -> dict[str, object]:
+    vieneu_installed = speech_service._is_vieneu_available()
+    voices = await speech_service.list_vieneu_voices()
+    return {
+        "status": "ok",
+        "tts_engine": settings.tts_engine,
+        "vieneu_installed": vieneu_installed,
+        "voices": voices,
     }
 
 
@@ -180,20 +237,23 @@ async def handle_turn(session_id: str, payload: TurnRequest) -> ConversationResp
 @app.post("/sessions/{session_id}/turn/stream")
 async def handle_turn_stream(session_id: str, payload: TurnRequest) -> StreamingResponse:
     """Stream conversation response with interleaved text and audio chunks for lower latency."""
-    try:
-        async def response_stream():
+    async def response_stream():
+        try:
             async for chunk in conversation_engine.handle_turn_stream(session_id, payload.transcript):
                 # Yield JSON-encoded chunks: {"type": "text", "content": "..."} or {"type": "audio", "content": base64}
                 yield json.dumps(chunk, ensure_ascii=False).encode("utf-8") + b"\n"
+        except httpx.HTTPStatusError as exc:
+            detail = exc.response.text or "Khong the tao don tu core backend."
+            yield json.dumps({"type": "error", "message": detail}, ensure_ascii=False).encode("utf-8") + b"\n"
+        except httpx.HTTPError:
+            yield json.dumps(
+                {"type": "error", "message": "Khong the ket noi toi core backend."},
+                ensure_ascii=False,
+            ).encode("utf-8") + b"\n"
+        except ProviderError as exc:
+            yield json.dumps({"type": "error", "message": str(exc)}, ensure_ascii=False).encode("utf-8") + b"\n"
 
-        return StreamingResponse(response_stream(), media_type="application/x-ndjson")
-    except httpx.HTTPStatusError as exc:
-        detail = exc.response.text or "Khong the tao don tu core backend."
-        raise HTTPException(status_code=502, detail=detail) from exc
-    except httpx.HTTPError as exc:
-        raise HTTPException(status_code=502, detail="Khong the ket noi toi core backend.") from exc
-    except ProviderError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return StreamingResponse(response_stream(), media_type="application/x-ndjson")
 
 
 @app.post("/sessions/{session_id}/reset", response_model=ConversationResponse)
@@ -245,8 +305,14 @@ async def save_session_feedback(session_id: str, payload: FeedbackRequest) -> di
 
 @app.post("/speech/synthesize")
 async def synthesize_speech(payload: SpeechSynthesisRequest) -> Response:
+    vieneu_overrides = build_vieneu_overrides(payload)
     try:
-        audio = await speech_service.synthesize(payload.text, payload.voice, payload.rate)
+        audio = await speech_service.synthesize(
+            payload.text,
+            payload.voice,
+            payload.rate,
+            vieneu_overrides=vieneu_overrides,
+        )
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Khong the tao giong noi: {exc}") from exc
 
@@ -255,9 +321,15 @@ async def synthesize_speech(payload: SpeechSynthesisRequest) -> Response:
 
 @app.post("/speech/synthesize/stream")
 async def synthesize_speech_stream(payload: SpeechSynthesisRequest) -> StreamingResponse:
+    vieneu_overrides = build_vieneu_overrides(payload)
     try:
         async def audio_stream():
-            async for chunk in speech_service.synthesize_stream(payload.text, payload.voice, payload.rate):
+            async for chunk in speech_service.synthesize_stream(
+                payload.text,
+                payload.voice,
+                payload.rate,
+                vieneu_overrides=vieneu_overrides,
+            ):
                 yield chunk
 
         return StreamingResponse(audio_stream(), media_type="audio/mpeg")
@@ -289,6 +361,24 @@ async def transcribe_speech_ws(websocket: WebSocket) -> None:
     last_partial_size = 0
     min_partial_interval_sec = 0.32
     min_partial_delta_bytes = 6_000
+    websocket_open = True
+
+    async def send_ws_json(payload: dict[str, object]) -> bool:
+        nonlocal websocket_open
+        if not websocket_open:
+            return False
+        try:
+            await websocket.send_json(payload)
+            return True
+        except WebSocketDisconnect:
+            websocket_open = False
+            return False
+        except RuntimeError as exc:
+            # Starlette raises RuntimeError when attempting to send after close.
+            if "close message has been sent" in str(exc).lower():
+                websocket_open = False
+                return False
+            raise
 
     def configure_stream_mode(mode: str) -> None:
         nonlocal stream_mode, min_partial_interval_sec, min_partial_delta_bytes
@@ -330,7 +420,8 @@ async def transcribe_speech_ws(websocket: WebSocket) -> None:
 
         if transcript and transcript != last_partial:
             last_partial = transcript
-            await websocket.send_json({"type": "partial", "transcript": transcript})
+            if not await send_ws_json({"type": "partial", "transcript": transcript}):
+                return
         last_partial_at = now
         last_partial_size = snapshot_size
 
@@ -374,21 +465,23 @@ async def transcribe_speech_ws(websocket: WebSocket) -> None:
                 try:
                     snapshot = bytes(audio_buffer)
                     if not snapshot:
-                        await websocket.send_json(
+                        if not await send_ws_json(
                             {
                                 "type": "final",
                                 "status": "retry",
                                 "transcript": "",
                                 "message": "Minh nghe chua ro, ban noi lai giup minh nhe.",
                             },
-                        )
+                        ):
+                            return
                         continue
 
                     await flush_partial(force=True)
                     if stream_mode == "order" and last_partial and speech_service.is_actionable_transcript(last_partial):
-                        await websocket.send_json(
+                        if not await send_ws_json(
                             {"type": "final", "status": "ok", "transcript": last_partial},
-                        )
+                        ):
+                            return
                         audio_buffer.clear()
                         continue
 
@@ -397,19 +490,43 @@ async def transcribe_speech_ws(websocket: WebSocket) -> None:
                         filename,
                         mode=stream_mode,
                     )
-                    await websocket.send_json(
+                    if not await send_ws_json(
                         {"type": "final", "status": "ok", "transcript": final_transcript},
-                    )
+                    ):
+                        return
                 except SpeechNotHeardError as exc:
-                    await websocket.send_json(
+                    if not await send_ws_json(
                         {"type": "final", "status": "retry", "transcript": "", "message": str(exc)},
-                    )
+                    ):
+                        return
                 except Exception as exc:
-                    await websocket.send_json(
+                    if not await send_ws_json(
                         {"type": "final", "status": "error", "message": str(exc), "transcript": ""},
-                    )
+                    ):
+                        return
                 finally:
                     audio_buffer.clear()
                 continue
     except WebSocketDisconnect:
         return
+
+
+def build_vieneu_overrides(payload: SpeechSynthesisRequest) -> dict[str, object] | None:
+    overrides: dict[str, object] = {}
+
+    if payload.engine is not None:
+        overrides["engine"] = payload.engine
+    if payload.vieneu_voice_id is not None:
+        overrides["vieneu_voice_id"] = payload.vieneu_voice_id
+    if payload.vieneu_ref_audio is not None:
+        overrides["vieneu_ref_audio"] = payload.vieneu_ref_audio
+    if payload.vieneu_ref_text is not None:
+        overrides["vieneu_ref_text"] = payload.vieneu_ref_text
+    if payload.vieneu_temperature is not None:
+        overrides["vieneu_temperature"] = payload.vieneu_temperature
+    if payload.vieneu_top_k is not None:
+        overrides["vieneu_top_k"] = payload.vieneu_top_k
+    if payload.vieneu_max_chars is not None:
+        overrides["vieneu_max_chars"] = payload.vieneu_max_chars
+
+    return overrides or None

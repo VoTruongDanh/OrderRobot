@@ -1,5 +1,5 @@
 ﻿<!DOCTYPE html>
-
+<!-- Build: 2025-03-27-16:45:00 -->
 <html class="light" lang="en"><head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
@@ -37,6 +37,10 @@
             --robot-core-glow: rgba(0,210,253,0.5);
             --robot-accent-color: #1f2937;
             --robot-outfit-gradient: linear-gradient(180deg, #ffffff, #e5e7eb);
+            --robot-outfit-overlay: none;
+            --robot-arm-custom-color: #22d3ee;
+            --robot-face-frame-scale: 1;
+            --robot-face-frame-opacity: 1;
         }
 
         /* Layout & Clipping Fixes */
@@ -59,6 +63,32 @@
             z-index: 20;
         }
 
+        body.admin-preview-mode aside,
+        body.admin-preview-mode #menu-toggle-dock,
+        body.admin-preview-mode #sliding-menu,
+        body.admin-preview-mode #disco-ball,
+        body.admin-preview-mode .camera-mini-panel,
+        body.admin-preview-mode .voice-mini-panel,
+        body.admin-preview-mode .order-status-hud,
+        body.admin-preview-mode .cart-mini-panel {
+            display: none !important;
+        }
+        body.admin-preview-mode #stage-container {
+            transform: none !important;
+            height: 100vh;
+            padding-top: 22px;
+        }
+        body.admin-preview-mode #robot-container {
+            transform: scale(0.82) !important;
+            scale: 1 !important;
+        }
+        body.admin-preview-mode #robot-shadow {
+            bottom: 14px;
+        }
+        body.admin-preview-mode .robot-float {
+            animation: none;
+        }
+
         /* Floating Animation */
         .robot-float { animation: float 6s cubic-bezier(0.45, 0, 0.55, 1) infinite; }
         @keyframes float {
@@ -74,43 +104,751 @@
             100% { transform: scale(8); opacity: 0; border-width: 1px; }
         }
 
-        /* Face States */
-        .face-eye { width: 12px; height: 12px; border-radius: 50%; background: #00d2fd; box-shadow: 0 0 10px #00d2fd; transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
-        .face-mouth { width: 24px; height: 4px; background: #00d2fd; border-radius: 99px; transition: all 0.3s; opacity: 0; }
-        .face-nose {
-            width: 9px;
-            height: 5px;
-            border-radius: 999px;
-            background: rgba(255,255,255,0.26);
-            border: 1px solid rgba(148,163,184,0.4);
-            margin-top: -1px;
-            transition: transform 0.25s ease;
-        }
-        .face-blush {
-            position: absolute;
-            width: 16px;
-            height: 8px;
-            border-radius: 999px;
-            background: rgba(251, 113, 133, 0.35);
-            opacity: 0;
-            transition: opacity 0.25s ease;
-            top: 18px;
-        }
-        .face-blush-left { left: 14px; }
-        .face-blush-right { right: 14px; }
+        /* Modular Builder - REDESIGNED VECTOR STYLE */
         
-        .state-angry .face-eye { background: #ff4444; box-shadow: 0 0 15px #ff4444; transform: scaleY(0.4) rotate(15deg); }
-        .state-happy .face-eye { transform: scale(1.2) translateY(-2px); }
-        .state-happy .face-mouth { opacity: 1; height: 8px; border-radius: 0 0 12px 12px; }
-        .state-sleep .face-eye { height: 2px; transform: scaleX(1.5); box-shadow: none; opacity: 0.5; }
-        .state-surprised .face-eye { transform: scale(1.8); }
-        .state-cute .face-eye { transform: scale(1.2) translateY(-1px); }
-        #face-screen[data-wink='true'] .face-eye:first-child { transform: scaleY(0.12) translateY(8px); box-shadow: none; }
-        #face-screen[data-blush='true'] .face-blush { opacity: 1; }
-        #face-screen[data-mouth='smile'] .face-mouth { opacity: 1; height: 8px; border-radius: 0 0 12px 12px; }
-        #face-screen[data-mouth='kiss'] .face-mouth { opacity: 1; width: 10px; height: 10px; border-radius: 999px; }
-        #face-screen[data-mouth='tiny'] .face-mouth { opacity: 1; width: 14px; height: 3px; border-radius: 999px; }
-        #face-screen[data-nose-scrunch='true'] .face-nose { transform: scale(0.8) translateY(-2px); }
+        /* HEAD SHAPES - Vector TV/Monitor Style */
+        #head {
+            position: relative;
+            border: 4px solid #1e293b !important;
+            background: #ffffff !important;
+            box-shadow: 
+                0 8px 24px rgba(0, 0, 0, 0.15),
+                inset 0 2px 0 rgba(255, 255, 255, 0.8) !important;
+        }
+        
+        #head.head-shape-soft-square { 
+            border-radius: 2.8rem; 
+            clip-path: none; 
+        }
+        
+        #head.head-shape-visor { 
+            border-radius: 2.4rem 2.4rem 3.2rem 3.2rem; 
+            clip-path: none; 
+        }
+        
+        #head.head-shape-hex { 
+            border-radius: 2rem; 
+            clip-path: polygon(12% 0, 88% 0, 100% 20%, 100% 80%, 88% 100%, 12% 100%, 0 80%, 0 20%); 
+        }
+        
+        #head.head-shape-bubble { 
+            border-radius: 50% 50% 45% 45% / 55% 55% 45% 45%; 
+            clip-path: none; 
+        }
+        
+        /* Head inner screen bezel */
+        #head::before {
+            content: '';
+            position: absolute;
+            inset: 8px;
+            border-radius: inherit;
+            background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%);
+            border: 3px solid #334155;
+            box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.4);
+            z-index: 0;
+        }
+        
+        /* Head antenna mount */
+        #head::after {
+            content: '';
+            position: absolute;
+            top: -8px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 16px;
+            height: 12px;
+            background: #1e293b;
+            border: 3px solid #1e293b;
+            border-radius: 8px 8px 0 0;
+            z-index: 50;
+        }
+
+        /* HEAD ACCESSORIES - Vector Style */
+        #robot-head-accessory {
+            position: absolute;
+            z-index: 55;
+            pointer-events: none;
+        }
+        
+        #robot-head-accessory.head-accessory-none { display: none; }
+        
+        #robot-head-accessory.head-accessory-antenna {
+            display: block;
+            width: 6px;
+            height: 28px;
+            left: 50%;
+            top: -22px;
+            transform: translateX(-50%);
+            border-radius: 999px;
+            background: linear-gradient(180deg, #64748b, #475569);
+            border: 2px solid #1e293b;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+        }
+        
+        #robot-head-accessory.head-accessory-antenna::after {
+            content: '';
+            position: absolute;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            left: 50%;
+            top: -8px;
+            transform: translateX(-50%);
+            background: var(--robot-arm-custom-color);
+            border: 3px solid #1e293b;
+            box-shadow: 
+                0 0 16px var(--robot-arm-custom-color),
+                0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+        
+        #robot-head-accessory.head-accessory-halo {
+            display: block;
+            width: 64px;
+            height: 20px;
+            left: 50%;
+            top: -24px;
+            transform: translateX(-50%);
+            border-radius: 999px;
+            border: 4px solid #22d3ee;
+            background: rgba(34, 211, 238, 0.1);
+            box-shadow: 
+                0 0 20px rgba(34, 211, 238, 0.6),
+                inset 0 2px 4px rgba(255, 255, 255, 0.3);
+        }
+        
+        #robot-head-accessory.head-accessory-crown {
+            display: block;
+            width: 32px;
+            height: 18px;
+            left: 50%;
+            top: -14px;
+            transform: translateX(-50%);
+            background: linear-gradient(180deg, #fbbf24, #f59e0b);
+            border: 3px solid #1e293b;
+            clip-path: polygon(0 100%, 0 45%, 18% 52%, 26% 0, 50% 55%, 74% 0, 82% 52%, 100% 45%, 100% 100%);
+            filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.3));
+        }
+
+        /* ARMS - Vector Segmented Style */
+        #left-arm,
+        #right-arm {
+            background: #1e293b;
+            border: 4px solid #1e293b;
+            box-shadow: 
+                0 4px 12px rgba(0, 0, 0, 0.2),
+                inset 0 2px 0 rgba(255, 255, 255, 0.1);
+            position: absolute;
+            height: 96px;
+        }
+        
+        /* Arm joint/elbow - Cyan circle */
+        #left-arm::before,
+        #right-arm::before {
+            content: '';
+            position: absolute;
+            left: 50%;
+            top: 40%;
+            transform: translate(-50%, -50%);
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: var(--robot-arm-custom-color);
+            border: 3px solid #1e293b;
+            box-shadow: 
+                0 0 16px var(--robot-arm-custom-color),
+                inset 0 1px 2px rgba(255, 255, 255, 0.4);
+            z-index: 10;
+        }
+        
+        /* Arm hand/gripper - Rounded bottom */
+        #left-arm::after,
+        #right-arm::after {
+            content: '';
+            position: absolute;
+            left: 50%;
+            bottom: -6px;
+            transform: translateX(-50%);
+            width: 24px;
+            height: 20px;
+            border-radius: 10px 10px 14px 14px;
+            background: #1e293b;
+            border: 3px solid #1e293b;
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.3);
+        }
+        
+        #left-arm.arm-style-sleek,
+        #right-arm.arm-style-sleek {
+            width: 14px;
+            border-radius: 999px;
+        }
+        
+        #left-arm.arm-style-chunky,
+        #right-arm.arm-style-chunky {
+            width: 18px;
+            border-radius: 24px;
+        }
+        
+        #left-arm.arm-style-floating,
+        #right-arm.arm-style-floating {
+            width: 12px;
+            border-radius: 999px;
+            background: var(--robot-arm-custom-color);
+            border-color: var(--robot-arm-custom-color);
+            box-shadow: 
+                0 0 24px var(--robot-arm-custom-color),
+                0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+        
+        #left-arm.arm-style-floating::before,
+        #right-arm.arm-style-floating::before {
+            animation: float-joint 3s ease-in-out infinite;
+            background: #ffffff;
+            border-color: var(--robot-arm-custom-color);
+        }
+        
+        @keyframes float-joint {
+            0%, 100% { transform: translate(-50%, -50%) scale(1); }
+            50% { transform: translate(-50%, -50%) scale(1.15); }
+        }
+
+        /* BODY - Vector Rounded Style */
+        #body {
+            overflow: visible;
+            isolation: isolate;
+            background: #ffffff !important;
+            border: 4px solid #1e293b !important;
+            box-shadow: 
+                0 12px 32px rgba(0, 0, 0, 0.2),
+                inset 0 2px 0 rgba(255, 255, 255, 0.8) !important;
+        }
+        
+        #body.body-shape-core { 
+            border-radius: 2rem; 
+        }
+        
+        #body.body-shape-shield { 
+            border-radius: 40px 40px 28px 28px / 24px 24px 44px 44px; 
+        }
+        
+        #body.body-shape-orb { 
+            border-radius: 48% 48% 44% 44%; 
+        }
+        
+        #body.body-shape-compact { 
+            height: 10.5rem; 
+            border-radius: 28px; 
+        }
+        
+        /* Neck connector */
+        #neck {
+            background: #ffffff !important;
+            border: 3px solid #1e293b !important;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
+            z-index: 25 !important;
+        }
+
+        /* OUTFIT COMPONENTS - Vector Flat Style */
+        .robot-outfit-shell,
+        .robot-outfit-collar,
+        .robot-outfit-panel,
+        .robot-outfit-belt,
+        .robot-outfit-badge {
+            position: absolute;
+            pointer-events: none;
+            transition: all 0.32s ease;
+        }
+        
+        .robot-outfit-shell {
+            inset: 0;
+            border-radius: inherit;
+            z-index: 0;
+            background: transparent;
+        }
+        
+        .robot-outfit-shell::before {
+            content: '';
+            position: absolute;
+            inset: 12px 18px 18px;
+            border-radius: 20px;
+            border: 3px solid #e2e8f0;
+            background: linear-gradient(180deg, rgba(248, 250, 252, 0.6), rgba(241, 245, 249, 0.4));
+            opacity: 1;
+        }
+        
+        .robot-outfit-shell::after {
+            content: '';
+            position: absolute;
+            left: 50%;
+            top: 48px;
+            width: 2px;
+            height: 70px;
+            transform: translateX(-50%);
+            background: #cbd5e1;
+            opacity: 0.6;
+        }
+        
+        .robot-outfit-collar {
+            top: 12px;
+            left: 50%;
+            width: 80px;
+            height: 24px;
+            transform: translateX(-50%);
+            border-radius: 0 0 16px 16px;
+            border: 3px solid #1e293b;
+            border-top: none;
+            background: #ffffff;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            z-index: 1;
+        }
+        
+        .robot-outfit-panel {
+            top: 48px;
+            width: 26px;
+            height: 68px;
+            border-radius: 16px;
+            background: #f1f5f9;
+            border: 3px solid #cbd5e1;
+            z-index: 2;
+            opacity: 1;
+        }
+        
+        .robot-outfit-panel--left {
+            left: 20px;
+            transform: rotate(-4deg);
+        }
+        
+        .robot-outfit-panel--right {
+            right: 20px;
+            transform: rotate(4deg);
+        }
+        
+        .robot-outfit-belt {
+            bottom: 16px;
+            left: 50%;
+            width: 90px;
+            height: 12px;
+            transform: translateX(-50%);
+            border-radius: 999px;
+            background: #cbd5e1;
+            border: 2px solid #94a3b8;
+            z-index: 1;
+            opacity: 1;
+        }
+        
+        .robot-outfit-badge {
+            top: 64px;
+            left: 50%;
+            width: 20px;
+            height: 20px;
+            transform: translateX(-50%);
+            border-radius: 50%;
+            border: 3px solid #1e293b;
+            background: var(--robot-core-color);
+            box-shadow: 
+                0 0 16px var(--robot-core-glow),
+                0 2px 8px rgba(0, 0, 0, 0.2);
+            z-index: 3;
+        }
+        
+        .robot-core-hub {
+            z-index: 4;
+            border: 3px solid #e2e8f0 !important;
+            box-shadow: 
+                0 2px 8px rgba(0, 0, 0, 0.1),
+                inset 0 2px 4px rgba(0, 0, 0, 0.05) !important;
+        }
+        
+        .robot-core-hub #core {
+            border: 3px solid #1e293b !important;
+            box-shadow: 
+                0 0 20px var(--robot-core-glow),
+                inset 0 2px 4px rgba(255, 255, 255, 0.4) !important;
+        }
+
+        /* SERVICE OUTFIT - Cyan/Blue Theme */
+        #body.outfit-style-service {
+            background: linear-gradient(180deg, #e0f2fe, #bae6fd) !important;
+            border-color: #0284c7 !important;
+            box-shadow: 
+                0 12px 32px rgba(2, 132, 199, 0.3),
+                inset 0 2px 0 rgba(255, 255, 255, 0.8) !important;
+        }
+        
+        #body.outfit-style-service .robot-outfit-collar {
+            background: linear-gradient(180deg, #ffffff, #e0f2fe);
+            border-color: #0284c7;
+        }
+        
+        #body.outfit-style-service .robot-outfit-panel {
+            background: #bae6fd;
+            border-color: #0ea5e9;
+        }
+        
+        #body.outfit-style-service .robot-outfit-belt {
+            background: #38bdf8;
+            border-color: #0284c7;
+        }
+        
+        #body.outfit-style-service .robot-outfit-badge {
+            background: #0ea5e9;
+            border-color: #0284c7;
+            box-shadow: 
+                0 0 20px rgba(14, 165, 233, 0.6),
+                0 2px 8px rgba(0, 0, 0, 0.2);
+        }
+
+        /* STREET OUTFIT - Green/Teal Theme */
+        #body.outfit-style-street {
+            background: linear-gradient(180deg, #d1fae5, #a7f3d0) !important;
+            border-color: #059669 !important;
+            box-shadow: 
+                0 12px 32px rgba(5, 150, 105, 0.3),
+                inset 0 2px 0 rgba(255, 255, 255, 0.8) !important;
+        }
+        
+        #body.outfit-style-street .robot-outfit-collar {
+            background: linear-gradient(180deg, #6ee7b7, #34d399);
+            border-color: #059669;
+        }
+        
+        #body.outfit-style-street .robot-outfit-panel {
+            background: #6ee7b7;
+            border-color: #10b981;
+        }
+        
+        #body.outfit-style-street .robot-outfit-belt {
+            background: #34d399;
+            border-color: #059669;
+        }
+        
+        #body.outfit-style-street .robot-outfit-badge {
+            background: #10b981;
+            border-color: #059669;
+            border-radius: 8px;
+            box-shadow: 
+                0 0 20px rgba(16, 185, 129, 0.6),
+                0 2px 8px rgba(0, 0, 0, 0.2);
+        }
+
+        /* FORMAL OUTFIT - Gray/White Theme */
+        #body.outfit-style-formal {
+            background: linear-gradient(180deg, #f8fafc, #e2e8f0) !important;
+            border-color: #475569 !important;
+            box-shadow: 
+                0 12px 32px rgba(71, 85, 105, 0.3),
+                inset 0 2px 0 rgba(255, 255, 255, 0.8) !important;
+        }
+        
+        #body.outfit-style-formal .robot-outfit-shell::before {
+            inset: 10px 26px 30px;
+            border-radius: 0 0 20px 20px;
+            border-color: #cbd5e1;
+            background: linear-gradient(180deg, #ffffff, #f1f5f9);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+        
+        #body.outfit-style-formal .robot-outfit-collar {
+            background: linear-gradient(180deg, #ffffff, #f1f5f9);
+            border-color: #94a3b8;
+        }
+        
+        #body.outfit-style-formal .robot-outfit-panel {
+            background: #1e293b;
+            border-color: #0f172a;
+            width: 30px;
+        }
+        
+        #body.outfit-style-formal .robot-outfit-belt {
+            background: #cbd5e1;
+            border-color: #94a3b8;
+        }
+        
+        #body.outfit-style-formal .robot-outfit-badge {
+            width: 14px;
+            height: 24px;
+            border-radius: 10px;
+            background: linear-gradient(180deg, #94a3b8, #64748b);
+            border-color: #475569;
+        }
+
+        /* BATTLE OUTFIT - Red/Dark Theme */
+        #body.outfit-style-battle {
+            background: linear-gradient(180deg, #1e293b, #0f172a) !important;
+            border-color: #dc2626 !important;
+            box-shadow: 
+                0 12px 32px rgba(220, 38, 38, 0.4),
+                inset 0 2px 0 rgba(248, 113, 113, 0.3) !important;
+        }
+        
+        #body.outfit-style-battle .robot-outfit-shell::before {
+            border-color: #dc2626;
+            background: linear-gradient(180deg, rgba(15, 23, 42, 0.8), rgba(15, 23, 42, 0.9));
+        }
+        
+        #body.outfit-style-battle .robot-outfit-collar {
+            background: linear-gradient(180deg, #ef4444, #dc2626);
+            border-color: #991b1b;
+        }
+        
+        #body.outfit-style-battle .robot-outfit-panel {
+            background: #dc2626;
+            border-color: #991b1b;
+        }
+        
+        #body.outfit-style-battle .robot-outfit-belt {
+            background: #dc2626;
+            border-color: #991b1b;
+            height: 14px;
+        }
+        
+        #body.outfit-style-battle .robot-outfit-badge {
+            background: radial-gradient(circle, #f87171, #dc2626);
+            border-color: #991b1b;
+            box-shadow: 
+                0 0 24px rgba(248, 113, 113, 0.8),
+                0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        /* Face States */
+        .face-screen-panel {
+            pointer-events: none;
+            position: absolute;
+            inset: 0;
+            border: none;
+            background: transparent;
+            box-shadow: none;
+            isolation: isolate;
+            transform-origin: center center;
+            transform: scale(var(--robot-face-frame-scale));
+            opacity: var(--robot-face-frame-opacity);
+            transition: transform 0.24s ease, opacity 0.24s ease;
+        }
+        .face-screen-panel::before {
+            content: none;
+        }
+        .face-eyes-row {
+            position: relative;
+            z-index: 1;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            width: 78px;
+            margin-top: 14px;
+        }
+        .face-eye {
+            position: relative;
+            background: #22d3ee;
+            box-shadow: 0 0 12px rgba(34, 211, 238, 0.78);
+            transition: all 0.22s ease;
+            animation: face-idle-pulse 2.6s ease-in-out infinite;
+        }
+        .face-eye--left {
+            width: 18px;
+            height: 11px;
+            border-radius: 999px 999px 3px 3px;
+            clip-path: ellipse(50% 60% at 50% 100%);
+        }
+        .face-eye--right {
+            width: 11px;
+            height: 18px;
+            border-radius: 999px;
+        }
+
+        #face-screen.eye-style-round .face-eye--left,
+        #face-screen.eye-style-round .face-eye--right {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            clip-path: none;
+        }
+        #face-screen.eye-style-anime .face-eye--left {
+            width: 20px;
+            height: 9px;
+            clip-path: ellipse(52% 62% at 50% 100%);
+        }
+        #face-screen.eye-style-anime .face-eye--right {
+            width: 10px;
+            height: 15px;
+        }
+        #face-screen.eye-style-mono .face-eyes-row {
+            width: 36px;
+            justify-content: center;
+        }
+        #face-screen.eye-style-mono .face-eye--left {
+            width: 26px;
+            height: 10px;
+            clip-path: none;
+            border-radius: 999px;
+        }
+        #face-screen.eye-style-mono .face-eye--right {
+            display: none;
+        }
+
+        /* New eye styles - Happy ^_^ */
+        #face-screen.eye-style-happy .face-eye--left,
+        #face-screen.eye-style-happy .face-eye--right {
+            width: 22px;
+            height: 6px;
+            border-radius: 0 0 999px 999px;
+            clip-path: none;
+            background: #22d3ee;
+            box-shadow: 0 0 12px rgba(34, 211, 238, 0.7);
+            transform: rotate(-2deg);
+        }
+        #face-screen.eye-style-happy .face-eye--left {
+            transform: rotate(2deg);
+        }
+
+        /* New eye styles - Wink >_< */
+        #face-screen.eye-style-wink .face-eye--left {
+            width: 20px;
+            height: 6px;
+            border-radius: 0 0 999px 999px;
+            clip-path: none;
+            background: #22d3ee;
+            box-shadow: 0 0 12px rgba(34, 211, 238, 0.7);
+            transform: rotate(3deg);
+        }
+        #face-screen.eye-style-wink .face-eye--right {
+            width: 20px;
+            height: 6px;
+            border-radius: 0 0 999px 999px;
+            clip-path: none;
+            background: #22d3ee;
+            box-shadow: 0 0 12px rgba(34, 211, 238, 0.7);
+            transform: rotate(-3deg);
+        }
+
+        /* New eye styles - Surprised O_O */
+        #face-screen.eye-style-surprised .face-eye--left,
+        #face-screen.eye-style-surprised .face-eye--right {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            clip-path: none;
+            background: #22d3ee;
+            box-shadow: 0 0 14px rgba(34, 211, 238, 0.8);
+        }
+
+        /* New eye styles - Sleepy -_- */
+        #face-screen.eye-style-sleepy .face-eye--left,
+        #face-screen.eye-style-sleepy .face-eye--right {
+            width: 16px;
+            height: 3px;
+            border-radius: 999px;
+            clip-path: none;
+            background: #22d3ee;
+            box-shadow: none;
+            opacity: 0.6;
+            animation: none;
+        }
+
+        .face-mouth {
+            position: relative;
+            z-index: 1;
+            width: 16px;
+            height: 3px;
+            margin-top: 9px;
+            border-radius: 999px;
+            background: rgba(129, 146, 181, 0.45);
+            opacity: 0.4;
+            transition: all 0.2s ease;
+        }
+
+        #face-screen.mouth-style-none .face-mouth { opacity: 0; width: 0; height: 0; }
+        #face-screen.mouth-style-smile .face-mouth {
+            opacity: 0.92;
+            width: 18px;
+            height: 5px;
+            border-radius: 0 0 12px 12px;
+            background: rgba(103, 232, 249, 0.62);
+        }
+        #face-screen.mouth-style-pixel .face-mouth {
+            width: 10px;
+            height: 4px;
+            border-radius: 2px;
+            background: rgba(129, 146, 181, 0.68);
+        }
+
+        /* New mouth styles - Big Smile :D */
+        #face-screen.mouth-style-big-smile .face-mouth {
+            opacity: 1;
+            width: 24px;
+            height: 8px;
+            border-radius: 0 0 16px 16px;
+            background: linear-gradient(180deg, rgba(103, 232, 249, 0.8), rgba(34, 211, 238, 0.7));
+            box-shadow: 0 0 8px rgba(103, 232, 249, 0.4);
+        }
+
+        /* New mouth styles - Surprised :O */
+        #face-screen.mouth-style-surprised-o .face-mouth {
+            opacity: 1;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: rgba(34, 211, 238, 0.7);
+            box-shadow: 0 0 8px rgba(34, 211, 238, 0.4);
+        }
+
+        /* New mouth styles - Sad :( */
+        #face-screen.mouth-style-sad .face-mouth {
+            opacity: 0.85;
+            width: 18px;
+            height: 5px;
+            border-radius: 12px 12px 0 0;
+            background: rgba(129, 146, 181, 0.6);
+        }
+
+        /* New mouth styles - Tongue Out :P */
+        #face-screen.mouth-style-tongue-out .face-mouth {
+            opacity: 1;
+            width: 14px;
+            height: 6px;
+            border-radius: 0 0 10px 10px;
+            background: rgba(251, 113, 133, 0.7);
+            box-shadow: 0 0 6px rgba(251, 113, 133, 0.3);
+        }
+        #face-screen.mouth-style-tongue-out .face-mouth::after {
+            content: '';
+            position: absolute;
+            bottom: -4px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 6px;
+            height: 6px;
+            border-radius: 0 0 6px 6px;
+            background: rgba(251, 113, 133, 0.85);
+        }
+
+        .face-nose,
+        .face-blush {
+            display: none;
+        }
+
+        @keyframes face-idle-pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.04); }
+        }
+        
+        .state-angry .face-eye {
+            background: #fb7185;
+            box-shadow: 0 0 10px rgba(251, 113, 133, 0.78);
+        }
+        .state-angry .face-eye--left { transform: rotate(-12deg); }
+        .state-angry .face-eye--right { transform: rotate(12deg); }
+        .state-angry .face-mouth { opacity: 0.6; width: 12px; }
+        .state-happy .face-eye { background: #67e8f9; box-shadow: 0 0 14px rgba(103, 232, 249, 0.8); }
+        .state-happy .face-mouth { opacity: 0.95; width: 20px; height: 5px; border-radius: 0 0 12px 12px; background: rgba(103, 232, 249, 0.62); }
+        .state-sleep .face-eye { height: 3px; width: 14px; border-radius: 999px; clip-path: none; box-shadow: none; opacity: 0.5; animation: none; }
+        .state-surprised .face-eye--left { width: 14px; height: 14px; clip-path: none; border-radius: 50%; }
+        .state-surprised .face-eye--right { width: 14px; height: 14px; }
+        .state-surprised .face-mouth { width: 8px; height: 8px; border-radius: 50%; background: rgba(176, 192, 222, 0.66); opacity: 0.92; }
+        .state-cute .face-eye--left { width: 19px; }
+        .state-cute .face-mouth { opacity: 0.72; width: 14px; background: rgba(56, 189, 248, 0.52); }
+        #face-screen[data-wink='true'] .face-eye--left { height: 3px; width: 13px; border-radius: 999px; clip-path: none; box-shadow: none; animation: none; }
+        #face-screen[data-mouth='smile'] .face-mouth { opacity: 0.95; width: 20px; height: 5px; border-radius: 0 0 12px 12px; background: rgba(103, 232, 249, 0.62); }
+        #face-screen[data-mouth='kiss'] .face-mouth { opacity: 1; width: 10px; height: 10px; border-radius: 50%; background: rgba(176, 192, 222, 0.66); }
+        #face-screen[data-mouth='tiny'] .face-mouth { opacity: 0.5; width: 10px; height: 2px; border-radius: 999px; }
 
         /* Zero-G Orbits */
         @keyframes orbit-parts {
@@ -340,10 +1078,6 @@
             line-height: 1.35;
             min-height: 1.8em;
         }
-        .voice-mini-panel.content-only .voice-mini-head,
-        .voice-mini-panel.content-only .voice-mini-status {
-            display: none;
-        }
         .voice-mini-panel.content-only {
             background: transparent;
             border: none;
@@ -358,8 +1092,8 @@
         }
         .chat-mini-list {
             display: grid;
-            gap: 6px;
-            max-height: 150px;
+            gap: 4px;
+            max-height: 196px;
             overflow: auto;
             padding-right: 2px;
         }
@@ -368,39 +1102,170 @@
             font-size: 0.74rem;
             color: #64748b;
         }
-        .chat-mini-item {
-            border-radius: 10px;
-            border: 1px solid rgba(148, 163, 184, 0.2);
-            background: rgba(255,255,255,0.9);
-            padding: 8px 10px;
-            display: grid;
-            gap: 4px;
-            box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+        .chat-mini-line {
+            margin: 0;
+            padding: 0;
+            font-size: 0.75rem;
+            line-height: 1.38;
+            color: #0f172a;
+            word-break: break-word;
         }
-        .chat-mini-role {
-            font-size: 0.62rem;
+        .chat-mini-line-label {
+            font-size: 0.66rem;
             font-weight: 800;
-            letter-spacing: 0.08em;
+            letter-spacing: 0.06em;
             text-transform: uppercase;
+            margin-right: 6px;
             color: #64748b;
         }
-        .chat-mini-text {
+        .chat-mini-line.user .chat-mini-line-label {
+            color: #0f766e;
+        }
+        .chat-mini-line.assistant .chat-mini-line-label {
+            color: #3730a3;
+        }
+
+        .order-status-hud {
+            position: fixed;
+            inset: 0;
+            z-index: 160;
+            display: grid;
+            place-items: center;
+            pointer-events: none;
+        }
+        .order-status-hud[hidden] {
+            display: none;
+        }
+        .order-status-backdrop {
+            position: absolute;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.38);
+            backdrop-filter: blur(2px);
+        }
+        .order-status-card,
+        .order-rating-card {
+            position: relative;
+            pointer-events: auto;
+            width: min(92vw, 420px);
+            border-radius: 18px;
+            border: 1px solid rgba(148, 163, 184, 0.3);
+            background: rgba(255, 255, 255, 0.96);
+            box-shadow: 0 20px 56px rgba(15, 23, 42, 0.28);
+            padding: 16px 16px 14px;
+            display: grid;
+            gap: 10px;
+        }
+        .order-status-title {
             margin: 0;
-            font-size: 0.75rem;
+            font-size: 1rem;
+            font-weight: 800;
+            letter-spacing: 0.02em;
+            color: #0f172a;
+        }
+        .order-status-sub {
+            margin: 0;
+            font-size: 0.8rem;
+            color: #475569;
+        }
+        .order-popup-lines {
+            display: grid;
+            gap: 6px;
+            max-height: 136px;
+            overflow: auto;
+            padding-right: 2px;
+        }
+        .order-popup-line {
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            gap: 6px;
+            align-items: center;
+            border-radius: 10px;
+            background: rgba(248, 250, 252, 0.95);
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            padding: 6px 8px;
+            font-size: 0.76rem;
+            color: #334155;
+        }
+        .order-popup-line strong {
+            color: #0f172a;
+        }
+        .order-popup-total {
+            margin: 0;
+            font-size: 0.82rem;
+            font-weight: 700;
+            color: #0f172a;
+        }
+        .order-popup-qr-wrap {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: 10px;
+            align-items: center;
+        }
+        .order-popup-qr {
+            width: 108px;
+            height: 108px;
+            border-radius: 12px;
+            border: 1px solid rgba(15, 23, 42, 0.2);
+            background: #fff;
+            padding: 8px;
+            display: grid;
+            grid-template-columns: repeat(21, 1fr);
+            grid-template-rows: repeat(21, 1fr);
+            gap: 1px;
+        }
+        .order-popup-qr-cell {
+            border-radius: 1px;
+            background: transparent;
+        }
+        .order-popup-qr-cell.on {
+            background: #0f172a;
+        }
+        .order-popup-countdown {
+            margin: 0;
+            font-size: 0.78rem;
+            font-weight: 700;
+            color: #0f766e;
+        }
+        .rating-stars {
+            display: grid;
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+            gap: 8px;
+        }
+        .rating-star-btn {
+            border-radius: 10px;
+            border: 1px solid rgba(148, 163, 184, 0.36);
+            background: #fff;
+            color: #334155;
+            font-size: 0.82rem;
+            font-weight: 700;
+            padding: 8px 0;
+            cursor: pointer;
+            transition: all 0.18s ease;
+        }
+        .rating-star-btn.active,
+        .rating-star-btn:hover {
+            background: #fef3c7;
+            border-color: #f59e0b;
+            color: #92400e;
+        }
+        .rating-comment-input {
+            width: 100%;
+            resize: vertical;
+            min-height: 64px;
+            max-height: 140px;
+            border-radius: 10px;
+            border: 1px solid rgba(148, 163, 184, 0.32);
+            background: #fff;
+            padding: 8px 10px;
+            font-size: 0.78rem;
             color: #0f172a;
             line-height: 1.35;
-            display: -webkit-box;
-            -webkit-line-clamp: 2;
-            -webkit-box-orient: vertical;
-            overflow: hidden;
         }
-        .chat-mini-item.user {
-            border-color: rgba(56, 189, 248, 0.22);
-            background: rgba(236, 254, 255, 0.9);
-        }
-        .chat-mini-item.assistant {
-            border-color: rgba(129, 140, 248, 0.18);
-            background: rgba(239, 246, 255, 0.86);
+        .rating-popup-countdown {
+            margin: 0;
+            font-size: 0.78rem;
+            font-weight: 700;
+            color: #4338ca;
         }
 
         .cart-mini-panel {
@@ -549,7 +1414,7 @@
             mix-blend-mode: screen;
         }
         .robot-effect.active {
-            animation: robot-effect-fly var(--effect-duration) ease-out forwards;
+            animation: robot-effect-fly var(--effect-duration) cubic-bezier(0.16, 0.72, 0.24, 1) forwards;
         }
         .robot-effect-heart {
             display: flex;
@@ -607,12 +1472,16 @@
             filter: drop-shadow(0 0 6px #22d3ee);
         }
         @keyframes robot-effect-fly {
-            0% { opacity: 0; transform: translate(-50%, -50%) scale(0.4) rotate(0deg); }
-            12% { opacity: 1; }
-            58% { opacity: 0.9; }
+            0% { opacity: 0; transform: translate(-50%, -50%) scale(0.22) rotate(0deg); }
+            10% { opacity: 0.95; }
+            46% {
+                opacity: 0.92;
+                transform: translate(calc(-50% + (var(--drift-x) * 0.48)), calc(-50% - (var(--rise-y) * 0.45))) scale(0.96) rotate(calc(var(--effect-rotate, 28deg) * 0.45));
+            }
+            76% { opacity: 0.66; }
             100% {
                 opacity: 0;
-                transform: translate(calc(-50% + var(--drift-x)), calc(-50% - var(--rise-y))) scale(1.22) rotate(var(--effect-rotate, 28deg));
+                transform: translate(calc(-50% + var(--drift-x)), calc(-50% - var(--rise-y))) scale(1.08) rotate(var(--effect-rotate, 28deg));
             }
         }
     </style>
@@ -624,7 +1493,7 @@
 <video class="camera-mini-video" id="camera-mini-video" autoplay muted playsinline></video>
 </div>
 </section>
-<section class="voice-mini-panel content-only" id="voice-mini-panel" aria-label="Voice va chat panel">
+<section class="voice-mini-panel" id="voice-mini-panel" aria-label="Voice va chat panel">
 <div class="voice-mini-head">
 <p class="voice-mini-title">Hoi thoai voice</p>
 <button class="voice-mini-toggle" id="voice-mini-toggle" type="button">Bat nghe</button>
@@ -640,6 +1509,33 @@
 <p class="cart-mini-empty">Chua co mon nao trong gio.</p>
 </div>
 <p class="cart-mini-total" id="cart-mini-total">Tong: 0 d</p>
+</section>
+<section class="order-status-hud" id="order-status-hud" hidden aria-label="Order status popup">
+<div class="order-status-backdrop"></div>
+<article class="order-status-card" id="order-popup-card">
+<p class="order-status-title">Don hang da tao</p>
+<p class="order-status-sub" id="order-popup-order-id">Ma don: --</p>
+<div class="order-popup-lines" id="order-popup-lines"></div>
+<p class="order-popup-total" id="order-popup-total">Tong: 0 d</p>
+<div class="order-popup-qr-wrap">
+<div class="order-popup-qr" id="order-popup-qr"></div>
+<p class="order-status-sub" id="order-popup-qr-label">Ma QR ao thanh toan.</p>
+</div>
+<p class="order-popup-countdown" id="order-popup-countdown">Tu dong dong sau 6s</p>
+</article>
+<article class="order-rating-card" id="rating-popup-card" hidden>
+<p class="order-status-title">Danh gia trai nghiem</p>
+<p class="order-status-sub">Vui long chon tu 1 den 5 sao cho don vua dat.</p>
+<div class="rating-stars" id="rating-stars">
+<button class="rating-star-btn" data-rating="1" type="button">1 Sao</button>
+<button class="rating-star-btn" data-rating="2" type="button">2 Sao</button>
+<button class="rating-star-btn" data-rating="3" type="button">3 Sao</button>
+<button class="rating-star-btn" data-rating="4" type="button">4 Sao</button>
+<button class="rating-star-btn" data-rating="5" type="button">5 Sao</button>
+</div>
+<textarea class="rating-comment-input" id="rating-comment-input" placeholder="Nhan xet ngan (khong bat buoc)"></textarea>
+<p class="rating-popup-countdown" id="rating-popup-countdown">Tu dong gui sau 6s</p>
+</article>
 </section>
 <!-- Top Layers -->
 <div class="fixed top-0 left-1/2 z-[60] pointer-events-none -translate-x-1/2" id="disco-ball">
@@ -675,10 +1571,10 @@
 <div class="robot-float flex flex-col items-center w-full h-full">
 <!-- Head -->
 <div class="robot-head w-36 h-28 bg-white rounded-[2.5rem] shadow-xl relative border-t border-slate-100 flex flex-col items-center justify-center z-30 transition-transform duration-500" id="head">
-<div class="w-24 h-10 bg-slate-900 rounded-full flex flex-col items-center justify-center gap-1 overflow-hidden transition-all duration-300 relative" id="face-screen">
-<div class="flex justify-around w-full px-4">
-<div class="face-eye"></div>
-<div class="face-eye"></div>
+<div class="face-screen-panel absolute inset-0 flex flex-col items-center justify-center gap-3 transition-all duration-300 relative" id="face-screen">
+<div class="face-eyes-row">
+<div class="face-eye face-eye--left"></div>
+<div class="face-eye face-eye--right"></div>
 </div>
 <div class="face-mouth"></div>
 </div>
@@ -688,13 +1584,19 @@
 <div class="w-8 h-3 bg-slate-100 -mt-1 rounded-full z-10" id="neck"></div>
 <!-- Body -->
 <div class="w-40 h-44 bg-white rounded-3xl shadow-xl border-t border-slate-100 relative -mt-1 z-20 transition-all duration-500" id="body">
-<div class="absolute top-8 left-1/2 -translate-x-1/2 w-14 h-14 rounded-full bg-slate-50 border border-slate-100 shadow-inner flex items-center justify-center">
+<div class="robot-outfit-shell"></div>
+<div class="robot-outfit-collar"></div>
+<div class="robot-outfit-panel robot-outfit-panel--left"></div>
+<div class="robot-outfit-panel robot-outfit-panel--right"></div>
+<div class="robot-outfit-belt"></div>
+<div class="robot-outfit-badge"></div>
+<div class="robot-core-hub absolute top-8 left-1/2 -translate-x-1/2 w-14 h-14 rounded-full bg-slate-50 border border-slate-100 shadow-inner flex items-center justify-center">
 <div class="w-6 h-6 rounded-full transition-all duration-500" style="background: var(--robot-core-color); box-shadow: 0 0 15px var(--robot-core-glow);" id="core"></div>
 </div>
 </div>
 <!-- Arms -->
-<div class="absolute -left-8 top-32 w-8 h-24 bg-white rounded-full shadow-lg border-l border-slate-50 origin-top -rotate-6 transition-all duration-500" id="left-arm"></div>
-<div class="absolute -right-8 top-32 w-8 h-24 bg-white rounded-full shadow-lg border-r border-slate-50 origin-top rotate-6 transition-all duration-500" id="right-arm"></div>
+<div class="absolute w-8 h-24 transition-all duration-500" id="left-arm" style="left: -4px; top: 130px; transform-origin: top center; transform: rotate(-8deg);"></div>
+<div class="absolute w-8 h-24 transition-all duration-500" id="right-arm" style="right: -4px; top: 130px; transform-origin: top center; transform: rotate(8deg);"></div>
 </div>
 </div>
 </main>
@@ -744,14 +1646,43 @@
     const chatMiniList = document.getElementById('chat-mini-list');
     const cartMiniList = document.getElementById('cart-mini-list');
     const cartMiniTotal = document.getElementById('cart-mini-total');
+    const orderStatusHud = document.getElementById('order-status-hud');
+    const orderPopupCard = document.getElementById('order-popup-card');
+    const orderPopupOrderId = document.getElementById('order-popup-order-id');
+    const orderPopupLines = document.getElementById('order-popup-lines');
+    const orderPopupTotal = document.getElementById('order-popup-total');
+    const orderPopupQr = document.getElementById('order-popup-qr');
+    const orderPopupQrLabel = document.getElementById('order-popup-qr-label');
+    const orderPopupCountdown = document.getElementById('order-popup-countdown');
+    const ratingPopupCard = document.getElementById('rating-popup-card');
+    const ratingStars = document.getElementById('rating-stars');
+    const ratingCommentInput = document.getElementById('rating-comment-input');
+    const ratingPopupCountdown = document.getElementById('rating-popup-countdown');
     const ROBOT_SCALE_STORAGE_KEY = 'admin.robot.scalePercent';
     const CAMERA_PREVIEW_VISIBLE_STORAGE_KEY = 'admin.camera.previewVisible';
     const ADMIN_ENV_STORAGE_KEY = 'admin.env.fields';
+    const ADMIN_MIC_NOISE_FILTER_KEY = 'admin.mic.noiseFilter';
+    const ADMIN_MIC_NOISE_FILTER_STRENGTH_KEY = 'admin.mic.noiseFilterStrength';
     const ROBOT_STUDIO_CONFIG_STORAGE_KEY = 'admin.robot.studio.v1';
+    const ROBOT_STUDIO_COMMAND_STORAGE_KEY = 'admin.robot.studio.command.v1';
+    const KIOSK_HEARTBEAT_STORAGE_KEY = 'orderrobot.kiosk.heartbeat';
+    const CHAT_HISTORY_STORAGE_KEY = 'orderrobot.kiosk.chat-history.v1';
     const AUTO_GREETING_COOLDOWN_MS = 25000;
+    const ORDER_POPUP_COUNTDOWN_SEC = 6;
+    const ORDER_RATING_COUNTDOWN_SEC = 6;
     const PRESENCE_CHECK_INTERVAL_MS = 700;
     const PRESENCE_MOTION_THRESHOLD = 16;
     const PRESENCE_ABSENCE_FRAMES = 4;
+    const CHAT_CLEAR_AFTER_ABSENCE_MS = 30000;
+    const BACKEND_STT_FINALIZE_SILENCE_MS = 950;
+    const BACKEND_STT_FORCE_FINALIZE_MS = 3600;
+    const BACKEND_STT_CHUNK_MS = 260;
+    const AI_RUNTIME_FALLBACK_URL = 'http://127.0.0.1:8012';
+    const AI_RUNTIME_PROBE_TIMEOUT_MS = 1600;
+    const isAdminPreviewMode = new URLSearchParams(window.location.search).get('adminPreview') === '1';
+    if (isAdminPreviewMode) {
+        document.body.classList.add('admin-preview-mode');
+    }
 
     let isMenuOpen = false;
     let menuLoaded = false;
@@ -762,13 +1693,43 @@
     let presenceDetectionTimer = null;
     let presenceDetected = false;
     let absenceFrames = 0;
+    let presenceMotionThreshold = PRESENCE_MOTION_THRESHOLD;
+    let presenceAbsenceFrames = PRESENCE_ABSENCE_FRAMES;
+    let presenceHoldMs = 7200;
+    let presenceEnteredAt = 0;
+    let presenceLeftAt = 0;
+    let chatClearedAfterAbsence = false;
     let previousFrameLuma = null;
     let activeGreetingAudio = null;
     let miniCameraStream = null;
     let currentSessionId = null;
     let voiceListening = false;
     let voiceRecognition = null;
+    let voiceInputMode = 'idle';
+    let voiceBackendSocket = null;
+    let voiceBackendStream = null;
+    let voiceBackendRecorder = null;
+    let voiceBackendFinalizeTimer = null;
+    let voiceBackendForceFinalizeTimer = null;
+    let voiceBackendFinalizing = false;
+    let voiceBackendLastFinal = '';
+    let voiceBackendLastFinalAt = 0;
+    let resolvedAiApiUrl = '';
+    let resolvedAiApiHealth = null;
+    let resolvedAiHasRealtimeStack = false;
+    let aiApiProbeTask = null;
+    let botSpeechActive = false;
     let voiceQueueRunning = false;
+    let activeBotSpeechAbortController = null;
+    let activeTurnAbortController = null;
+    let voicePinnedByUser = false;
+    let micNoiseFilterStrength = 60;
+    let lastSpeechActivityAt = 0;
+    let kioskHeartbeatTimer = null;
+    let orderPopupTimer = null;
+    let ratingPopupTimer = null;
+    let activeOrderFlowToken = 0;
+    const handledOrderIds = [];
     const pendingUserTurns = [];
     const chatHistory = [];
     let cartState = [];
@@ -831,7 +1792,50 @@
         robotController.applyStudioConfig(safeConfig);
     }
 
+    function runRobotStudioCommand(payload) {
+        const commandType = String(payload?.type || payload?.command || '').trim();
+        if (!commandType) return;
+        if (commandType === 'run-graph') {
+            const graphId = String(payload?.graphId || '').trim();
+            if (!graphId) return;
+            void robotController.runGraph(graphId, payload?.context || {}).then((ran) => {
+                if (ran === false && typeof setVoiceStatus === 'function') {
+                    setVoiceStatus(`Graph ${graphId} khong chay duoc. Vui long kiem tra cau hinh.`);
+                }
+            });
+            return;
+        }
+        if (commandType === 'stop-graph') {
+            robotController.stopGraph();
+            robotController.reset();
+            return;
+        }
+        if (commandType === 'preview-action') {
+            const actionId = String(payload?.actionId || '').trim();
+            if (!actionId) return;
+            void robotController.triggerCinematic(actionId).then((ran) => {
+                if (ran === false && typeof setVoiceStatus === 'function') {
+                    setVoiceStatus(`Action ${actionId} dang bi tat hoac khong ho tro.`);
+                }
+            });
+        }
+    }
+
+    function startKioskHeartbeat() {
+        const writeHeartbeat = () => {
+            localStorage.setItem(KIOSK_HEARTBEAT_STORAGE_KEY, String(Date.now()));
+        };
+        writeHeartbeat();
+        if (kioskHeartbeatTimer) {
+            window.clearInterval(kioskHeartbeatTimer);
+        }
+        kioskHeartbeatTimer = window.setInterval(writeHeartbeat, 1500);
+    }
+
     applyRobotStudioConfig(readRobotStudioConfigFromStorage());
+    if (!isAdminPreviewMode) {
+        startKioskHeartbeat();
+    }
     window.printRobotInfo = () => robotController.printInfo();
     window.debugRobotAction = async (actionId) => {
         const safeAction = String(actionId || '').trim();
@@ -884,6 +1888,10 @@
 
     function applyCameraPreviewVisible(visible) {
         if (!cameraMiniPanel) return;
+        if (isAdminPreviewMode) {
+            cameraMiniPanel.classList.add('hidden-by-admin');
+            return;
+        }
         const isVisible = Boolean(visible);
         cameraMiniPanel.classList.toggle('hidden-by-admin', !isVisible);
     }
@@ -891,6 +1899,73 @@
     function loadCameraPreviewVisible() {
         const raw = localStorage.getItem(CAMERA_PREVIEW_VISIBLE_STORAGE_KEY);
         applyCameraPreviewVisible(raw !== 'false');
+    }
+
+    function clampPercent(value, fallback = 60) {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric)) return fallback;
+        return Math.max(0, Math.min(100, Math.round(numeric)));
+    }
+
+    function readMicNoiseFilterStrengthFromAdmin() {
+        const rawStrength = localStorage.getItem(ADMIN_MIC_NOISE_FILTER_STRENGTH_KEY);
+        if (rawStrength !== null) {
+            return clampPercent(rawStrength, 60);
+        }
+        const rawLevel = String(localStorage.getItem(ADMIN_MIC_NOISE_FILTER_KEY) || '').toLowerCase().trim();
+        if (rawLevel === 'off') return 0;
+        if (rawLevel === 'strong') return 100;
+        if (rawLevel === 'balanced') return 60;
+        return 60;
+    }
+
+    function recalcPresenceSensitivity() {
+        const normalized = micNoiseFilterStrength / 100;
+        // Higher admin mic filter strength => keep listening more stable and reduce accidental auto-stop.
+        presenceMotionThreshold = Math.max(8, Math.min(24, Math.round(22 - normalized * 10)));
+        presenceAbsenceFrames = Math.max(4, Math.min(14, Math.round(4 + normalized * 10)));
+        presenceHoldMs = Math.max(3500, Math.min(12000, Math.round(3500 + normalized * 8500)));
+    }
+
+    function syncMicSensitivityFromAdmin(options = {}) {
+        const restartBackend = options.restartBackend === true;
+        const nextStrength = readMicNoiseFilterStrengthFromAdmin();
+        const changed = nextStrength !== micNoiseFilterStrength;
+        micNoiseFilterStrength = nextStrength;
+        recalcPresenceSensitivity();
+        if (changed && restartBackend && voiceListening && voiceInputMode === 'backend') {
+            void startBackendSpeechListening().catch(() => {});
+        }
+    }
+
+    function getMicAudioConstraintsForKiosk() {
+        if (micNoiseFilterStrength <= 20) {
+            return {
+                channelCount: 1,
+                echoCancellation: false,
+                noiseSuppression: false,
+                autoGainControl: false,
+            };
+        }
+        if (micNoiseFilterStrength >= 75) {
+            return {
+                channelCount: 1,
+                sampleRate: 16000,
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true,
+            };
+        }
+        return {
+            channelCount: 1,
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+        };
+    }
+
+    function markSpeechActivity() {
+        lastSpeechActivityAt = Date.now();
     }
 
     function updateMenuPanelHeight(visibleCount) {
@@ -916,21 +1991,214 @@
         robotController.loadScalePercent(ROBOT_SCALE_STORAGE_KEY);
     }
 
-    function getAiApiUrl() {
-        const fallback = 'http://127.0.0.1:8012';
+    function normalizeAiApiUrl(value) {
+        return String(value || '')
+            .trim()
+            .replace('://127.0.0.1:8002', '://127.0.0.1:8012')
+            .replace('://localhost:8002', '://localhost:8012')
+            .replace(/\/$/, '');
+    }
+
+    function readConfiguredAiApiUrl() {
+        const fallback = AI_RUNTIME_FALLBACK_URL;
         try {
             const raw = localStorage.getItem(ADMIN_ENV_STORAGE_KEY);
             if (!raw) return fallback;
             const parsed = JSON.parse(raw);
-            const configured = String(parsed.VITE_AI_API_URL || '').trim();
-            if (!configured) return fallback;
-            return configured
-                .replace('://127.0.0.1:8002', '://127.0.0.1:8012')
-                .replace('://localhost:8002', '://localhost:8012')
-                .replace(/\/$/, '');
+            const configured = normalizeAiApiUrl(parsed.VITE_AI_API_URL || '');
+            return configured || fallback;
         } catch {
             return fallback;
         }
+    }
+
+    function readExplicitConfiguredAiApiUrl() {
+        try {
+            const raw = localStorage.getItem(ADMIN_ENV_STORAGE_KEY);
+            if (!raw) return '';
+            const parsed = JSON.parse(raw);
+            return normalizeAiApiUrl(parsed.VITE_AI_API_URL || '');
+        } catch {
+            return '';
+        }
+    }
+
+    function readAdminEnvFields() {
+        try {
+            const raw = localStorage.getItem(ADMIN_ENV_STORAGE_KEY);
+            if (!raw) return {};
+            const parsed = JSON.parse(raw);
+            return parsed && typeof parsed === 'object' ? parsed : {};
+        } catch {
+            return {};
+        }
+    }
+
+    function toSafeInt(value, min, max) {
+        const numeric = Number.parseInt(String(value ?? '').trim(), 10);
+        if (!Number.isFinite(numeric)) return null;
+        if (numeric < min || numeric > max) return null;
+        return numeric;
+    }
+
+    function toSafeFloat(value, min, max) {
+        const numeric = Number.parseFloat(String(value ?? '').trim());
+        if (!Number.isFinite(numeric)) return null;
+        if (numeric < min || numeric > max) return null;
+        return Number(numeric.toFixed(2));
+    }
+
+    function buildSpeechSynthesisPayload(text) {
+        const payload = { text: String(text || '').trim() };
+        const env = readAdminEnvFields();
+
+        const ttsEngine = String(env.TTS_ENGINE || '').trim().toLowerCase();
+        if (ttsEngine) {
+            payload.tts_engine = ttsEngine;
+        }
+
+        const ttsVoice = String(env.TTS_VOICE || '').trim();
+        if (ttsVoice) {
+            payload.voice = ttsVoice;
+        }
+
+        const ttsRate = toSafeInt(env.TTS_RATE, 100, 300);
+        if (ttsRate !== null) {
+            payload.rate = ttsRate;
+        }
+
+        const vieneuVoiceId = String(env.TTS_VIENEU_VOICE_ID || '').trim();
+        if (vieneuVoiceId) {
+            payload.tts_vieneu_voice_id = vieneuVoiceId;
+        }
+
+        const vieneuRefAudio = String(env.TTS_VIENEU_REF_AUDIO || '').trim();
+        if (vieneuRefAudio) {
+            payload.tts_vieneu_ref_audio = vieneuRefAudio;
+        }
+
+        const vieneuRefText = String(env.TTS_VIENEU_REF_TEXT || '').trim();
+        if (vieneuRefText) {
+            payload.tts_vieneu_ref_text = vieneuRefText;
+        }
+
+        const vieneuTemperature = toSafeFloat(env.TTS_VIENEU_TEMPERATURE, 0.1, 2.0);
+        if (vieneuTemperature !== null) {
+            payload.tts_vieneu_temperature = vieneuTemperature;
+        }
+
+        const vieneuTopK = toSafeInt(env.TTS_VIENEU_TOP_K, 1, 200);
+        if (vieneuTopK !== null) {
+            payload.tts_vieneu_top_k = vieneuTopK;
+        }
+
+        const vieneuMaxChars = toSafeInt(env.TTS_VIENEU_MAX_CHARS, 32, 512);
+        if (vieneuMaxChars !== null) {
+            payload.tts_vieneu_max_chars = vieneuMaxChars;
+        }
+
+        return payload;
+    }
+
+    function isVieneuForced(payload) {
+        const engine = String(payload?.tts_engine || payload?.engine || '').trim().toLowerCase();
+        return engine === 'vieneu';
+    }
+
+    function getAiApiUrlCandidates() {
+        const explicitConfigured = readExplicitConfiguredAiApiUrl();
+        if (explicitConfigured) {
+            return [explicitConfigured];
+        }
+        return [readConfiguredAiApiUrl()];
+    }
+
+    async function probeAiApiHealth(baseUrl) {
+        const safeBase = normalizeAiApiUrl(baseUrl);
+        if (!safeBase) return null;
+        try {
+            const controller = new AbortController();
+            const timeoutId = window.setTimeout(() => controller.abort(), AI_RUNTIME_PROBE_TIMEOUT_MS);
+            const response = await fetch(`${safeBase}/health`, {
+                method: 'GET',
+                signal: controller.signal,
+            });
+            window.clearTimeout(timeoutId);
+            if (!response.ok) return null;
+            return await response.json();
+        } catch {
+            return null;
+        }
+    }
+
+    async function ensureAiApiUrlReady() {
+        if (resolvedAiApiUrl) return resolvedAiApiUrl;
+        if (aiApiProbeTask) return aiApiProbeTask;
+
+        aiApiProbeTask = (async () => {
+            const candidates = getAiApiUrlCandidates();
+
+            // 1) Prefer true VieNeu runtime when available.
+            for (const candidate of candidates) {
+                const health = await probeAiApiHealth(candidate);
+                const status = String(health?.status || '').toLowerCase();
+                const ttsEngine = String(health?.tts_engine || '').trim().toLowerCase();
+                const hasRealtimeStack =
+                    ttsEngine.length > 0 &&
+                    typeof health?.stt_model === 'string';
+                if (status === 'ok' && hasRealtimeStack && ttsEngine === 'vieneu') {
+                    resolvedAiApiUrl = candidate;
+                    resolvedAiApiHealth = health;
+                    resolvedAiHasRealtimeStack = true;
+                    window.__ORDERROBOT_AI_RUNTIME = {
+                        url: resolvedAiApiUrl,
+                        health,
+                        hasRealtimeStack: true,
+                        preferredEngine: 'vieneu',
+                    };
+                    console.info('[ai-runtime] selected preferred VieNeu endpoint:', resolvedAiApiUrl, health);
+                    return resolvedAiApiUrl;
+                }
+            }
+
+            // 2) Fallback to any compatible realtime stack.
+            for (const candidate of candidates) {
+                const health = await probeAiApiHealth(candidate);
+                const status = String(health?.status || '').toLowerCase();
+                const hasRealtimeStack =
+                    typeof health?.tts_engine === 'string' &&
+                    String(health.tts_engine || '').trim().length > 0 &&
+                    typeof health?.stt_model === 'string';
+                if (status === 'ok' && hasRealtimeStack) {
+                    resolvedAiApiUrl = candidate;
+                    resolvedAiApiHealth = health;
+                    resolvedAiHasRealtimeStack = true;
+                    window.__ORDERROBOT_AI_RUNTIME = {
+                        url: resolvedAiApiUrl,
+                        health,
+                        hasRealtimeStack: true,
+                        preferredEngine: String(health?.tts_engine || '').trim().toLowerCase() || 'unknown',
+                    };
+                    console.info('[ai-runtime] selected compatible endpoint:', resolvedAiApiUrl, health);
+                    return resolvedAiApiUrl;
+                }
+            }
+
+            // Avoid selecting legacy non-realtime endpoint because it causes TTS fallback voices.
+            resolvedAiApiUrl = candidates[0] || AI_RUNTIME_FALLBACK_URL;
+            resolvedAiApiHealth = null;
+            resolvedAiHasRealtimeStack = false;
+            window.__ORDERROBOT_AI_RUNTIME = { url: resolvedAiApiUrl, health: null, hasRealtimeStack: false };
+            return resolvedAiApiUrl;
+        })().finally(() => {
+            aiApiProbeTask = null;
+        });
+
+        return aiApiProbeTask;
+    }
+
+    function getAiApiUrl() {
+        return resolvedAiApiUrl || readConfiguredAiApiUrl();
     }
 
     function toggleMenu() {
@@ -964,29 +2232,490 @@
         return toSafeText(value).replaceAll('\n', ' ');
     }
 
+    const MOJIBAKE_MARKERS = ['Ã', 'Ä', 'á»', 'áº', 'Æ', 'â€'];
+
+    const ASSISTANT_TONE_EXACT_ENTRIES = [
+        ['Chao mung ban. Hom nay ban muon thu mon nao de minh tu van ngay?', 'Chào mừng bạn. Hôm nay bạn muốn thử món nào để mình tư vấn ngay?'],
+        ['Chao mung ban. Hom nay ban muon thu mon nao?', 'Chào mừng bạn. Hôm nay bạn muốn thử món nào?'],
+        ['Xin chao. Ban muon goi mon gi hom nay?', 'Xin chào. Bạn muốn gọi món gì hôm nay?'],
+        ['Minh da them vao gio hang. Ban muon goi them gi khong?', 'Mình đã thêm vào giỏ hàng. Bạn muốn gọi thêm gì không?'],
+        ['Minh chua nghe ro. Ban noi ten mon hoac yeu cau ngan gon giup minh nhe.', 'Mình chưa nghe rõ. Bạn nói tên món hoặc yêu cầu ngắn gọn giúp mình nhé.'],
+        ['Minh da lam moi gio hang roi. Ban muon goi mon nao tiep theo?', 'Mình đã làm mới giỏ hàng rồi. Bạn muốn gọi món nào tiếp theo?'],
+        ['Minh da xoa gio hang cu roi. Ban muon minh goi y mon nao tiep khong?', 'Mình đã xoá giỏ hàng cũ rồi. Bạn muốn mình gợi ý món nào tiếp không?'],
+        ['Minh doc lai gio hang de ban xac nhan nhe.', 'Mình đọc lại giỏ hàng để bạn xác nhận nhé.'],
+        ['Minh thay co may mon gan giong. Ban muon goi mon nao?', 'Mình thấy có mấy món gần giống. Bạn muốn gọi món nào?'],
+        ['Minh co vai goi y de uong, de chon cho ban day.', 'Mình có vài gợi ý để uống, để chọn cho bạn đây.'],
+        ['Minh tim duoc vai mon hop gu cua ban roi.', 'Mình tìm được vài món hợp gu của bạn rồi.'],
+        ['Minh da them vao gio hang. Ban muon goi them gi khong?', 'Mình đã thêm vào giỏ hàng. Bạn muốn gọi thêm gì không?'],
+        ['Don cua ban da tao thanh cong. Cam on ban.', 'Đơn của bạn đã tạo thành công. Cảm ơn bạn.'],
+        ['Gio hang van dang giu. Ban muon minh doc lai khong?', 'Giỏ hàng vẫn đang giữ. Bạn muốn mình đọc lại không?'],
+    ];
+
+    function normalizeNoToneKey(value) {
+        const normalized = String(value || '')
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/[đĐ]/g, 'd')
+            .toLowerCase()
+            .replace(/[^a-z0-9\s]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+        return normalized;
+    }
+
+    const ASSISTANT_NO_TONE_TEXT_MAP = new Map(
+        ASSISTANT_TONE_EXACT_ENTRIES.map(([source, target]) => [normalizeNoToneKey(source), target]),
+    );
+
+    const ASSISTANT_TONE_REGEX_RULES = [
+        {
+            pattern: /^Minh da them (.+) vao gio hang\.?$/i,
+            replace: (match) => `Mình đã thêm ${match[1]} vào giỏ hàng.`,
+        },
+        {
+            pattern: /^Minh da them (.+)\. Minh doc lai gio hang de ban xac nhan nhe\.?$/i,
+            replace: (match) => `Mình đã thêm ${match[1]}. Mình đọc lại giỏ hàng để bạn xác nhận nhé.`,
+        },
+        {
+            pattern: /^Xin loi, (.+) dang tam het\. Minh goi y ban doi sang mon khac nhe\.?$/i,
+            replace: (match) => `Xin lỗi, ${match[1]} đang tạm hết. Mình gợi ý bạn đổi sang món khác nhé.`,
+        },
+        {
+            pattern: /^Da xong\. Minh da len don thanh cong voi ma (.+)\. Cam on ban nha\.?$/i,
+            replace: (match) => `Đã xong. Mình đã lên đơn thành công với mã ${match[1]}. Cảm ơn bạn nhé.`,
+        },
+        {
+            pattern: /^Minh da bo (.+) khoi gio hang roi\. Ban muon sua gi them khong\??$/i,
+            replace: (match) => `Mình đã bỏ ${match[1]} khỏi giỏ hàng rồi. Bạn muốn sửa gì thêm không?`,
+        },
+        {
+            pattern: /^Minh nghe chua ro\. Ban co the noi ten mon, khau vi nhu it ngot, hoac bao minh tu van mon de uong nhe\.?$/i,
+            replace: () => 'Mình nghe chưa rõ. Bạn có thể nói tên món, khẩu vị như ít ngọt, hoặc bảo mình tư vấn món để uống nhé.',
+        },
+    ];
+
+    function repairMojibakeText(value) {
+        const text = String(value || '');
+        if (!text) return '';
+        if (!MOJIBAKE_MARKERS.some((marker) => text.includes(marker))) {
+            return text;
+        }
+        try {
+            const bytes = new Uint8Array(text.length);
+            for (let i = 0; i < text.length; i += 1) {
+                bytes[i] = text.charCodeAt(i) & 0xff;
+            }
+            const decoded = new TextDecoder('utf-8').decode(bytes).trim();
+            if (decoded && !MOJIBAKE_MARKERS.some((marker) => decoded.includes(marker))) {
+                return decoded;
+            }
+        } catch {}
+        return text;
+    }
+
+    function normalizeAssistantDisplayText(role, text) {
+        const raw = repairMojibakeText(text).trim();
+        if (!raw) return '';
+        if (role !== 'assistant') return raw;
+
+        for (const rule of ASSISTANT_TONE_REGEX_RULES) {
+            const match = raw.match(rule.pattern);
+            if (match) {
+                const replaced = String(rule.replace(match) || '').trim();
+                if (replaced) return replaced;
+            }
+        }
+
+        const mapped = ASSISTANT_NO_TONE_TEXT_MAP.get(normalizeNoToneKey(raw));
+        return mapped || raw;
+    }
+
+    const SENSITIVE_WORD_PATTERNS = [
+        /\b(?:đm|dm|đmm|dmm|vcl|vl)\b/giu,
+        /\b(?:địt|dit|đéo|deo)\b/giu,
+        /\b(?:cặc|cac|buồi|buoi|lồn)\b/giu,
+        /\b(?:fuck|fck|shit)\b/giu,
+    ];
+
+    function maskSensitiveDisplayText(value) {
+        let output = String(value || '');
+        if (!output) return '';
+        for (const pattern of SENSITIVE_WORD_PATTERNS) {
+            output = output.replace(pattern, (matched) => '*'.repeat(Math.max(3, String(matched).length)));
+        }
+        return output;
+    }
+
     function renderChatMini() {
         if (!chatMiniList) return;
-        const latest = chatHistory.slice(-3);
+        const latest = chatHistory.slice(-8);
         if (latest.length === 0) {
             chatMiniList.innerHTML = '<p class="chat-mini-empty">Chua co hoi thoai.</p>';
             return;
         }
         chatMiniList.innerHTML = latest.map((entry) => `
-            <article class="chat-mini-item ${entry.role}">
-                <span class="chat-mini-role">${entry.role === 'user' ? 'Khach' : 'Robot'}</span>
-                <p class="chat-mini-text">${toSafeInlineText(entry.text)}</p>
-            </article>
+            <p class="chat-mini-line ${entry.role}">
+                <span class="chat-mini-line-label">${entry.role === 'user' ? 'Khach' : 'Robot'}:</span>${toSafeInlineText(entry.text)}
+            </p>
         `).join('');
+        chatMiniList.scrollTop = chatMiniList.scrollHeight;
     }
 
     function appendChat(role, text) {
-        const cleanText = String(text || '').trim();
+        const cleanText = maskSensitiveDisplayText(normalizeAssistantDisplayText(role, text));
         if (!cleanText) return;
-        chatHistory.push({ role, text: cleanText, at: Date.now() });
-        if (chatHistory.length > 20) {
-            chatHistory.splice(0, chatHistory.length - 20);
+        const now = Date.now();
+        const last = chatHistory[chatHistory.length - 1];
+        if (
+            last
+            && last.role === role
+            && String(last.text || '') === cleanText
+            && (now - Number(last.at || 0)) < 7000
+        ) {
+            return;
         }
+        chatHistory.push({ role, text: cleanText, at: now });
+        if (chatHistory.length > 80) {
+            chatHistory.splice(0, chatHistory.length - 80);
+        }
+        persistChatHistory();
         renderChatMini();
+    }
+
+    function persistChatHistory() {
+        try {
+            localStorage.setItem(
+                CHAT_HISTORY_STORAGE_KEY,
+                JSON.stringify(chatHistory.slice(-80)),
+            );
+        } catch {}
+    }
+
+    function loadChatHistory() {
+        try {
+            const raw = localStorage.getItem(CHAT_HISTORY_STORAGE_KEY);
+            if (!raw) return;
+            const parsed = JSON.parse(raw);
+            if (!Array.isArray(parsed)) return;
+            chatHistory.length = 0;
+            parsed.forEach((entry) => {
+                if (!entry || typeof entry !== 'object') return;
+                const role = String(entry.role || '').toLowerCase() === 'user' ? 'user' : 'assistant';
+                const text = normalizeAssistantDisplayText(role, entry.text);
+                if (!text) return;
+                const last = chatHistory[chatHistory.length - 1];
+                if (last && last.role === role && String(last.text || '') === text) {
+                    return;
+                }
+                chatHistory.push({
+                    role,
+                    text,
+                    at: Number(entry.at || Date.now()),
+                });
+            });
+            if (chatHistory.length > 80) {
+                chatHistory.splice(0, chatHistory.length - 80);
+            }
+        } catch {}
+    }
+
+    function clearChatHistory() {
+        chatHistory.length = 0;
+        try {
+            localStorage.removeItem(CHAT_HISTORY_STORAGE_KEY);
+        } catch {}
+        renderChatMini();
+    }
+
+    function clearOrderFlowTimers() {
+        if (orderPopupTimer) {
+            window.clearInterval(orderPopupTimer);
+            orderPopupTimer = null;
+        }
+        if (ratingPopupTimer) {
+            window.clearInterval(ratingPopupTimer);
+            ratingPopupTimer = null;
+        }
+    }
+
+    function hideOrderFlow() {
+        clearOrderFlowTimers();
+        if (orderStatusHud) {
+            orderStatusHud.hidden = true;
+        }
+        if (orderPopupCard) {
+            orderPopupCard.hidden = true;
+        }
+        if (ratingPopupCard) {
+            ratingPopupCard.hidden = true;
+        }
+    }
+
+    function hashTextForQr(value) {
+        const text = String(value || '');
+        let hash = 2166136261;
+        for (let i = 0; i < text.length; i += 1) {
+            hash ^= text.charCodeAt(i);
+            hash = Math.imul(hash, 16777619);
+        }
+        return hash >>> 0;
+    }
+
+    function buildVirtualQrCells(seedText) {
+        if (!orderPopupQr) return;
+        const size = 21;
+        const cells = new Array(size * size).fill(0);
+
+        const drawFinder = (sx, sy) => {
+            for (let y = 0; y < 7; y += 1) {
+                for (let x = 0; x < 7; x += 1) {
+                    const row = sy + y;
+                    const col = sx + x;
+                    const idx = row * size + col;
+                    const border = x === 0 || y === 0 || x === 6 || y === 6;
+                    const center = x >= 2 && x <= 4 && y >= 2 && y <= 4;
+                    cells[idx] = border || center ? 1 : 0;
+                }
+            }
+        };
+
+        drawFinder(0, 0);
+        drawFinder(size - 7, 0);
+        drawFinder(0, size - 7);
+
+        let state = hashTextForQr(seedText) || 123456789;
+        const nextBit = () => {
+            state ^= state << 13;
+            state ^= state >>> 17;
+            state ^= state << 5;
+            return state & 1;
+        };
+
+        for (let row = 0; row < size; row += 1) {
+            for (let col = 0; col < size; col += 1) {
+                const inTopLeft = row < 7 && col < 7;
+                const inTopRight = row < 7 && col >= size - 7;
+                const inBottomLeft = row >= size - 7 && col < 7;
+                if (inTopLeft || inTopRight || inBottomLeft) continue;
+                cells[row * size + col] = nextBit();
+            }
+        }
+
+        orderPopupQr.innerHTML = cells.map((on) =>
+            `<span class="order-popup-qr-cell ${on ? 'on' : ''}"></span>`
+        ).join('');
+    }
+
+    function toFeedbackHistoryPayload() {
+        return chatHistory.slice(-60).map((entry) => {
+            const role = entry.role === 'user' ? 'user' : 'assistant';
+            return `${role}: ${entry.text}`;
+        });
+    }
+
+    async function saveOrderFeedbackPayload(payload) {
+        try {
+            const aiApiUrl = await ensureAiApiUrlReady();
+            const sessionId = String(payload.sessionId || payload.orderId || `SES-${Date.now()}`);
+            const response = await fetch(`${aiApiUrl}/sessions/${encodeURIComponent(sessionId)}/feedback`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    rating: payload.rating,
+                    comment: payload.comment || null,
+                    transcript_history: toFeedbackHistoryPayload(),
+                    needs_improvement: payload.rating <= 3,
+                    improvement_tags: payload.rating <= 3 ? ['post_order_low_rating'] : [],
+                    review_status: 'new',
+                }),
+            });
+            if (!response.ok) {
+                console.warn('[order-feedback] save failed:', response.status);
+            }
+        } catch (error) {
+            console.warn('[order-feedback] save failed:', error);
+        }
+    }
+
+    function normalizeOrderItems(items) {
+        if (!Array.isArray(items)) return [];
+        return items
+            .map((item) => {
+                const quantity = Math.max(0, Number(item?.quantity || 0));
+                const lineTotal = Math.max(0, Number(item?.line_total || 0));
+                const unitPrice = Math.max(0, Number(item?.unit_price || (quantity > 0 ? lineTotal / quantity : 0)));
+                return {
+                    item_id: String(item?.item_id || ''),
+                    name: String(item?.name || 'Mon'),
+                    quantity,
+                    line_total: lineTotal,
+                    unit_price: unitPrice,
+                };
+            })
+            .filter((item) => item.quantity > 0);
+    }
+
+    function shouldHandleOrderId(orderId) {
+        const safeOrderId = String(orderId || '').trim();
+        if (!safeOrderId) return true;
+        if (handledOrderIds.includes(safeOrderId)) return false;
+        handledOrderIds.push(safeOrderId);
+        if (handledOrderIds.length > 32) {
+            handledOrderIds.splice(0, handledOrderIds.length - 32);
+        }
+        return true;
+    }
+
+    async function showOrderPopupStep(orderData, flowToken) {
+        if (!orderStatusHud || !orderPopupCard) return;
+
+        const items = normalizeOrderItems(orderData.items);
+        if (items.length === 0) return;
+
+        const orderId = String(orderData.orderId || '--');
+        const total = items.reduce((sum, item) => sum + Number(item.line_total || 0), 0);
+        const qrSeed = `${orderId}|${Math.round(total)}|${items.length}`;
+
+        orderStatusHud.hidden = false;
+        orderPopupCard.hidden = false;
+        if (ratingPopupCard) {
+            ratingPopupCard.hidden = true;
+        }
+
+        if (orderPopupOrderId) {
+            orderPopupOrderId.textContent = `Ma don: ${orderId}`;
+        }
+        if (orderPopupLines) {
+            orderPopupLines.innerHTML = items.map((item) => `
+                <article class="order-popup-line">
+                    <span>x${item.quantity}</span>
+                    <strong>${toSafeInlineText(item.name)}</strong>
+                    <span>${formatCurrencyVnd(item.line_total)}</span>
+                </article>
+            `).join('');
+        }
+        if (orderPopupTotal) {
+            orderPopupTotal.textContent = `Tong thanh toan: ${formatCurrencyVnd(total)}`;
+        }
+        if (orderPopupQrLabel) {
+            orderPopupQrLabel.textContent = `QR ao cho don ${orderId}`;
+        }
+        buildVirtualQrCells(qrSeed);
+
+        await new Promise((resolve) => {
+            let remaining = ORDER_POPUP_COUNTDOWN_SEC;
+            if (orderPopupCountdown) {
+                orderPopupCountdown.textContent = `Popup thong tin don tu dong dong sau ${remaining}s`;
+            }
+            clearOrderFlowTimers();
+            orderPopupTimer = window.setInterval(() => {
+                if (flowToken !== activeOrderFlowToken) {
+                    clearOrderFlowTimers();
+                    resolve();
+                    return;
+                }
+                remaining -= 1;
+                if (orderPopupCountdown) {
+                    orderPopupCountdown.textContent = `Popup thong tin don tu dong dong sau ${Math.max(0, remaining)}s`;
+                }
+                if (remaining <= 0) {
+                    clearOrderFlowTimers();
+                    resolve();
+                }
+            }, 1000);
+        });
+
+        if (flowToken !== activeOrderFlowToken) return;
+        orderPopupCard.hidden = true;
+    }
+
+    async function showRatingPopupStep(orderData, flowToken) {
+        if (!orderStatusHud || !ratingPopupCard || !ratingStars) return;
+
+        ratingPopupCard.hidden = false;
+        let selectedRating = 5;
+        if (ratingCommentInput) {
+            ratingCommentInput.value = '';
+        }
+
+        const ratingButtons = Array.from(ratingStars.querySelectorAll('.rating-star-btn'));
+        const markRatingActive = (rating) => {
+            ratingButtons.forEach((button) => {
+                const value = Number(button.getAttribute('data-rating') || 0);
+                button.classList.toggle('active', value <= rating);
+            });
+        };
+        markRatingActive(selectedRating);
+
+        await new Promise((resolve) => {
+            let remaining = ORDER_RATING_COUNTDOWN_SEC;
+            let finished = false;
+
+            const finish = () => {
+                if (finished) return;
+                finished = true;
+                clearOrderFlowTimers();
+                ratingButtons.forEach((button) => {
+                    button.onclick = null;
+                });
+                resolve();
+            };
+
+            ratingButtons.forEach((button) => {
+                button.onclick = () => {
+                    selectedRating = Math.max(1, Math.min(5, Number(button.getAttribute('data-rating') || 5)));
+                    markRatingActive(selectedRating);
+                    finish();
+                };
+            });
+
+            if (ratingPopupCountdown) {
+                ratingPopupCountdown.textContent = `Popup danh gia tu dong gui sau ${remaining}s`;
+            }
+
+            clearOrderFlowTimers();
+            ratingPopupTimer = window.setInterval(() => {
+                if (flowToken !== activeOrderFlowToken) {
+                    finish();
+                    return;
+                }
+                remaining -= 1;
+                if (ratingPopupCountdown) {
+                    ratingPopupCountdown.textContent = `Popup danh gia tu dong gui sau ${Math.max(0, remaining)}s`;
+                }
+                if (remaining <= 0) {
+                    finish();
+                }
+            }, 1000);
+        });
+
+        if (flowToken !== activeOrderFlowToken) return;
+
+        const commentText = String(ratingCommentInput?.value || '').trim();
+        await saveOrderFeedbackPayload({
+            sessionId: orderData.sessionId,
+            orderId: orderData.orderId,
+            rating: selectedRating,
+            comment: commentText || `Danh gia sau don ${orderData.orderId || ''}`.trim(),
+        });
+    }
+
+    async function runOrderCompletionFlow(orderData) {
+        const items = normalizeOrderItems(orderData.items);
+        if (items.length === 0) return;
+        if (!shouldHandleOrderId(orderData.orderId)) return;
+
+        activeOrderFlowToken += 1;
+        const flowToken = activeOrderFlowToken;
+        try {
+            await showOrderPopupStep({ ...orderData, items }, flowToken);
+            if (flowToken !== activeOrderFlowToken) return;
+            await showRatingPopupStep({ ...orderData, items }, flowToken);
+        } finally {
+            if (flowToken === activeOrderFlowToken) {
+                hideOrderFlow();
+            }
+        }
     }
 
     function updateMiniCart(cart) {
@@ -1015,11 +2744,13 @@
         cartMiniTotal.textContent = `Tong: ${formatCurrencyVnd(total)}`;
     }
 
-    async function startConversationSession(source = 'camera') {
-        const response = await fetch(`${getAiApiUrl()}/sessions/start`, {
+    async function startConversationSession(source = 'camera', signal = undefined) {
+        const aiApiUrl = await ensureAiApiUrlReady();
+        const response = await fetch(`${aiApiUrl}/sessions/start`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ source }),
+            signal,
         });
         if (!response.ok) {
             throw new Error(`start session failed: HTTP ${response.status}`);
@@ -1030,11 +2761,13 @@
         return payload;
     }
 
-    async function sendConversationTurn(sessionId, transcript) {
-        const response = await fetch(`${getAiApiUrl()}/sessions/${encodeURIComponent(sessionId)}/turn`, {
+    async function sendConversationTurn(sessionId, transcript, signal = undefined) {
+        const aiApiUrl = await ensureAiApiUrlReady();
+        const response = await fetch(`${aiApiUrl}/sessions/${encodeURIComponent(sessionId)}/turn`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ transcript }),
+            signal,
         });
         if (!response.ok) {
             throw new Error(`turn failed: HTTP ${response.status}`);
@@ -1042,14 +2775,345 @@
         return response.json();
     }
 
+    async function streamConversationTurn(sessionId, transcript, onChunk, signal = undefined) {
+        const aiApiUrl = await ensureAiApiUrlReady();
+        const response = await fetch(`${aiApiUrl}/sessions/${encodeURIComponent(sessionId)}/turn/stream`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ transcript }),
+            signal,
+        });
+        if (!response.ok) {
+            throw new Error(`turn stream failed: HTTP ${response.status}`);
+        }
+        if (!response.body) {
+            throw new Error('turn stream body is empty');
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            lines.forEach((line) => {
+                const trimmed = line.trim();
+                if (!trimmed) return;
+                try {
+                    const payload = JSON.parse(trimmed);
+                    onChunk(payload);
+                } catch {
+                    // ignore malformed line
+                }
+            });
+        }
+
+        const trailing = buffer.trim();
+        if (trailing) {
+            try {
+                onChunk(JSON.parse(trailing));
+            } catch {
+                // ignore malformed trailing payload
+            }
+        }
+    }
+
+    function decodeBase64AudioChunk(base64Value) {
+        const raw = atob(String(base64Value || ''));
+        const bytes = new Uint8Array(raw.length);
+        for (let index = 0; index < raw.length; index += 1) {
+            bytes[index] = raw.charCodeAt(index);
+        }
+        return bytes;
+    }
+
+    function isAbortError(error) {
+        if (!error) return false;
+        const name = String(error?.name || '').toLowerCase();
+        const message = String(error?.message || '').toLowerCase();
+        return name === 'aborterror' || message.includes('aborted') || message.includes('interrupt');
+    }
+
+    function interruptBotSpeech() {
+        if (activeBotSpeechAbortController) {
+            activeBotSpeechAbortController.abort();
+            activeBotSpeechAbortController = null;
+        }
+        if (activeGreetingAudio) {
+            try {
+                activeGreetingAudio.pause();
+            } catch {}
+            activeGreetingAudio = null;
+        }
+        botSpeechActive = false;
+    }
+
+    function interruptTurnProcessingForUser() {
+        if (activeTurnAbortController) {
+            activeTurnAbortController.abort();
+            activeTurnAbortController = null;
+        }
+    }
+
+    function prioritizeUserSpeech() {
+        interruptBotSpeech();
+        interruptTurnProcessingForUser();
+    }
+
+    function createStreamingAudioPlayer() {
+        if (activeGreetingAudio) {
+            activeGreetingAudio.pause();
+            activeGreetingAudio = null;
+        }
+
+        setFaceState('happy');
+        botSpeechActive = true;
+
+        let mode = 'auto';
+        let finalized = false;
+        let settled = false;
+
+        // MPEG stream mode state (MediaSource)
+        let mpegAudio = null;
+        let mpegMediaSource = null;
+        let mpegSourceBuffer = null;
+        let mpegObjectUrl = '';
+        let mpegPlaybackStarted = false;
+        const mpegPendingChunks = [];
+
+        // WAV segment queue mode state (VieNeu chunks)
+        const wavPendingChunks = [];
+        let wavPlaying = false;
+
+        const looksLikeWavChunk = (chunk) =>
+            chunk instanceof Uint8Array &&
+            chunk.length >= 12 &&
+            chunk[0] === 0x52 && // R
+            chunk[1] === 0x49 && // I
+            chunk[2] === 0x46 && // F
+            chunk[3] === 0x46 && // F
+            chunk[8] === 0x57 && // W
+            chunk[9] === 0x41 && // A
+            chunk[10] === 0x56 && // V
+            chunk[11] === 0x45; // E
+
+        let sourceBuffer = null;
+
+        let resolveDone;
+        const donePromise = new Promise((resolve) => {
+            resolveDone = resolve;
+        });
+
+        const complete = () => {
+            if (settled) return;
+            settled = true;
+            if (mpegObjectUrl) {
+                URL.revokeObjectURL(mpegObjectUrl);
+                mpegObjectUrl = '';
+            }
+            if (activeGreetingAudio === mpegAudio) {
+                activeGreetingAudio = null;
+            }
+            botSpeechActive = false;
+            if (!isMenuOpen && !robotController.isCinematicRunning) {
+                setFaceState('normal');
+            }
+            resolveDone();
+        };
+
+        const flushMpeg = () => {
+            if (!mpegSourceBuffer || mpegSourceBuffer.updating) return;
+            const nextChunk = mpegPendingChunks.shift();
+            if (nextChunk) {
+                mpegSourceBuffer.appendBuffer(nextChunk);
+                if (!mpegPlaybackStarted && mpegAudio) {
+                    mpegPlaybackStarted = true;
+                    void mpegAudio.play().catch(() => {
+                        complete();
+                    });
+                }
+                return;
+            }
+            if (finalized && mpegMediaSource && mpegMediaSource.readyState === 'open') {
+                try {
+                    mpegMediaSource.endOfStream();
+                } catch {}
+                if (!mpegPlaybackStarted) {
+                    complete();
+                }
+            }
+        };
+
+        const initMpegMode = () => {
+            if (mpegMediaSource || settled) return;
+            if (typeof MediaSource === 'undefined' || !MediaSource.isTypeSupported('audio/mpeg')) {
+                complete();
+                return;
+            }
+
+            mpegAudio = new Audio();
+            mpegMediaSource = new MediaSource();
+            mpegObjectUrl = URL.createObjectURL(mpegMediaSource);
+            mpegAudio.src = mpegObjectUrl;
+            mpegAudio.preload = 'auto';
+            activeGreetingAudio = mpegAudio;
+            mpegAudio.onended = complete;
+            mpegAudio.onerror = complete;
+
+            mpegMediaSource.addEventListener('sourceopen', () => {
+                try {
+                    mpegSourceBuffer = mpegMediaSource.addSourceBuffer('audio/mpeg');
+                    mpegSourceBuffer.mode = 'sequence';
+                    mpegSourceBuffer.addEventListener('updateend', flushMpeg);
+                    flushMpeg();
+                } catch {
+                    complete();
+                }
+            });
+        };
+
+        const playNextWavChunk = () => {
+            if (settled || wavPlaying) return;
+            const nextChunk = wavPendingChunks.shift();
+            if (!nextChunk) {
+                if (finalized) {
+                    complete();
+                }
+                return;
+            }
+
+            wavPlaying = true;
+            const wavBlob = new Blob([nextChunk], { type: 'audio/wav' });
+            const wavUrl = URL.createObjectURL(wavBlob);
+            const wavAudio = new Audio(wavUrl);
+            wavAudio.preload = 'auto';
+            activeGreetingAudio = wavAudio;
+
+            const finishChunk = () => {
+                URL.revokeObjectURL(wavUrl);
+                if (activeGreetingAudio === wavAudio) {
+                    activeGreetingAudio = null;
+                }
+                wavPlaying = false;
+                if (wavPendingChunks.length === 0 && finalized) {
+                    complete();
+                    return;
+                }
+                playNextWavChunk();
+            };
+
+            wavAudio.onended = finishChunk;
+            wavAudio.onerror = finishChunk;
+            void wavAudio.play().catch(() => {
+                finishChunk();
+            });
+        };
+
+        return {
+            appendChunk: (chunk) => {
+                if (!(chunk instanceof Uint8Array) || chunk.length === 0 || settled) return;
+                const safeChunk = new Uint8Array(chunk.length);
+                safeChunk.set(chunk);
+
+                if (mode === 'auto') {
+                    mode = looksLikeWavChunk(safeChunk) ? 'wav' : 'mpeg';
+                    if (mode === 'mpeg') {
+                        initMpegMode();
+                    }
+                }
+
+                if (mode === 'wav') {
+                    wavPendingChunks.push(safeChunk);
+                    playNextWavChunk();
+                    return;
+                }
+
+                mpegPendingChunks.push(safeChunk);
+                flushMpeg();
+            },
+            finalize: async () => {
+                finalized = true;
+                if (mode === 'wav') {
+                    if (!wavPlaying && wavPendingChunks.length === 0) {
+                        complete();
+                    }
+                } else if (mode === 'mpeg') {
+                    flushMpeg();
+                } else {
+                    complete();
+                }
+                await donePromise;
+            },
+            cancel: () => {
+                finalized = true;
+                complete();
+            },
+        };
+    }
+
     async function playBotSpeech(text) {
         const safeText = String(text || '').trim();
         if (!safeText) return;
 
-        const response = await fetch(`${getAiApiUrl()}/speech/synthesize`, {
+        interruptBotSpeech();
+        const speechAbortController = new AbortController();
+        activeBotSpeechAbortController = speechAbortController;
+        const speechPayload = buildSpeechSynthesisPayload(safeText);
+        const forcedVieneu = isVieneuForced(speechPayload);
+
+        const streamPlayer = createStreamingAudioPlayer();
+        if (streamPlayer) {
+            try {
+                const aiApiUrl = await ensureAiApiUrlReady();
+                const response = await fetch(`${aiApiUrl}/speech/synthesize/stream`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(speechPayload),
+                    signal: speechAbortController.signal,
+                });
+                if (!response.ok || !response.body) {
+                    throw new Error(`synthesize stream failed: HTTP ${response.status}`);
+                }
+
+                const reader = response.body.getReader();
+                while (true) {
+                    if (speechAbortController.signal.aborted) {
+                        throw new Error('bot speech interrupted');
+                    }
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    if (value) {
+                        streamPlayer.appendChunk(value);
+                    }
+                }
+                await streamPlayer.finalize();
+                if (activeBotSpeechAbortController === speechAbortController) {
+                    activeBotSpeechAbortController = null;
+                }
+                return;
+            } catch (error) {
+                if (isAbortError(error)) {
+                    streamPlayer.cancel();
+                    if (activeBotSpeechAbortController === speechAbortController) {
+                        activeBotSpeechAbortController = null;
+                    }
+                    return;
+                }
+                console.warn('[voice-tts-stream] fallback to blob playback:', error);
+            }
+        }
+
+        const aiApiUrl = await ensureAiApiUrlReady();
+        const response = await fetch(`${aiApiUrl}/speech/synthesize`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: safeText }),
+            body: JSON.stringify(speechPayload),
+            signal: speechAbortController.signal,
         });
         if (!response.ok) {
             throw new Error(`synthesize failed: HTTP ${response.status}`);
@@ -1066,9 +3130,16 @@
             activeGreetingAudio = audio;
             audio.preload = 'auto';
             setFaceState('happy');
+            botSpeechActive = true;
             try {
                 await audio.play();
             } catch {
+                if (speechAbortController.signal.aborted) {
+                    return;
+                }
+                if (forcedVieneu) {
+                    throw new Error('VieNeu playback failed and browser fallback is disabled while forcing VieNeu.');
+                }
                 if ('speechSynthesis' in window) {
                     const utterance = new SpeechSynthesisUtterance(safeText);
                     utterance.lang = 'vi-VN';
@@ -1086,8 +3157,12 @@
                 audio.onerror = () => resolve();
             });
         } finally {
+            if (activeBotSpeechAbortController === speechAbortController) {
+                activeBotSpeechAbortController = null;
+            }
             URL.revokeObjectURL(audioUrl);
             activeGreetingAudio = null;
+            botSpeechActive = false;
             if (!isMenuOpen && !robotController.isCinematicRunning) {
                 setFaceState('normal');
             }
@@ -1097,7 +3172,16 @@
     function enqueueUserTurn(transcript) {
         const cleanText = String(transcript || '').trim();
         if (!cleanText) return;
-        pendingUserTurns.push(cleanText);
+        markSpeechActivity();
+        prioritizeUserSpeech();
+        if (voiceQueueRunning) {
+            pendingUserTurns.unshift(cleanText);
+        } else {
+            pendingUserTurns.push(cleanText);
+        }
+        if (pendingUserTurns.length > 12) {
+            pendingUserTurns.length = 12;
+        }
         if (!voiceQueueRunning) {
             void processVoiceQueue();
         }
@@ -1142,95 +3226,430 @@
     async function processVoiceQueue() {
         if (voiceQueueRunning) return;
         voiceQueueRunning = true;
-        while (pendingUserTurns.length > 0) {
-            const userText = pendingUserTurns.shift();
-            if (!userText) continue;
-            appendChat('user', userText);
-            setVoiceStatus('Dang gui len backend...');
-            const userIntent = inferVoiceIntent(userText);
-            if (userIntent === 'menuOpen') {
-                void robotController.dispatchTrigger('voice.intent.menuOpen', { intent: 'menuOpen', scene: 'intent', emotion: 'focused' });
-            }
-            if (userIntent === 'menuClose') {
-                void robotController.dispatchTrigger('voice.intent.menuClose', { intent: 'menuClose', scene: 'intent', emotion: 'focused' });
-            }
-            if (shouldOpenMenuFromText(userText) && !isMenuOpen) {
-                toggleMenu();
-            }
-            if (shouldCloseMenuFromText(userText) && isMenuOpen) {
-                toggleMenu();
-            }
+        try {
+            while (pendingUserTurns.length > 0) {
+                const userText = pendingUserTurns.shift();
+                if (!userText) continue;
+                const cartSnapshotBeforeTurn = normalizeOrderItems(cartState);
 
-            try {
-                if (!currentSessionId) {
-                    const sessionPayload = await startConversationSession('manual');
-                    const opening = String(sessionPayload?.reply_text || '').trim();
-                    if (opening) {
-                        appendChat('assistant', opening);
-                        await playBotSpeech(opening);
+                appendChat('user', userText);
+                setVoiceStatus('Dang gui len backend...');
+                const userIntent = inferVoiceIntent(userText);
+                if (userIntent === 'menuOpen') {
+                    void robotController.dispatchTrigger('voice.intent.menuOpen', { intent: 'menuOpen', scene: 'intent', emotion: 'focused' });
+                }
+                if (userIntent === 'menuClose') {
+                    void robotController.dispatchTrigger('voice.intent.menuClose', { intent: 'menuClose', scene: 'intent', emotion: 'focused' });
+                }
+                if (shouldOpenMenuFromText(userText) && !isMenuOpen) {
+                    toggleMenu();
+                }
+                if (shouldCloseMenuFromText(userText) && isMenuOpen) {
+                    toggleMenu();
+                }
+
+                const turnAbortController = new AbortController();
+                activeTurnAbortController = turnAbortController;
+
+                try {
+                    if (!currentSessionId) {
+                        const sessionPayload = await startConversationSession('manual', turnAbortController.signal);
+                        const opening = String(sessionPayload?.reply_text || '').trim();
+                        if (opening && chatHistory.length < 3) {
+                            appendChat('assistant', opening);
+                        }
                     }
-                }
 
-                if (!currentSessionId) {
-                    throw new Error('Khong tao duoc session.');
-                }
+                    if (!currentSessionId) {
+                        throw new Error('Khong tao duoc session.');
+                    }
 
-                const replyPayload = await sendConversationTurn(currentSessionId, userText);
-                const replyText = String(replyPayload?.reply_text || '').trim();
-                updateMiniCart(replyPayload?.cart);
-                const backendScene = String(replyPayload?.scene || '').trim();
-                const backendEmotionHint = String(replyPayload?.emotion_hint || '').trim();
-                const backendActionHints = Array.isArray(replyPayload?.action_hints)
-                    ? replyPayload.action_hints
-                    : [];
-                const localActionHints = inferActionHintsFromText(`${userText} ${replyText}`);
-                const mergedActionHints = backendActionHints.length > 0
-                    ? Array.from(new Set(backendActionHints))
-                    : localActionHints;
-                if (replyPayload?.order_created) {
-                    currentSessionId = null;
-                    setVoiceStatus(`Da chot don ${replyPayload.order_id || ''}`.trim());
-                }
-                if (replyText) {
-                    appendChat('assistant', replyText);
-                    setVoiceStatus('Robot dang tra loi...');
-                    await playBotSpeech(replyText);
-                    robotController.reactToConversation({
-                        scene: backendScene || inferVoiceIntent(replyText),
-                        emotionHint: backendEmotionHint || (inferVoiceIntent(replyText) === 'cute' ? 'cute' : 'happy'),
-                        actionHints: mergedActionHints,
-                        intent: userIntent,
-                    });
-                    if (backendScene) {
-                        void robotController.dispatchTrigger(`voice.scene.${backendScene}`, {
-                            scene: backendScene,
+                    let replyPayload = null;
+                    let replyText = '';
+                    let streamedAudioChunks = 0;
+                    let streamPlayer = createStreamingAudioPlayer();
+
+                    try {
+                        await streamConversationTurn(currentSessionId, userText, (chunk) => {
+                            if (chunk?.type === 'text') {
+                                replyPayload = chunk;
+                                replyText = String(chunk.content || '').trim();
+                                if (Array.isArray(chunk.cart)) {
+                                    updateMiniCart(chunk.cart);
+                                }
+                                return;
+                            }
+                            if (chunk?.type === 'audio' && streamPlayer && chunk.content) {
+                                streamedAudioChunks += 1;
+                                streamPlayer.appendChunk(decodeBase64AudioChunk(chunk.content));
+                            }
+                        }, turnAbortController.signal);
+                    } catch (streamError) {
+                        if (isAbortError(streamError)) {
+                            throw streamError;
+                        }
+                        console.warn('[voice-turn-stream] fallback to legacy turn endpoint:', streamError);
+                        replyPayload = await sendConversationTurn(currentSessionId, userText, turnAbortController.signal);
+                        replyText = String(replyPayload?.reply_text || '').trim();
+                        updateMiniCart(replyPayload?.cart);
+                    } finally {
+                        if (streamPlayer) {
+                            if (turnAbortController.signal.aborted) {
+                                streamPlayer.cancel();
+                            } else {
+                                await streamPlayer.finalize();
+                            }
+                        }
+                    }
+
+                    const backendScene = String(replyPayload?.scene || '').trim();
+                    const backendEmotionHint = String(replyPayload?.emotion_hint || '').trim();
+                    const backendActionHints = Array.isArray(replyPayload?.action_hints)
+                        ? replyPayload.action_hints
+                        : [];
+                    const localActionHints = inferActionHintsFromText(`${userText} ${replyText}`);
+                    const mergedActionHints = backendActionHints.length > 0
+                        ? Array.from(new Set(backendActionHints))
+                        : localActionHints;
+                    if (replyPayload?.order_created) {
+                        const finishedSessionId = currentSessionId;
+                        const finishedOrderId = String(replyPayload?.order_id || '').trim();
+                        const orderItemsForPopup = cartSnapshotBeforeTurn.length > 0
+                            ? cartSnapshotBeforeTurn
+                            : normalizeOrderItems(replyPayload?.cart);
+                        currentSessionId = null;
+                        setVoiceStatus(`Da chot don ${finishedOrderId || ''}`.trim());
+                        if (orderItemsForPopup.length > 0) {
+                            void runOrderCompletionFlow({
+                                sessionId: finishedSessionId,
+                                orderId: finishedOrderId,
+                                items: orderItemsForPopup,
+                            });
+                        }
+                    }
+                    if (replyText) {
+                        appendChat('assistant', replyText);
+                        if (streamedAudioChunks === 0 && !turnAbortController.signal.aborted) {
+                            setVoiceStatus('Robot dang tra loi...');
+                            await playBotSpeech(replyText);
+                        }
+                        robotController.reactToConversation({
+                            scene: backendScene || inferVoiceIntent(replyText),
+                            emotionHint: backendEmotionHint || (inferVoiceIntent(replyText) === 'cute' ? 'cute' : 'happy'),
+                            actionHints: mergedActionHints,
                             intent: userIntent,
-                            emotion: backendEmotionHint || 'neutral',
                         });
+                        if (backendScene) {
+                            void robotController.dispatchTrigger(`voice.scene.${backendScene}`, {
+                                scene: backendScene,
+                                intent: userIntent,
+                                emotion: backendEmotionHint || 'neutral',
+                            });
+                        }
+                        if (shouldOpenMenuFromText(replyText) && !isMenuOpen) {
+                            toggleMenu();
+                        }
+                        if (shouldCloseMenuFromText(replyText) && isMenuOpen) {
+                            toggleMenu();
+                        }
                     }
-                    if (shouldOpenMenuFromText(replyText) && !isMenuOpen) {
-                        toggleMenu();
+                    setVoiceStatus(voiceListening ? 'Dang nghe ban noi...' : 'Da tra loi xong.');
+                } catch (error) {
+                    if (isAbortError(error)) {
+                        setVoiceStatus('Dang uu tien loi noi moi...');
+                    } else {
+                        console.warn('[voice-turn] failed:', error);
+                        setVoiceStatus('Gap loi khi xu ly hoi thoai.');
                     }
-                    if (shouldCloseMenuFromText(replyText) && isMenuOpen) {
-                        toggleMenu();
+                } finally {
+                    if (activeTurnAbortController === turnAbortController) {
+                        activeTurnAbortController = null;
                     }
                 }
-                setVoiceStatus(voiceListening ? 'Dang nghe ban noi...' : 'Da tra loi xong.');
-            } catch (error) {
-                console.warn('[voice-turn] failed:', error);
-                setVoiceStatus('Gap loi khi xu ly hoi thoai.');
+            }
+        } finally {
+            voiceQueueRunning = false;
+            if (voiceListening) {
+                setVoiceStatus('Dang nghe ban noi...');
             }
         }
-        voiceQueueRunning = false;
+    }
+
+    function buildSpeechWebSocketUrl(aiApiBaseUrl = getAiApiUrl()) {
+        const httpUrl = new URL(aiApiBaseUrl);
+        httpUrl.protocol = httpUrl.protocol === 'https:' ? 'wss:' : 'ws:';
+        httpUrl.pathname = '/speech/transcribe/ws';
+        httpUrl.search = '';
+        httpUrl.hash = '';
+        return httpUrl.toString();
+    }
+
+    function pickBackendRecorderMimeType() {
+        const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus'];
+        for (const mimeType of candidates) {
+            if (window.MediaRecorder && MediaRecorder.isTypeSupported(mimeType)) {
+                return mimeType;
+            }
+        }
+        return '';
+    }
+
+    function clearBackendFinalizeTimer() {
+        if (voiceBackendFinalizeTimer) {
+            window.clearTimeout(voiceBackendFinalizeTimer);
+            voiceBackendFinalizeTimer = null;
+        }
+    }
+
+    function clearBackendForceFinalizeTimer() {
+        if (voiceBackendForceFinalizeTimer) {
+            window.clearTimeout(voiceBackendForceFinalizeTimer);
+            voiceBackendForceFinalizeTimer = null;
+        }
+    }
+
+    function scheduleBackendFinalize() {
+        clearBackendFinalizeTimer();
+        voiceBackendFinalizeTimer = window.setTimeout(() => {
+            if (!voiceListening || voiceInputMode !== 'backend' || !voiceBackendSocket) return;
+            if (voiceBackendSocket.readyState !== WebSocket.OPEN) return;
+            if (voiceBackendFinalizing) return;
+            try {
+                voiceBackendFinalizing = true;
+                voiceBackendSocket.send('finalize');
+            } catch {}
+        }, BACKEND_STT_FINALIZE_SILENCE_MS);
+    }
+
+    function scheduleBackendForceFinalize() {
+        if (voiceBackendForceFinalizeTimer) return;
+        voiceBackendForceFinalizeTimer = window.setTimeout(() => {
+            voiceBackendForceFinalizeTimer = null;
+            if (!voiceListening || voiceInputMode !== 'backend' || !voiceBackendSocket) return;
+            if (voiceBackendSocket.readyState !== WebSocket.OPEN) return;
+            if (voiceBackendFinalizing) return;
+            try {
+                voiceBackendFinalizing = true;
+                voiceBackendSocket.send('finalize');
+            } catch {}
+        }, BACKEND_STT_FORCE_FINALIZE_MS);
+    }
+
+    async function ensureBackendMicStream() {
+        if (voiceBackendStream && voiceBackendStream.active) {
+            return voiceBackendStream;
+        }
+        voiceBackendStream = await navigator.mediaDevices.getUserMedia({
+            audio: getMicAudioConstraintsForKiosk(),
+            video: false,
+        });
+        return voiceBackendStream;
+    }
+
+    async function openBackendSpeechSocket() {
+        if (voiceBackendSocket && voiceBackendSocket.readyState === WebSocket.OPEN) {
+            return voiceBackendSocket;
+        }
+        if (voiceBackendSocket && voiceBackendSocket.readyState === WebSocket.CONNECTING) {
+            await new Promise((resolve, reject) => {
+                const timeoutId = window.setTimeout(() => {
+                    reject(new Error('Backend STT websocket timeout'));
+                }, 3500);
+                const handleOpen = () => {
+                    window.clearTimeout(timeoutId);
+                    resolve();
+                };
+                const handleError = () => {
+                    window.clearTimeout(timeoutId);
+                    reject(new Error('Backend STT websocket error'));
+                };
+                voiceBackendSocket.addEventListener('open', handleOpen, { once: true });
+                voiceBackendSocket.addEventListener('error', handleError, { once: true });
+            });
+            return voiceBackendSocket;
+        }
+
+        const aiApiUrl = await ensureAiApiUrlReady();
+        voiceBackendSocket = new WebSocket(buildSpeechWebSocketUrl(aiApiUrl));
+        voiceBackendSocket.binaryType = 'arraybuffer';
+
+        voiceBackendSocket.onmessage = (event) => {
+            let payload = null;
+            try {
+                payload = JSON.parse(String(event.data));
+            } catch {
+                return;
+            }
+            if (!payload || typeof payload !== 'object') return;
+
+            if (payload.type === 'partial') {
+                const partialText = String(payload.transcript || '').trim();
+                if (partialText) {
+                    markSpeechActivity();
+                    if (botSpeechActive) {
+                        prioritizeUserSpeech();
+                    }
+                    // Avoid showing low-confidence partial text to users.
+                    setVoiceStatus('Dang nghe ban noi...');
+                }
+                return;
+            }
+
+            if (payload.type === 'final') {
+                voiceBackendFinalizing = false;
+                clearBackendForceFinalizeTimer();
+                const transcript = String(payload.transcript || '').trim();
+                const status = String(payload.status || '').toLowerCase();
+                const now = Date.now();
+
+                if (status === 'ok' && transcript) {
+                    markSpeechActivity();
+                    if (botSpeechActive) {
+                        prioritizeUserSpeech();
+                    }
+                    if (transcript === voiceBackendLastFinal && now - voiceBackendLastFinalAt < 1800) {
+                        return;
+                    }
+                    voiceBackendLastFinal = transcript;
+                    voiceBackendLastFinalAt = now;
+                    enqueueUserTurn(transcript);
+                    return;
+                }
+
+                if (status === 'retry') {
+                    setVoiceStatus(String(payload.message || 'Minh nghe chua ro, ban noi lai giup minh nhe.'));
+                    return;
+                }
+            }
+        };
+
+        voiceBackendSocket.onerror = () => {
+            if (!voiceListening || voiceInputMode !== 'backend') return;
+            setVoiceStatus('Backend STT websocket gap loi, dang thu ket noi lai...');
+        };
+
+        voiceBackendSocket.onclose = () => {
+            voiceBackendSocket = null;
+            voiceBackendFinalizing = false;
+            if (voiceListening && voiceInputMode === 'backend') {
+                window.setTimeout(() => {
+                    if (!voiceListening || voiceInputMode !== 'backend') return;
+                    void startBackendSpeechListening().catch(() => {});
+                }, 280);
+            }
+        };
+
+        await new Promise((resolve, reject) => {
+            const socket = voiceBackendSocket;
+            const timeoutId = window.setTimeout(() => {
+                reject(new Error('Backend STT websocket timeout'));
+            }, 3500);
+            socket.addEventListener('open', () => {
+                window.clearTimeout(timeoutId);
+                resolve();
+            }, { once: true });
+            socket.addEventListener('error', () => {
+                window.clearTimeout(timeoutId);
+                reject(new Error('Backend STT websocket error'));
+            }, { once: true });
+        });
+
+        return voiceBackendSocket;
+    }
+
+    function stopBackendSpeechListening(options = {}) {
+        const finalize = options.finalize === true;
+        clearBackendFinalizeTimer();
+        clearBackendForceFinalizeTimer();
+        voiceBackendFinalizing = false;
+        if (voiceInputMode === 'backend') {
+            voiceInputMode = 'idle';
+        }
+        if (voiceBackendRecorder) {
+            try {
+                if (finalize && voiceBackendSocket && voiceBackendSocket.readyState === WebSocket.OPEN) {
+                    voiceBackendSocket.send('finalize');
+                }
+                if (voiceBackendRecorder.state !== 'inactive') {
+                    voiceBackendRecorder.stop();
+                }
+            } catch {}
+            voiceBackendRecorder = null;
+        }
+        if (voiceBackendSocket) {
+            try {
+                voiceBackendSocket.close();
+            } catch {}
+            voiceBackendSocket = null;
+        }
+        if (voiceBackendStream) {
+            try {
+                voiceBackendStream.getTracks().forEach((track) => track.stop());
+            } catch {}
+            voiceBackendStream = null;
+        }
+    }
+
+    async function startBackendSpeechListening() {
+        if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+            throw new Error('Trinh duyet khong ho tro backend STT streaming.');
+        }
+
+        stopBackendSpeechListening({ finalize: false });
+
+        const stream = await ensureBackendMicStream();
+        const socket = await openBackendSpeechSocket();
+        const mimeType = pickBackendRecorderMimeType();
+        voiceBackendRecorder = mimeType
+            ? new MediaRecorder(stream, { mimeType })
+            : new MediaRecorder(stream);
+
+        socket.send('start:order:speech.webm');
+        voiceBackendFinalizing = false;
+        clearBackendForceFinalizeTimer();
+
+        voiceBackendRecorder.ondataavailable = (event) => {
+            if (!event.data || event.data.size <= 0) return;
+            if (!voiceBackendSocket || voiceBackendSocket.readyState !== WebSocket.OPEN) return;
+            try {
+                voiceBackendSocket.send(event.data);
+                voiceBackendSocket.send('flush');
+                scheduleBackendFinalize();
+                scheduleBackendForceFinalize();
+            } catch {}
+        };
+
+        voiceBackendRecorder.onerror = () => {
+            setVoiceStatus('Mic gap loi khi thu am backend STT.');
+        };
+
+        voiceBackendRecorder.start(BACKEND_STT_CHUNK_MS);
+        voiceInputMode = 'backend';
+        setVoiceStatus('Dang nghe ban noi...');
+    }
+
+    async function fallbackToBackendStt(reasonText) {
+        try {
+            if (voiceRecognition) {
+                voiceRecognition.stop();
+            }
+        } catch {}
+        try {
+            await startBackendSpeechListening();
+            if (reasonText) {
+                setVoiceStatus(reasonText);
+            }
+        } catch (error) {
+            console.warn('[backend-stt] fallback failed:', error);
+            const detail = error instanceof Error ? error.message : String(error || '');
+            setVoiceStatus(`Khong bat duoc STT. Hay cap quyen microphone roi thu lai. ${detail}`.trim());
+        }
     }
 
     function setupSpeechRecognition() {
         const RecognitionClass = window.SpeechRecognition || window.webkitSpeechRecognition;
         if (!RecognitionClass) {
-            setVoiceStatus('Trinh duyet nay khong ho tro STT.');
-            if (voiceMiniToggle) {
-                voiceMiniToggle.disabled = true;
-            }
+            setVoiceStatus('Trinh duyet nay khong ho tro STT browser, chuyen sang backend STT.');
             return;
         }
 
@@ -1241,6 +3660,7 @@
         voiceRecognition.maxAlternatives = 1;
 
         voiceRecognition.onresult = (event) => {
+            if (voiceInputMode !== 'browser') return;
             let interim = '';
             const finals = [];
             for (let index = event.resultIndex; index < event.results.length; index += 1) {
@@ -1255,21 +3675,37 @@
             }
 
             if (interim.trim()) {
+                markSpeechActivity();
+                if (botSpeechActive) {
+                    prioritizeUserSpeech();
+                }
                 setVoiceStatus(`Dang nghe: ${interim.trim()}`);
                 if (activeGreetingAudio) {
                     activeGreetingAudio.pause();
                     activeGreetingAudio = null;
                 }
             }
-            finals.forEach((text) => enqueueUserTurn(text));
+            finals.forEach((text) => {
+                if (botSpeechActive) {
+                    prioritizeUserSpeech();
+                }
+                enqueueUserTurn(text);
+            });
         };
 
-        voiceRecognition.onerror = () => {
+        voiceRecognition.onerror = (event) => {
+            if (!voiceListening || voiceInputMode !== 'browser') return;
+            const errCode = String(event?.error || '').toLowerCase();
+            const fallbackErrors = ['audio-capture', 'not-allowed', 'service-not-allowed', 'network', 'language-not-supported'];
+            if (fallbackErrors.includes(errCode)) {
+                void fallbackToBackendStt('STT browser khong on dinh, da chuyen sang backend STT.');
+                return;
+            }
             setVoiceStatus('STT gap loi, dang thu ket noi lai...');
         };
 
         voiceRecognition.onend = () => {
-            if (!voiceListening) return;
+            if (!voiceListening || voiceInputMode !== 'browser') return;
             window.setTimeout(() => {
                 if (!voiceListening || !voiceRecognition) return;
                 try {
@@ -1279,30 +3715,80 @@
         };
     }
 
-    function setVoiceListening(enabled) {
-        if (!voiceRecognition && enabled) {
-            setupSpeechRecognition();
+    function setVoiceListening(enabled, source = 'system') {
+        const nextEnabled = Boolean(enabled);
+        if (!nextEnabled && source !== 'manual' && voicePinnedByUser) {
+            setVoiceStatus('Dang nghe thu cong, bo qua auto-stop.');
+            return;
         }
-        if (!voiceRecognition) return;
 
-        voiceListening = Boolean(enabled);
+        if (source === 'manual') {
+            voicePinnedByUser = nextEnabled;
+        }
+
+        voiceListening = nextEnabled;
         if (voiceMiniToggle) {
             voiceMiniToggle.classList.toggle('active', voiceListening);
             voiceMiniToggle.textContent = voiceListening ? 'Dung nghe' : 'Bat nghe';
         }
 
-        try {
-            if (voiceListening) {
-                voiceRecognition.start();
-                setVoiceStatus('Dang nghe ban noi...');
-            } else {
-                voiceRecognition.stop();
-                setVoiceStatus('Da dung nghe.');
-            }
-        } catch (error) {
-            console.warn('[stt] toggle failed:', error);
-            setVoiceStatus('Khong bat duoc STT, hay thu lai.');
+        if (!voiceListening) {
+            interruptTurnProcessingForUser();
+            interruptBotSpeech();
+            pendingUserTurns.length = 0;
+            try {
+                if (voiceRecognition) {
+                    voiceRecognition.stop();
+                }
+            } catch {}
+            stopBackendSpeechListening({ finalize: true });
+            voiceInputMode = 'idle';
+            setVoiceStatus('Da dung nghe.');
+            return;
         }
+
+        const startPipeline = async () => {
+            syncMicSensitivityFromAdmin({ restartBackend: false });
+            if (!voiceRecognition) {
+                setupSpeechRecognition();
+            }
+
+            try {
+                await ensureAiApiUrlReady();
+                if (resolvedAiHasRealtimeStack) {
+                    await startBackendSpeechListening();
+                    setVoiceStatus('Dang nghe ban noi...');
+                    return;
+                }
+            } catch (backendError) {
+                console.warn('[stt] backend streaming unavailable:', backendError);
+            }
+
+            if (voiceRecognition) {
+                try {
+                    voiceRecognition.start();
+                    voiceInputMode = 'browser';
+                    setVoiceStatus('Dang nghe ban noi...');
+                    return;
+                } catch (browserError) {
+                    console.warn('[stt] browser speech start failed:', browserError);
+                }
+            }
+
+            setVoiceStatus('Khong bat duoc STT, hay cap quyen microphone roi thu lai.');
+            voiceListening = false;
+            if (source === 'manual') {
+                voicePinnedByUser = false;
+            }
+            if (voiceMiniToggle) {
+                voiceMiniToggle.classList.remove('active');
+                voiceMiniToggle.textContent = 'Bat nghe';
+            }
+            stopBackendSpeechListening({ finalize: false });
+            voiceInputMode = 'idle';
+        };
+
+        void startPipeline();
     }
 
     async function runAutoGreeting() {
@@ -1377,11 +3863,15 @@
     function startPresenceGreetingDetection() {
         if (!cameraMiniVideo || presenceDetectionTimer) return;
         presenceDetectionTimer = window.setInterval(() => {
+            const now = Date.now();
             const motionScore = sampleMotionScore(cameraMiniVideo);
-            if (motionScore >= PRESENCE_MOTION_THRESHOLD) {
+            if (motionScore >= presenceMotionThreshold) {
                 absenceFrames = 0;
                 if (!presenceDetected) {
                     presenceDetected = true;
+                    presenceEnteredAt = now;
+                    presenceLeftAt = 0;
+                    chatClearedAfterAbsence = false;
                     setVoiceStatus('Da thay khach, robot bat dau chao va nghe.');
                     void robotController.dispatchTrigger('presence.enter', {
                         presence: 'enter',
@@ -1389,13 +3879,22 @@
                         emotion: 'cute',
                     });
                     void runAutoGreeting();
-                    setVoiceListening(true);
+                    setVoiceListening(true, 'presence');
                 }
                 return;
             }
 
             absenceFrames += 1;
-            if (absenceFrames >= PRESENCE_ABSENCE_FRAMES) {
+            const inPresenceHold = presenceDetected && now - presenceEnteredAt < presenceHoldMs;
+            const recentlySpoke = voiceListening && (now - lastSpeechActivityAt) < Math.max(5000, presenceHoldMs);
+            const busyConversation = voiceQueueRunning || pendingUserTurns.length > 0 || botSpeechActive || Boolean(activeTurnAbortController);
+
+            if (inPresenceHold || recentlySpoke || busyConversation) {
+                absenceFrames = Math.min(absenceFrames, Math.max(0, presenceAbsenceFrames - 1));
+                return;
+            }
+
+            if (absenceFrames >= presenceAbsenceFrames) {
                 if (presenceDetected) {
                     setVoiceStatus('Dang cho khach vao vung camera...');
                     void robotController.dispatchTrigger('presence.leave', {
@@ -1403,9 +3902,23 @@
                         scene: 'idle',
                         emotion: 'neutral',
                     });
-                    setVoiceListening(false);
+                    setVoiceListening(false, 'presence');
                 }
                 presenceDetected = false;
+                presenceEnteredAt = 0;
+                if (!presenceLeftAt) {
+                    presenceLeftAt = now;
+                }
+            }
+
+            if (
+                !presenceDetected
+                && presenceLeftAt > 0
+                && !chatClearedAfterAbsence
+                && (now - presenceLeftAt) >= CHAT_CLEAR_AFTER_ABSENCE_MS
+            ) {
+                clearChatHistory();
+                chatClearedAfterAbsence = true;
             }
         }, PRESENCE_CHECK_INTERVAL_MS);
     }
@@ -1420,7 +3933,18 @@
             requestedActionId,
             actionId,
         });
-        await robotController.triggerCinematic(actionId);
+        try {
+            const ran = await robotController.triggerCinematic(actionId);
+            if (ran === false && typeof setVoiceStatus === 'function') {
+                setVoiceStatus(`Action ${actionId} dang bi tat hoac khong ho tro.`);
+            }
+        } catch (error) {
+            if (typeof setVoiceStatus === 'function') {
+                setVoiceStatus(`Action ${actionId} gap loi, da reset robot.`);
+            }
+            robotController.reset();
+            console.warn('[OrderRobot] manual trigger failed:', error);
+        }
     }
 
     function resetRobot() {
@@ -1534,6 +4058,8 @@
             '/menu',
             'http://127.0.0.1:8011/menu',
             'http://localhost:8011/menu',
+            'http://127.0.0.1:18011/menu',
+            'http://localhost:18011/menu',
         ];
         try {
             const raw = localStorage.getItem(ADMIN_ENV_STORAGE_KEY);
@@ -1631,19 +4157,32 @@
     }
     
     // Initial reset
+    syncMicSensitivityFromAdmin({ restartBackend: false });
     loadRobotScalePercent();
-    loadCameraPreviewVisible();
+    if (isAdminPreviewMode) {
+        applyCameraPreviewVisible(false);
+    } else {
+        loadCameraPreviewVisible();
+    }
     resetRobot();
+    loadChatHistory();
     renderChatMini();
+    hideOrderFlow();
     updateMiniCart([]);
-    setupSpeechRecognition();
-    setVoiceStatus('Dang cho khach vao vung camera...');
-    updateMenuPanelHeight(3);
-    void initializeMiniCamera();
-    if (voiceMiniToggle) {
-        voiceMiniToggle.addEventListener('click', () => {
-            setVoiceListening(!voiceListening);
-        });
+    if (isAdminPreviewMode) {
+        setVoiceStatus('Admin preview mode');
+        updateMenuPanelHeight(0);
+    } else {
+        setupSpeechRecognition();
+        void ensureAiApiUrlReady().catch(() => {});
+        setVoiceStatus('Dang cho khach vao vung camera...');
+        updateMenuPanelHeight(3);
+        void initializeMiniCamera();
+        if (voiceMiniToggle) {
+            voiceMiniToggle.addEventListener('click', () => {
+                setVoiceListening(!voiceListening, 'manual');
+            });
+        }
     }
     window.addEventListener('resize', () => {
         renderMenuCards();
@@ -1666,8 +4205,17 @@
         if (event.key === CAMERA_PREVIEW_VISIBLE_STORAGE_KEY) {
             loadCameraPreviewVisible();
         }
+        if (event.key === ADMIN_MIC_NOISE_FILTER_STRENGTH_KEY || event.key === ADMIN_MIC_NOISE_FILTER_KEY) {
+            syncMicSensitivityFromAdmin({ restartBackend: true });
+        }
         if (event.key === ROBOT_STUDIO_CONFIG_STORAGE_KEY) {
             applyRobotStudioConfig(readRobotStudioConfigFromStorage());
+        }
+        if (event.key === ROBOT_STUDIO_COMMAND_STORAGE_KEY) {
+            try {
+                if (!event.newValue) return;
+                runRobotStudioCommand(JSON.parse(event.newValue));
+            } catch {}
         }
     });
 
@@ -1687,23 +4235,23 @@
             return;
         }
         if (event.data.type === 'orderrobot:robot-studio-command') {
-            const command = String(event.data.command || '').trim();
-            if (command === 'run-graph' && event.data.graphId) {
-                void robotController.runGraph(String(event.data.graphId), event.data.context || {});
-                return;
+            runRobotStudioCommand(event.data);
+            return;
+        }
+        if (event.data.type === 'orderrobot:admin-mic-noise-filter') {
+            if (typeof event.data.strength === 'number' && Number.isFinite(event.data.strength)) {
+                micNoiseFilterStrength = clampPercent(event.data.strength, micNoiseFilterStrength);
+                recalcPresenceSensitivity();
             }
-            if (command === 'stop-graph') {
-                robotController.stopGraph();
-                robotController.reset();
-                return;
-            }
-            if (command === 'preview-action' && event.data.actionId) {
-                void robotController.triggerCinematic(String(event.data.actionId));
-            }
+            syncMicSensitivityFromAdmin({ restartBackend: true });
         }
     });
 
     window.addEventListener('beforeunload', () => {
+        if (kioskHeartbeatTimer) {
+            window.clearInterval(kioskHeartbeatTimer);
+            kioskHeartbeatTimer = null;
+        }
         if (presenceDetectionTimer) {
             window.clearInterval(presenceDetectionTimer);
             presenceDetectionTimer = null;
@@ -1722,9 +4270,8 @@
             } catch {}
             voiceRecognition = null;
         }
+        hideOrderFlow();
+        stopBackendSpeechListening({ finalize: false });
     });
 </script>
 </body></html>
-
-
-

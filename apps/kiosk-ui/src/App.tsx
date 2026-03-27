@@ -1,7 +1,9 @@
-﻿import './App.css'
+import './App.css'
 import { useEffect, useRef, useState } from 'react'
 import {
+  ADMIN_ROBOT_STUDIO_COMMAND_KEY,
   getCameraPreviewVisible,
+  getMicNoiseFilterStrength,
   getRobotScalePercent,
   getRobotStudioConfig,
   subscribeAdminConfigChanges,
@@ -9,6 +11,7 @@ import {
 
 function App() {
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
+  const lastForwardedRobotCommandAtRef = useRef(0)
   const [robotScalePercent, setRobotScalePercent] = useState<number>(() => getRobotScalePercent())
   const [cameraPreviewVisible, setCameraPreviewVisible] = useState<boolean>(() =>
     getCameraPreviewVisible(),
@@ -18,6 +21,7 @@ function App() {
     const syncAdminConfigToIframe = () => {
       const nextScale = getRobotScalePercent()
       const nextCameraVisible = getCameraPreviewVisible()
+      const nextMicNoiseStrength = getMicNoiseFilterStrength()
       const nextRobotStudioConfig = getRobotStudioConfig()
       setRobotScalePercent(nextScale)
       setCameraPreviewVisible(nextCameraVisible)
@@ -30,9 +34,42 @@ function App() {
         window.location.origin,
       )
       iframeRef.current?.contentWindow?.postMessage(
+        { type: 'orderrobot:admin-mic-noise-filter', strength: nextMicNoiseStrength },
+        window.location.origin,
+      )
+      iframeRef.current?.contentWindow?.postMessage(
         { type: 'orderrobot:robot-studio-config', config: nextRobotStudioConfig },
         window.location.origin,
       )
+
+      try {
+        const rawCommand = localStorage.getItem(ADMIN_ROBOT_STUDIO_COMMAND_KEY)
+        if (!rawCommand) return
+        const parsed = JSON.parse(rawCommand) as {
+          type?: string
+          command?: string
+          actionId?: string
+          graphId?: string
+          context?: unknown
+          issuedAt?: number
+        }
+        const issuedAt = Number(parsed.issuedAt ?? 0)
+        if (!Number.isFinite(issuedAt) || issuedAt <= lastForwardedRobotCommandAtRef.current) return
+        lastForwardedRobotCommandAtRef.current = issuedAt
+        iframeRef.current?.contentWindow?.postMessage(
+          {
+            type: 'orderrobot:robot-studio-command',
+            command: parsed.command ?? parsed.type,
+            actionId: parsed.actionId,
+            graphId: parsed.graphId,
+            context: parsed.context,
+            issuedAt,
+          },
+          window.location.origin,
+        )
+      } catch {
+        // ignore invalid command payload
+      }
     }
 
     const unsubscribe = subscribeAdminConfigChanges(() => {
@@ -62,6 +99,10 @@ function App() {
               window.location.origin,
             )
             iframeRef.current?.contentWindow?.postMessage(
+              { type: 'orderrobot:admin-mic-noise-filter', strength: getMicNoiseFilterStrength() },
+              window.location.origin,
+            )
+            iframeRef.current?.contentWindow?.postMessage(
               { type: 'orderrobot:robot-studio-config', config: getRobotStudioConfig() },
               window.location.origin,
             )
@@ -73,4 +114,3 @@ function App() {
 }
 
 export default App
-

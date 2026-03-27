@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import AliasChoices, BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class MenuItem(BaseModel):
@@ -70,19 +70,74 @@ class FeedbackRequest(BaseModel):
 
 
 class TTSConfigRequest(BaseModel):
-    voice: str | None = Field(default=None, validation_alias=AliasChoices("voice", "tts_voice"))
-    rate: int | None = Field(
-        default=None,
-        ge=100,
-        le=300,
-        validation_alias=AliasChoices("rate", "tts_rate"),
-    )
+    voice: str | None = None
+    rate: int | None = Field(default=None, ge=100, le=300)
+    engine: str | None = None
+    vieneu_model_path: str | None = Field(default=None, max_length=1024)
+    vieneu_voice_id: str | None = Field(default=None, max_length=120)
+    vieneu_ref_audio: str | None = Field(default=None, max_length=1024)
+    vieneu_ref_text: str | None = Field(default=None, max_length=1000)
+    vieneu_temperature: float | None = Field(default=None, ge=0.1, le=2.0)
+    vieneu_top_k: int | None = Field(default=None, ge=1, le=200)
+    vieneu_max_chars: int | None = Field(default=None, ge=32, le=512)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _apply_legacy_aliases(cls, data: object) -> object:
+        if not isinstance(data, dict):
+            return data
+        aliases = {
+            "tts_voice": "voice",
+            "tts_rate": "rate",
+            "tts_engine": "engine",
+            "tts_vieneu_model_path": "vieneu_model_path",
+            "tts_vieneu_voice_id": "vieneu_voice_id",
+            "tts_vieneu_ref_audio": "vieneu_ref_audio",
+            "tts_vieneu_ref_text": "vieneu_ref_text",
+            "tts_vieneu_temperature": "vieneu_temperature",
+            "tts_vieneu_top_k": "vieneu_top_k",
+            "tts_vieneu_max_chars": "vieneu_max_chars",
+        }
+        payload = dict(data)
+        for legacy_key, canonical_key in aliases.items():
+            if canonical_key not in payload and legacy_key in payload:
+                payload[canonical_key] = payload[legacy_key]
+        return payload
 
 
 class SpeechSynthesisRequest(BaseModel):
     text: str = Field(min_length=1, max_length=1200)
     voice: str | None = None
     rate: int | None = Field(default=None, ge=100, le=300)
+    engine: str | None = None
+    vieneu_voice_id: str | None = Field(default=None, max_length=120)
+    vieneu_ref_audio: str | None = Field(default=None, max_length=1024)
+    vieneu_ref_text: str | None = Field(default=None, max_length=1000)
+    vieneu_temperature: float | None = Field(default=None, ge=0.1, le=2.0)
+    vieneu_top_k: int | None = Field(default=None, ge=1, le=200)
+    vieneu_max_chars: int | None = Field(default=None, ge=32, le=512)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _apply_legacy_aliases(cls, data: object) -> object:
+        if not isinstance(data, dict):
+            return data
+        aliases = {
+            "tts_voice": "voice",
+            "tts_rate": "rate",
+            "tts_engine": "engine",
+            "tts_vieneu_voice_id": "vieneu_voice_id",
+            "tts_vieneu_ref_audio": "vieneu_ref_audio",
+            "tts_vieneu_ref_text": "vieneu_ref_text",
+            "tts_vieneu_temperature": "vieneu_temperature",
+            "tts_vieneu_top_k": "vieneu_top_k",
+            "tts_vieneu_max_chars": "vieneu_max_chars",
+        }
+        payload = dict(data)
+        for legacy_key, canonical_key in aliases.items():
+            if canonical_key not in payload and legacy_key in payload:
+                payload[canonical_key] = payload[legacy_key]
+        return payload
 
 
 class SpeechTranscriptionResponse(BaseModel):

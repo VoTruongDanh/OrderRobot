@@ -66,6 +66,19 @@
       actionSettings: defaultActionSettings(),
       uploadedAssets: [],
       skinAssetBindings: {},
+      avatarParts: {
+        headShape: 'visor',
+        headAccessory: 'none',
+        eyeStyle: 'visor',
+        mouthStyle: 'line',
+        faceFrameScale: 100,
+        faceFrameVisible: true,
+        armStyle: 'sleek',
+        armColor: 'aqua',
+        bodyShape: 'core',
+        outfitStyle: 'service',
+        randomSeed: 420,
+      },
     };
   }
 
