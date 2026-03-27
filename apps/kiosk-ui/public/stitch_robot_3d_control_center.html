@@ -31,7 +31,13 @@
 <style>
         .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
         :root { --menu-easing: cubic-bezier(0.4, 0, 0.2, 1); --menu-duration: 0.8s; }
-        :root { --robot-scale-factor: 1; --robot-core-color: #00d2fd; --robot-core-glow: rgba(0,210,253,0.5); }
+        :root {
+            --robot-scale-factor: 1;
+            --robot-core-color: #00d2fd;
+            --robot-core-glow: rgba(0,210,253,0.5);
+            --robot-accent-color: #1f2937;
+            --robot-outfit-gradient: linear-gradient(180deg, #ffffff, #e5e7eb);
+        }
 
         /* Layout & Clipping Fixes */
         #stage-container { 
@@ -71,12 +77,40 @@
         /* Face States */
         .face-eye { width: 12px; height: 12px; border-radius: 50%; background: #00d2fd; box-shadow: 0 0 10px #00d2fd; transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
         .face-mouth { width: 24px; height: 4px; background: #00d2fd; border-radius: 99px; transition: all 0.3s; opacity: 0; }
+        .face-nose {
+            width: 9px;
+            height: 5px;
+            border-radius: 999px;
+            background: rgba(255,255,255,0.26);
+            border: 1px solid rgba(148,163,184,0.4);
+            margin-top: -1px;
+            transition: transform 0.25s ease;
+        }
+        .face-blush {
+            position: absolute;
+            width: 16px;
+            height: 8px;
+            border-radius: 999px;
+            background: rgba(251, 113, 133, 0.35);
+            opacity: 0;
+            transition: opacity 0.25s ease;
+            top: 18px;
+        }
+        .face-blush-left { left: 14px; }
+        .face-blush-right { right: 14px; }
         
         .state-angry .face-eye { background: #ff4444; box-shadow: 0 0 15px #ff4444; transform: scaleY(0.4) rotate(15deg); }
         .state-happy .face-eye { transform: scale(1.2) translateY(-2px); }
         .state-happy .face-mouth { opacity: 1; height: 8px; border-radius: 0 0 12px 12px; }
         .state-sleep .face-eye { height: 2px; transform: scaleX(1.5); box-shadow: none; opacity: 0.5; }
         .state-surprised .face-eye { transform: scale(1.8); }
+        .state-cute .face-eye { transform: scale(1.2) translateY(-1px); }
+        #face-screen[data-wink='true'] .face-eye:first-child { transform: scaleY(0.12) translateY(8px); box-shadow: none; }
+        #face-screen[data-blush='true'] .face-blush { opacity: 1; }
+        #face-screen[data-mouth='smile'] .face-mouth { opacity: 1; height: 8px; border-radius: 0 0 12px 12px; }
+        #face-screen[data-mouth='kiss'] .face-mouth { opacity: 1; width: 10px; height: 10px; border-radius: 999px; }
+        #face-screen[data-mouth='tiny'] .face-mouth { opacity: 1; width: 14px; height: 3px; border-radius: 999px; }
+        #face-screen[data-nose-scrunch='true'] .face-nose { transform: scale(0.8) translateY(-2px); }
 
         /* Zero-G Orbits */
         @keyframes orbit-parts {
@@ -495,6 +529,92 @@
             0% { filter: hue-rotate(0deg); }
             100% { filter: hue-rotate(360deg); }
         }
+
+        .robot-effects-layer {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 130;
+            overflow: hidden;
+        }
+        .robot-effect {
+            position: absolute;
+            transform: translate(-50%, -50%);
+            opacity: 0;
+            --drift-x: 0px;
+            --rise-y: 220px;
+            --effect-duration: 900ms;
+            --effect-size: 20px;
+            will-change: transform, opacity, filter;
+            mix-blend-mode: screen;
+        }
+        .robot-effect.active {
+            animation: robot-effect-fly var(--effect-duration) ease-out forwards;
+        }
+        .robot-effect-heart {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: transparent;
+            color: #fb7185;
+            text-shadow: 0 0 10px rgba(244, 114, 182, 0.8), 0 0 18px rgba(251, 113, 133, 0.6);
+        }
+        .robot-effect-heart::before {
+            content: '\2665';
+            font-size: calc(var(--effect-size) * 1.06);
+            line-height: 1;
+        }
+        .robot-effect-sparkle {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: transparent;
+            color: #fef08a;
+            text-shadow: 0 0 12px rgba(250, 204, 21, 0.9), 0 0 22px rgba(34, 211, 238, 0.65);
+        }
+        .robot-effect-sparkle::before {
+            content: '\2726';
+            font-size: calc(var(--effect-size) * 1.02);
+            line-height: 1;
+        }
+        .robot-effect-confetti {
+            border-radius: 3px;
+            background: linear-gradient(145deg, #f97316, #facc15, #22d3ee, #a78bfa);
+            filter: drop-shadow(0 0 9px rgba(34, 211, 238, 0.55));
+        }
+        .robot-effect-petal {
+            border-radius: 70% 30% 65% 35%;
+            background: linear-gradient(165deg, #fbcfe8, #f472b6, #fb7185);
+            filter: drop-shadow(0 0 10px rgba(244,114,182,0.7));
+        }
+        .robot-effect-orb {
+            border-radius: 999px;
+            background: radial-gradient(circle at 30% 30%, #ecfeff, #67e8f9 50%, #3b82f6 100%);
+            filter: drop-shadow(0 0 12px rgba(59,130,246,0.62));
+        }
+        .robot-effect-ribbon {
+            width: 44px !important;
+            height: 8px !important;
+            border-radius: 999px;
+            background: linear-gradient(90deg, #f472b6, #60a5fa, #34d399);
+            filter: drop-shadow(0 0 10px rgba(96,165,250,0.58));
+        }
+        .robot-effect-laser {
+            width: 56px !important;
+            height: 2px !important;
+            border-radius: 999px;
+            background: linear-gradient(90deg, transparent, #22d3ee, transparent);
+            filter: drop-shadow(0 0 6px #22d3ee);
+        }
+        @keyframes robot-effect-fly {
+            0% { opacity: 0; transform: translate(-50%, -50%) scale(0.4) rotate(0deg); }
+            12% { opacity: 1; }
+            58% { opacity: 0.9; }
+            100% {
+                opacity: 0;
+                transform: translate(calc(-50% + var(--drift-x)), calc(-50% - var(--rise-y))) scale(1.22) rotate(var(--effect-rotate, 28deg));
+            }
+        }
     </style>
 </head>
 <body class="bg-background font-body text-on-background min-h-screen overflow-hidden flex items-center justify-center" id="main-viewport">
@@ -555,7 +675,7 @@
 <div class="robot-float flex flex-col items-center w-full h-full">
 <!-- Head -->
 <div class="robot-head w-36 h-28 bg-white rounded-[2.5rem] shadow-xl relative border-t border-slate-100 flex flex-col items-center justify-center z-30 transition-transform duration-500" id="head">
-<div class="w-24 h-10 bg-slate-900 rounded-full flex flex-col items-center justify-center gap-1 overflow-hidden transition-all duration-300" id="face-screen">
+<div class="w-24 h-10 bg-slate-900 rounded-full flex flex-col items-center justify-center gap-1 overflow-hidden transition-all duration-300 relative" id="face-screen">
 <div class="flex justify-around w-full px-4">
 <div class="face-eye"></div>
 <div class="face-eye"></div>
@@ -627,6 +747,7 @@
     const ROBOT_SCALE_STORAGE_KEY = 'admin.robot.scalePercent';
     const CAMERA_PREVIEW_VISIBLE_STORAGE_KEY = 'admin.camera.previewVisible';
     const ADMIN_ENV_STORAGE_KEY = 'admin.env.fields';
+    const ROBOT_STUDIO_CONFIG_STORAGE_KEY = 'admin.robot.studio.v1';
     const AUTO_GREETING_COOLDOWN_MS = 25000;
     const PRESENCE_CHECK_INTERVAL_MS = 700;
     const PRESENCE_MOTION_THRESHOLD = 16;
@@ -688,7 +809,73 @@
             if (isMenuOpen) toggleMenu();
         },
     });
+
+    function readRobotStudioConfigFromStorage() {
+        const fallback = window.OrderRobot?.createDefaultRobotStudioConfig
+            ? window.OrderRobot.createDefaultRobotStudioConfig()
+            : window.OrderRobot?.config?.defaultRobotStudioConfig || {};
+        try {
+            const raw = localStorage.getItem(ROBOT_STUDIO_CONFIG_STORAGE_KEY);
+            if (!raw) return fallback;
+            const parsed = JSON.parse(raw);
+            return { ...fallback, ...parsed };
+        } catch {
+            return fallback;
+        }
+    }
+
+    function applyRobotStudioConfig(config) {
+        const safeConfig = config && typeof config === 'object'
+            ? { ...readRobotStudioConfigFromStorage(), ...config }
+            : readRobotStudioConfigFromStorage();
+        robotController.applyStudioConfig(safeConfig);
+    }
+
+    applyRobotStudioConfig(readRobotStudioConfigFromStorage());
     window.printRobotInfo = () => robotController.printInfo();
+    window.debugRobotAction = async (actionId) => {
+        const safeAction = String(actionId || '').trim();
+        if (!safeAction) return robotController.getRuntimeStats();
+        await robotController.actions.trigger(safeAction, { force: true });
+        return robotController.getRuntimeStats();
+    };
+    window.debugRobotShowcase = async () => {
+        const sequence = [
+            'waveHello',
+            'blowKissHearts',
+            'winkPulse',
+            'heartRain',
+            'cheerSparkle',
+            'hugGesture',
+            'smileBounce',
+            'peacePose',
+            'maidCurtseyBloom',
+            'waiterServingSpin',
+            'animeStarTrail',
+            'pixelHeartStorm',
+            'auroraOrbit',
+        ];
+        for (const actionId of sequence) {
+            await robotController.actions.trigger(actionId, { force: true });
+        }
+        return robotController.getRuntimeStats();
+    };
+    const MANUAL_ACTION_ROTATION = {
+        heroLanding: ['heroLanding', 'maidCurtseyBloom', 'auroraOrbit'],
+        dance: ['dance', 'smileBounce', 'hugGesture', 'waiterServingSpin'],
+        plasmaSurge: ['plasmaSurge', 'animeStarTrail', 'cheerSparkle'],
+        zeroG: ['zeroG', 'pixelHeartStorm', 'heartRain'],
+    };
+    const manualActionCursor = {};
+    function resolveManualActionAlias(actionId) {
+        const safe = String(actionId || '').trim();
+        const sequence = MANUAL_ACTION_ROTATION[safe];
+        if (!Array.isArray(sequence) || sequence.length === 0) return safe;
+        const cursor = Number.isFinite(manualActionCursor[safe]) ? manualActionCursor[safe] : 0;
+        const selected = sequence[cursor % sequence.length];
+        manualActionCursor[safe] = (cursor + 1) % sequence.length;
+        return selected;
+    }
     const robotArchitectureInfo = robotController.printInfo();
 
     function applyRobotScalePercent(scalePercent) {
@@ -926,6 +1113,32 @@
         return /(dong|đóng|an|ẩn).*(menu|thuc don|thực đơn)|tat menu|tắt menu/i.test(normalized);
     }
 
+    function inferVoiceIntent(text) {
+        const normalized = String(text || '').toLowerCase();
+        if (shouldOpenMenuFromText(normalized)) return 'menuOpen';
+        if (shouldCloseMenuFromText(normalized)) return 'menuClose';
+        if (/(chao|xin chao|hello|hi)/i.test(normalized)) return 'greeting';
+        if (/(de thuong|cute|de yeu|xinh)/i.test(normalized)) return 'cute';
+        return 'general';
+    }
+
+    function inferActionHintsFromText(text) {
+        const normalized = String(text || '').toLowerCase();
+        const hints = [];
+        if (/(hôn|hon|hôn gió|hun gio)/i.test(normalized)) hints.push('blowKissHearts');
+        if (/(tim|trai tim|heart)/i.test(normalized)) hints.push('heartRain');
+        if (/(vay tay|chao)/i.test(normalized)) hints.push('waveHello');
+        if (/(nhay|dance|quay)/i.test(normalized)) hints.push('dance');
+        if (/(ôm|om|hug)/i.test(normalized)) hints.push('hugGesture');
+        if (/(de thuong|cute|de yeu)/i.test(normalized)) hints.push('smileBounce');
+        if (/(hau gai|hầu gái|curtsey|cuoi dam)/i.test(normalized)) hints.push('maidCurtseyBloom');
+        if (/(boi ban|bồi bàn|serve|phuc vu)/i.test(normalized)) hints.push('waiterServingSpin');
+        if (/(anime|sao bang|star trail)/i.test(normalized)) hints.push('animeStarTrail');
+        if (/(bao tim|heart storm|mua tim manh)/i.test(normalized)) hints.push('pixelHeartStorm');
+        if (/(aurora|bac cuc quang|orbit)/i.test(normalized)) hints.push('auroraOrbit');
+        return hints;
+    }
+
     async function processVoiceQueue() {
         if (voiceQueueRunning) return;
         voiceQueueRunning = true;
@@ -934,6 +1147,13 @@
             if (!userText) continue;
             appendChat('user', userText);
             setVoiceStatus('Dang gui len backend...');
+            const userIntent = inferVoiceIntent(userText);
+            if (userIntent === 'menuOpen') {
+                void robotController.dispatchTrigger('voice.intent.menuOpen', { intent: 'menuOpen', scene: 'intent', emotion: 'focused' });
+            }
+            if (userIntent === 'menuClose') {
+                void robotController.dispatchTrigger('voice.intent.menuClose', { intent: 'menuClose', scene: 'intent', emotion: 'focused' });
+            }
             if (shouldOpenMenuFromText(userText) && !isMenuOpen) {
                 toggleMenu();
             }
@@ -958,6 +1178,15 @@
                 const replyPayload = await sendConversationTurn(currentSessionId, userText);
                 const replyText = String(replyPayload?.reply_text || '').trim();
                 updateMiniCart(replyPayload?.cart);
+                const backendScene = String(replyPayload?.scene || '').trim();
+                const backendEmotionHint = String(replyPayload?.emotion_hint || '').trim();
+                const backendActionHints = Array.isArray(replyPayload?.action_hints)
+                    ? replyPayload.action_hints
+                    : [];
+                const localActionHints = inferActionHintsFromText(`${userText} ${replyText}`);
+                const mergedActionHints = backendActionHints.length > 0
+                    ? Array.from(new Set(backendActionHints))
+                    : localActionHints;
                 if (replyPayload?.order_created) {
                     currentSessionId = null;
                     setVoiceStatus(`Da chot don ${replyPayload.order_id || ''}`.trim());
@@ -966,6 +1195,19 @@
                     appendChat('assistant', replyText);
                     setVoiceStatus('Robot dang tra loi...');
                     await playBotSpeech(replyText);
+                    robotController.reactToConversation({
+                        scene: backendScene || inferVoiceIntent(replyText),
+                        emotionHint: backendEmotionHint || (inferVoiceIntent(replyText) === 'cute' ? 'cute' : 'happy'),
+                        actionHints: mergedActionHints,
+                        intent: userIntent,
+                    });
+                    if (backendScene) {
+                        void robotController.dispatchTrigger(`voice.scene.${backendScene}`, {
+                            scene: backendScene,
+                            intent: userIntent,
+                            emotion: backendEmotionHint || 'neutral',
+                        });
+                    }
                     if (shouldOpenMenuFromText(replyText) && !isMenuOpen) {
                         toggleMenu();
                     }
@@ -1141,6 +1383,11 @@
                 if (!presenceDetected) {
                     presenceDetected = true;
                     setVoiceStatus('Da thay khach, robot bat dau chao va nghe.');
+                    void robotController.dispatchTrigger('presence.enter', {
+                        presence: 'enter',
+                        scene: 'greeting',
+                        emotion: 'cute',
+                    });
                     void runAutoGreeting();
                     setVoiceListening(true);
                 }
@@ -1151,6 +1398,11 @@
             if (absenceFrames >= PRESENCE_ABSENCE_FRAMES) {
                 if (presenceDetected) {
                     setVoiceStatus('Dang cho khach vao vung camera...');
+                    void robotController.dispatchTrigger('presence.leave', {
+                        presence: 'leave',
+                        scene: 'idle',
+                        emotion: 'neutral',
+                    });
                     setVoiceListening(false);
                 }
                 presenceDetected = false;
@@ -1159,7 +1411,16 @@
     }
 
     async function triggerCinematic(type) {
-        await robotController.triggerCinematic(type);
+        const requestedActionId = String(type || '').trim();
+        const actionId = resolveManualActionAlias(requestedActionId);
+        void robotController.dispatchTrigger(`button.${requestedActionId}`, {
+            intent: 'button',
+            scene: 'manual',
+            emotion: 'happy',
+            requestedActionId,
+            actionId,
+        });
+        await robotController.triggerCinematic(actionId);
     }
 
     function resetRobot() {
@@ -1405,6 +1666,9 @@
         if (event.key === CAMERA_PREVIEW_VISIBLE_STORAGE_KEY) {
             loadCameraPreviewVisible();
         }
+        if (event.key === ROBOT_STUDIO_CONFIG_STORAGE_KEY) {
+            applyRobotStudioConfig(readRobotStudioConfigFromStorage());
+        }
     });
 
     window.addEventListener('message', (event) => {
@@ -1416,6 +1680,26 @@
         }
         if (event.data.type === 'orderrobot:camera-preview-visible') {
             applyCameraPreviewVisible(Boolean(event.data.visible));
+            return;
+        }
+        if (event.data.type === 'orderrobot:robot-studio-config') {
+            applyRobotStudioConfig(event.data.config || {});
+            return;
+        }
+        if (event.data.type === 'orderrobot:robot-studio-command') {
+            const command = String(event.data.command || '').trim();
+            if (command === 'run-graph' && event.data.graphId) {
+                void robotController.runGraph(String(event.data.graphId), event.data.context || {});
+                return;
+            }
+            if (command === 'stop-graph') {
+                robotController.stopGraph();
+                robotController.reset();
+                return;
+            }
+            if (command === 'preview-action' && event.data.actionId) {
+                void robotController.triggerCinematic(String(event.data.actionId));
+            }
         }
     });
 
@@ -1441,5 +1725,6 @@
     });
 </script>
 </body></html>
+
 
 

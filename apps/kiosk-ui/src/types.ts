@@ -1,4 +1,4 @@
-export type MenuItem = {
+﻿export type MenuItem = {
   item_id: string
   name: string
   category: string
@@ -26,6 +26,9 @@ export type ConversationResponse = {
   order_created: boolean
   order_id: string | null
   voice_style: string
+  scene?: string | null
+  emotion_hint?: 'neutral' | 'happy' | 'cute' | 'excited' | 'focused' | null
+  action_hints?: string[]
 }
 
 export type BridgeDebugChatResult = {
@@ -80,3 +83,4 @@ export type RobotMode =
   | 'thinking'
   | 'speaking'
   | 'error'
+

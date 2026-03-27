@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import asyncio
 import base64
@@ -58,12 +58,12 @@ GENERIC_NOUN_HINTS = {
     "sa", "vai", "hong",
 }
 CONFIRM_KEYWORDS = {
-    # Rõ ràng, không nhầm lẫn:
+    # RÃµ rÃ ng, khÃ´ng nháº§m láº«n:
     "xac nhan", "dong y", "ok", "oke", "okey", "okay",
     "dat di", "chot don", "xac nhan don", "len don di",
     "dung roi", "dung vay", "chuan roi", "chinh xac",
     "duoc roi", "lay luon", "tien hanh di", "xac nhan luon",
-    # Câu xác nhận ngắn nhưng đặc thù (không cắt ra):
+    # CÃ¢u xÃ¡c nháº­n ngáº¯n nhÆ°ng Ä‘áº·c thÃ¹ (khÃ´ng cáº¯t ra):
     "vang em", "da vang", "uh huh", "oke luon",
 }
 RESET_KEYWORDS = {"huy", "lam lai", "dat lai", "bo het", "xoa het", "xoa tat ca", "bat dau lai", "reset"}
@@ -80,29 +80,29 @@ RECOMMEND_KEYWORDS = {
     "an gi", "ban co gi", "cho em xem", "cho toi xem", "menu",
 }
 CHECKOUT_KEYWORDS = {
-    # Thường xử lý thêm lúc chốt
+    # ThÆ°á»ng xá»­ lÃ½ thÃªm lÃºc chá»‘t
     "xong", "dat luon", "len don", "chot don", "thanh toan", "xong roi", "het roi",
-    # Từ thị trường đặt hàng
+    # Tá»« thá»‹ trÆ°á»ng Ä‘áº·t hÃ ng
     "dat hang", "order", "order luon", "dat luon di", "dat don",
     "dat ngay", "dat thoi", "toi muon dat", "cho toi dat",
     "lay luon", "lay di", "lay thoi", "cho toi lay",
-    # Xác nhận mua
+    # XÃ¡c nháº­n mua
     "chot", "mua luon", "mua di", "tinh tien", "thanh toan luon",
     "tra tien", "xong di", "oke dat hang", "ok dat hang",
 }
 SEGMENT_SPLIT_PATTERN = re.compile(r"\s*(?:,|\bva\b|\bvoi\b|\bcung\b|\bthem\b)\s*")
 
-# Chitchat / non-ordering keywords — respond naturally instead of trying to match menu
+# Chitchat / non-ordering keywords â€” respond naturally instead of trying to match menu
 _CHITCHAT_PATTERNS = [
-    re.compile(r"ten (toi|minh|em|anh|chi) la"),  # “tên tôi là X”
-    re.compile(r"toi ten (la )?"),                  # “tôi tên là X”
+    re.compile(r"ten (toi|minh|em|anh|chi) la"),  # â€œtÃªn tÃ´i lÃ  Xâ€
+    re.compile(r"toi ten (la )?"),                  # â€œtÃ´i tÃªn lÃ  Xâ€
     re.compile(r"^(chao|hi|hello|xin chao)"),       # greetings
-    re.compile(r"o dau"),                           # “ở đâu”
-    re.compile(r"may gio"),                         # “mấy giờ”
-    re.compile(r"cam on"),                          # “cảm ơn”
+    re.compile(r"o dau"),                           # â€œá»Ÿ Ä‘Ã¢uâ€
+    re.compile(r"may gio"),                         # â€œmáº¥y giá»â€
+    re.compile(r"cam on"),                          # â€œcáº£m Æ¡nâ€
     re.compile(r"^(da|vang|ok|oke|uhm)$"),          # acknowledgments
-    re.compile(r"the la"),                          # “thế là”
-    re.compile(r"khong tin"),                       # “không tin”
+    re.compile(r"the la"),                          # â€œtháº¿ lÃ â€
+    re.compile(r"khong tin"),                       # â€œkhÃ´ng tinâ€
 ]
 
 # Vietnamese STT common misrecognitions and aliases
@@ -122,7 +122,7 @@ _STT_ALIASES: dict[str, str] = {
     "kim sua": "kem sua",
     "kin sua": "kem sua",
     # Common homophones / STT errors (only compound phrases to avoid false positives)
-    "cho vai": "tra vai",   # "chợ vải" misheard → "trà vải"
+    "cho vai": "tra vai",   # "chá»£ váº£i" misheard â†’ "trÃ  váº£i"
     "cha sua": "tra sua",
     "ba xi u": "bac xiu",
     "bac siu": "bac xiu",
@@ -223,7 +223,7 @@ class ConversationEngine:
 
         decision = Decision(
             scene="greeting_intro",
-            reply_seed="Chào mừng mình ạ. Hôm nay mình muốn thử món nào để em tư vấn ngay nhé?",
+            reply_seed="ChÃ o má»«ng mÃ¬nh áº¡. HÃ´m nay mÃ¬nh muá»‘n thá»­ mÃ³n nÃ o Ä‘á»ƒ em tÆ° váº¥n ngay nhÃ©?",
         )
         return await self._build_response(session_id, decision)
 
@@ -238,7 +238,7 @@ class ConversationEngine:
 
         decision = Decision(
             scene="reset",
-            reply_seed="Em đã làm mới giỏ hàng rồi ạ. Mình muốn gọi món nào tiếp theo nè?",
+            reply_seed="Em Ä‘Ã£ lÃ m má»›i giá» hÃ ng rá»“i áº¡. MÃ¬nh muá»‘n gá»i mÃ³n nÃ o tiáº¿p theo nÃ¨?",
         )
         return await self._build_response(session_id, decision)
 
@@ -262,7 +262,7 @@ class ConversationEngine:
                 session_id,
                 Decision(
                     scene="reset",
-                    reply_seed="Em đã xóa giỏ hàng cũ rồi ạ. Mình muốn em gợi ý món nào tiếp không?",
+                    reply_seed="Em Ä‘Ã£ xÃ³a giá» hÃ ng cÅ© rá»“i áº¡. MÃ¬nh muá»‘n em gá»£i Ã½ mÃ³n nÃ o tiáº¿p khÃ´ng?",
                 ),
                 menu,
             )
@@ -287,7 +287,7 @@ class ConversationEngine:
                     session_id,
                     Decision(
                         scene="order_created",
-                        reply_seed=f"Đã xong rồi ạ. Em đã lên đơn thành công với mã {order.order_id}. Cảm ơn mình nha.",
+                        reply_seed=f"ÄÃ£ xong rá»“i áº¡. Em Ä‘Ã£ lÃªn Ä‘Æ¡n thÃ nh cÃ´ng vá»›i mÃ£ {order.order_id}. Cáº£m Æ¡n mÃ¬nh nha.",
                         order_created=True,
                         order_id=order.order_id,
                     ),
@@ -299,7 +299,7 @@ class ConversationEngine:
                 session_id,
                 Decision(
                     scene="ask_confirmation",
-                    reply_seed="Em đọc lại giỏ hàng để mình xác nhận nhé.",
+                    reply_seed="Em Ä‘á»c láº¡i giá» hÃ ng Ä‘á»ƒ mÃ¬nh xÃ¡c nháº­n nhÃ©.",
                     needs_confirmation=True,
                 ),
                 menu,
@@ -312,7 +312,7 @@ class ConversationEngine:
                     session_id,
                     Decision(
                         scene="remove_item",
-                        reply_seed=f"Em đã bỏ {removed} khỏi giỏ hàng rồi ạ. Mình muốn sửa gì thêm không?",
+                        reply_seed=f"Em Ä‘Ã£ bá» {removed} khá»i giá» hÃ ng rá»“i áº¡. MÃ¬nh muá»‘n sá»­a gÃ¬ thÃªm khÃ´ng?",
                     ),
                     menu,
                 )
@@ -324,14 +324,14 @@ class ConversationEngine:
                     session_id,
                     Decision(
                         scene="recommendation",
-                        reply_seed="Em tìm được vài món hợp gu của mình rồi ạ.",
+                        reply_seed="Em tÃ¬m Ä‘Æ°á»£c vÃ i mÃ³n há»£p gu cá»§a mÃ¬nh rá»“i áº¡.",
                         recommended_item_ids=[candidate.item.item_id for candidate in recommended],
                         user_text=transcript,
                     ),
                     menu,
                 )
 
-        # Chitchat / name / non-ordering input — respond naturally
+        # Chitchat / name / non-ordering input â€” respond naturally
         if _is_chitchat(normalized):
             return await self._build_response(
                 session_id,
@@ -352,9 +352,9 @@ class ConversationEngine:
             added_summary = ", ".join(f"{quantity} {item.name}" for item, quantity in segment_matches)
             scene = "ask_confirmation" if state.awaiting_confirmation else "cart_updated"
             seed = (
-                f"Em đã thêm {added_summary} vào giỏ hàng."
+                f"Em Ä‘Ã£ thÃªm {added_summary} vÃ o giá» hÃ ng."
                 if not state.awaiting_confirmation
-                else f"Em đã thêm {added_summary}. Em đọc lại giỏ hàng để mình xác nhận nhé."
+                else f"Em Ä‘Ã£ thÃªm {added_summary}. Em Ä‘á»c láº¡i giá» hÃ ng Ä‘á»ƒ mÃ¬nh xÃ¡c nháº­n nhÃ©."
             )
             return await self._build_response(
                 session_id,
@@ -377,7 +377,7 @@ class ConversationEngine:
                 session_id,
                 Decision(
                     scene="recommendation",
-                    reply_seed=f"Em xin lỗi, {unavailable_names} đang tạm hết rồi ạ. Em gợi ý mình đổi sang món khác nhé.",
+                    reply_seed=f"Em xin lá»—i, {unavailable_names} Ä‘ang táº¡m háº¿t rá»“i áº¡. Em gá»£i Ã½ mÃ¬nh Ä‘á»•i sang mÃ³n khÃ¡c nhÃ©.",
                     recommended_item_ids=[candidate.item.item_id for candidate in alternatives],
                     user_text=transcript,
                 ),
@@ -385,21 +385,21 @@ class ConversationEngine:
             )
 
         if available_matches:
-            # Auto-add: best match confidence >= 85% → add directly
+            # Auto-add: best match confidence >= 85% â†’ add directly
             best_match, best_conf = max(available_matches, key=lambda x: x[1])
             high_conf_matches = [(item, conf) for item, conf in available_matches if conf >= _AUTO_ADD_THRESHOLD]
             
             if len(high_conf_matches) == 1 or (len(available_matches) >= 1 and best_conf >= _AUTO_ADD_THRESHOLD):
-                # Single high-confidence match or one clearly dominates → auto-add
+                # Single high-confidence match or one clearly dominates â†’ auto-add
                 item = best_match
                 quantity = extract_quantity(normalized, item_name=normalize_text(item.name))
                 state.cart[item.item_id] = state.cart.get(item.item_id, 0) + quantity
                 state.awaiting_confirmation = contains_any(normalized, CHECKOUT_KEYWORDS)
                 scene = "ask_confirmation" if state.awaiting_confirmation else "cart_updated"
                 seed = (
-                    f"Em đã thêm {quantity} {item.name} vào giỏ hàng."
+                    f"Em Ä‘Ã£ thÃªm {quantity} {item.name} vÃ o giá» hÃ ng."
                     if not state.awaiting_confirmation
-                    else f"Em đã thêm {quantity} {item.name}. Em đọc lại giỏ hàng để mình xác nhận nhé."
+                    else f"Em Ä‘Ã£ thÃªm {quantity} {item.name}. Em Ä‘á»c láº¡i giá» hÃ ng Ä‘á»ƒ mÃ¬nh xÃ¡c nháº­n nhÃ©."
                 )
                 return await self._build_response(
                     session_id,
@@ -412,12 +412,12 @@ class ConversationEngine:
                     menu,
                 )
 
-            # Multiple matches below auto-add threshold → ask for clarification
+            # Multiple matches below auto-add threshold â†’ ask for clarification
             return await self._build_response(
                 session_id,
                 Decision(
                     scene="clarify_item",
-                    reply_seed="Em thấy có mấy món gần giống. Mình muốn gọi món nào ạ?",
+                    reply_seed="Em tháº¥y cÃ³ máº¥y mÃ³n gáº§n giá»‘ng. MÃ¬nh muá»‘n gá»i mÃ³n nÃ o áº¡?",
                     recommended_item_ids=[item.item_id for item, _ in available_matches[:3]],
                 ),
                 menu,
@@ -429,7 +429,7 @@ class ConversationEngine:
                 session_id,
                 Decision(
                     scene="recommendation",
-                    reply_seed="Em có vài gợi ý dễ uống, thân thiện và dễ chọn cho mình đây ạ.",
+                    reply_seed="Em cÃ³ vÃ i gá»£i Ã½ dá»… uá»‘ng, thÃ¢n thiá»‡n vÃ  dá»… chá»n cho mÃ¬nh Ä‘Ã¢y áº¡.",
                     recommended_item_ids=[candidate.item.item_id for candidate in ranked_items],
                     user_text=transcript,
                 ),
@@ -441,7 +441,7 @@ class ConversationEngine:
                 session_id,
                 Decision(
                     scene="cart_follow_up",
-                    reply_seed="Em chưa nghe rõ món mới. Hiện giỏ hàng của mình vẫn đang có sẵn, mình muốn em đọc lại để xác nhận không?",
+                    reply_seed="Em chÆ°a nghe rÃµ mÃ³n má»›i. Hiá»‡n giá» hÃ ng cá»§a mÃ¬nh váº«n Ä‘ang cÃ³ sáºµn, mÃ¬nh muá»‘n em Ä‘á»c láº¡i Ä‘á»ƒ xÃ¡c nháº­n khÃ´ng?",
                 ),
                 menu,
             )
@@ -450,7 +450,7 @@ class ConversationEngine:
             session_id,
             Decision(
                 scene="fallback",
-                reply_seed="Em nghe chưa rõ lắm. Mình có thể nói tên món, khẩu vị như ít ngọt, hoặc bảo em tư vấn món dễ uống nhé.",
+                reply_seed="Em nghe chÆ°a rÃµ láº¯m. MÃ¬nh cÃ³ thá»ƒ nÃ³i tÃªn mÃ³n, kháº©u vá»‹ nhÆ° Ã­t ngá»t, hoáº·c báº£o em tÆ° váº¥n mÃ³n dá»… uá»‘ng nhÃ©.",
                 user_text=transcript,
             ),
             menu,
@@ -472,20 +472,20 @@ class ConversationEngine:
                 continue
             normalized_name = normalize_text(item.name)
             
-            # 1. Exact substring match → confidence 1.0
+            # 1. Exact substring match â†’ confidence 1.0
             if normalized_name in corrected:
                 exact_matches.append((item, 1.0))
                 matched_ids.add(item.item_id)
                 continue
             
-            # 2. Token-based match (all significant tokens present) → confidence 0.95
+            # 2. Token-based match (all significant tokens present) â†’ confidence 0.95
             name_tokens = [token for token in normalized_name.split() if len(token) > 2]
             if name_tokens and all(token in corrected for token in name_tokens):
                 exact_matches.append((item, 0.95))
                 matched_ids.add(item.item_id)
                 continue
             
-            # 3. Fuzzy match → confidence = actual similarity ratio
+            # 3. Fuzzy match â†’ confidence = actual similarity ratio
             ratio = _fuzzy_match_ratio(corrected, normalized_name)
             if ratio >= _FUZZY_THRESHOLD:
                 fuzzy_matches.append((item, ratio))
@@ -775,6 +775,40 @@ class ConversationEngine:
     def _touch_state(state: SessionState) -> None:
         state.last_interaction_at = datetime.now(UTC)
 
+    @staticmethod
+    def _map_scene_to_emotion(scene: str) -> str:
+        mapping = {
+            "greeting_intro": "cute",
+            "greeting": "happy",
+            "cart_updated": "happy",
+            "ask_confirmation": "focused",
+            "order_created": "excited",
+            "recommendation": "focused",
+            "clarify_item": "focused",
+            "remove_item": "neutral",
+            "reset": "neutral",
+            "fallback": "neutral",
+            "cart_follow_up": "focused",
+        }
+        return mapping.get(scene, "neutral")
+
+    @staticmethod
+    def _map_scene_to_action_hints(scene: str) -> list[str]:
+        mapping = {
+            "greeting_intro": ["waveHello", "maidCurtseyBloom", "smileBounce"],
+            "greeting": ["waveHello", "waiterServingSpin"],
+            "cart_updated": ["cheerSparkle"],
+            "ask_confirmation": ["nodYes"],
+            "order_created": ["confettiBurst", "pixelHeartStorm", "peacePose"],
+            "recommendation": ["scan", "lightPulse", "animeStarTrail"],
+            "clarify_item": ["scan"],
+            "remove_item": ["nodYes"],
+            "reset": ["bowElegant"],
+            "fallback": ["blushShy"],
+            "cart_follow_up": ["lightPulse"],
+        }
+        return mapping.get(scene, [])
+
     async def _build_response(
         self,
         session_id: str,
@@ -836,6 +870,9 @@ class ConversationEngine:
             order_created=decision.order_created,
             order_id=decision.order_id,
             voice_style=voice_style,
+            scene=decision.scene,
+            emotion_hint=self._map_scene_to_emotion(decision.scene),
+            action_hints=self._map_scene_to_action_hints(decision.scene),
         )
 
 
@@ -913,8 +950,8 @@ def extract_quantity(normalized_text: str, item_name: str | None = None) -> int:
     """Extract quantity from normalized text.
     
     Rules:
-    - "so luong X" → X  
-    - Digits like "3 ly" → 3
+    - "so luong X" â†’ X  
+    - Digits like "3 ly" â†’ 3
     - Vietnamese number words ONLY when followed by a unit word (ly, cai, phan...)
       or when they are at the very start followed by a noun.
     - Avoids false positives: "muoi" in "ca phe muoi", "ba" in "banh", "nam" in "nam quoc".
@@ -951,7 +988,7 @@ def extract_quantity(normalized_text: str, item_name: str | None = None) -> int:
         ):
             return max(1, min(int(token), 20))
 
-    # Vietnamese number words — MUST be followed by a unit word to confirm it's a quantity
+    # Vietnamese number words â€” MUST be followed by a unit word to confirm it's a quantity
     for i, token in enumerate(tokens):
         if token in QUANTITY_WORDS:
             previous = tokens[i - 1] if i > 0 else ""
@@ -1036,29 +1073,29 @@ def _fuzzy_match(transcript: str, item_name: str) -> bool:
 
 
 _GREETING_REPLIES = [
-    "Chào mình ạ! Hôm nay mình muốn thử món nào để em tư vấn nhé?",
-    "Xin chào mình ạ. Em sẵn sàng phục vụ, mình muốn gọi gì nè?",
-    "Chào mừng mình! Mình muốn uống gì hôm nay để em gợi ý nhé?",
-    "Hi mình ạ! Em là robot gọi món. Mình cần em giúp gì nha?",
+    "ChÃ o mÃ¬nh áº¡! HÃ´m nay mÃ¬nh muá»‘n thá»­ mÃ³n nÃ o Ä‘á»ƒ em tÆ° váº¥n nhÃ©?",
+    "Xin chÃ o mÃ¬nh áº¡. Em sáºµn sÃ ng phá»¥c vá»¥, mÃ¬nh muá»‘n gá»i gÃ¬ nÃ¨?",
+    "ChÃ o má»«ng mÃ¬nh! MÃ¬nh muá»‘n uá»‘ng gÃ¬ hÃ´m nay Ä‘á»ƒ em gá»£i Ã½ nhÃ©?",
+    "Hi mÃ¬nh áº¡! Em lÃ  robot gá»i mÃ³n. MÃ¬nh cáº§n em giÃºp gÃ¬ nha?",
 ]
 
 _CART_UPDATED_SUFFIXES = [
-    " Mình muốn gọi thêm gì không ạ?",
-    " Mình cần gì thêm không nè?",
-    " Mình muốn order thêm không ạ?",
+    " MÃ¬nh muá»‘n gá»i thÃªm gÃ¬ khÃ´ng áº¡?",
+    " MÃ¬nh cáº§n gÃ¬ thÃªm khÃ´ng nÃ¨?",
+    " MÃ¬nh muá»‘n order thÃªm khÃ´ng áº¡?",
     "",
 ]
 
 _RESET_REPLIES = [
-    "Em đã xóa giỏ hàng rồi ạ. Mình muốn gọi món nào tiếp không?",
-    "Giỏ hàng đã được làm mới. Mình chọn lại món nào nhé?",
-    "Em đã reset giỏ hàng rồi ạ. Mình bắt đầu lại nha!",
+    "Em Ä‘Ã£ xÃ³a giá» hÃ ng rá»“i áº¡. MÃ¬nh muá»‘n gá»i mÃ³n nÃ o tiáº¿p khÃ´ng?",
+    "Giá» hÃ ng Ä‘Ã£ Ä‘Æ°á»£c lÃ m má»›i. MÃ¬nh chá»n láº¡i mÃ³n nÃ o nhÃ©?",
+    "Em Ä‘Ã£ reset giá» hÃ ng rá»“i áº¡. MÃ¬nh báº¯t Ä‘áº§u láº¡i nha!",
 ]
 
 _FALLBACK_REPLIES = [
-    "Em nghe chưa rõ lắm. Mình có thể nói tên món hoặc bảo em tư vấn nhé.",
-    "Em chưa hiểu ý mình. Mình thử nói tên món cụ thể giúp em nha.",
-    "Em xin lỗi, nghe không rõ ạ. Mình nói lại tên món hoặc hỏi em gợi ý nhé.",
+    "Em nghe chÆ°a rÃµ láº¯m. MÃ¬nh cÃ³ thá»ƒ nÃ³i tÃªn mÃ³n hoáº·c báº£o em tÆ° váº¥n nhÃ©.",
+    "Em chÆ°a hiá»ƒu Ã½ mÃ¬nh. MÃ¬nh thá»­ nÃ³i tÃªn mÃ³n cá»¥ thá»ƒ giÃºp em nha.",
+    "Em xin lá»—i, nghe khÃ´ng rÃµ áº¡. MÃ¬nh nÃ³i láº¡i tÃªn mÃ³n hoáº·c há»i em gá»£i Ã½ nhÃ©.",
 ]
 
 _SOFT_REDIRECT_PATTERNS = {
@@ -1069,23 +1106,23 @@ _SOFT_REDIRECT_PATTERNS = {
 
 _SOFT_REDIRECT_REPLIES = {
     "sing": [
-        "Em xin nợ một câu hát dễ thương thôi nha, còn bây giờ mình chọn món em phục vụ liền nè.",
-        "Em hát dở nên xin phép chiều mình bằng đồ uống ngon hơn nha, mình muốn gọi món gì ạ?",
+        "Em xin ná»£ má»™t cÃ¢u hÃ¡t dá»… thÆ°Æ¡ng thÃ´i nha, cÃ²n bÃ¢y giá» mÃ¬nh chá»n mÃ³n em phá»¥c vá»¥ liá»n nÃ¨.",
+        "Em hÃ¡t dá»Ÿ nÃªn xin phÃ©p chiá»u mÃ¬nh báº±ng Ä‘á»“ uá»‘ng ngon hÆ¡n nha, mÃ¬nh muá»‘n gá»i mÃ³n gÃ¬ áº¡?",
     ],
     "poem": [
-        "Em xin gửi một vần thơ ngắn trong lòng thôi, còn ngoài đời em mời mình chọn món hợp mood nha.",
-        "Em làm thơ ít chữ thôi kẻo quên order mất, mình muốn em gợi ý món nào cho hợp tâm trạng ạ?",
+        "Em xin gá»­i má»™t váº§n thÆ¡ ngáº¯n trong lÃ²ng thÃ´i, cÃ²n ngoÃ i Ä‘á»i em má»i mÃ¬nh chá»n mÃ³n há»£p mood nha.",
+        "Em lÃ m thÆ¡ Ã­t chá»¯ thÃ´i káº»o quÃªn order máº¥t, mÃ¬nh muá»‘n em gá»£i Ã½ mÃ³n nÃ o cho há»£p tÃ¢m tráº¡ng áº¡?",
     ],
     "heart": [
-        "Nếu mình đang mệt hay buồn thì để em ở đây nói chuyện một chút rồi gợi ý món hợp tâm trạng cho mình nha.",
-        "Nghe mình nói vậy là em muốn chăm mình bằng một món thật hợp gu rồi đó, mình thích ngọt dịu hay đậm vị hơn ạ?",
+        "Náº¿u mÃ¬nh Ä‘ang má»‡t hay buá»“n thÃ¬ Ä‘á»ƒ em á»Ÿ Ä‘Ã¢y nÃ³i chuyá»‡n má»™t chÃºt rá»“i gá»£i Ã½ mÃ³n há»£p tÃ¢m tráº¡ng cho mÃ¬nh nha.",
+        "Nghe mÃ¬nh nÃ³i váº­y lÃ  em muá»‘n chÄƒm mÃ¬nh báº±ng má»™t mÃ³n tháº­t há»£p gu rá»“i Ä‘Ã³, mÃ¬nh thÃ­ch ngá»t dá»‹u hay Ä‘áº­m vá»‹ hÆ¡n áº¡?",
     ],
 }
 
 _ORDER_CREATED_SUFFIXES = [
-    " Hẹn gặp lại mình ạ!",
-    " Chúc mình ngon miệng nha!",
-    " Cảm ơn mình nhiều ạ!",
+    " Háº¹n gáº·p láº¡i mÃ¬nh áº¡!",
+    " ChÃºc mÃ¬nh ngon miá»‡ng nha!",
+    " Cáº£m Æ¡n mÃ¬nh nhiá»u áº¡!",
     "",
 ]
 
@@ -1116,8 +1153,8 @@ def render_fallback_reply(payload: dict[str, object]) -> str:
     if scene == "clarify_item":
         if recommended_items:
             names = ", ".join(item["name"] for item in recommended_items[:3])
-            return f"Em thấy có mấy món gần giống: {names}. Mình muốn gọi món nào ạ?"
-        return f"{seed} Mình nói rõ tên món giúp em nhé."
+            return f"Em tháº¥y cÃ³ máº¥y mÃ³n gáº§n giá»‘ng: {names}. MÃ¬nh muá»‘n gá»i mÃ³n nÃ o áº¡?"
+        return f"{seed} MÃ¬nh nÃ³i rÃµ tÃªn mÃ³n giÃºp em nhÃ©."
     if scene == "recommendation":
         if recommended_items:
             lines = []
@@ -1128,28 +1165,28 @@ def render_fallback_reply(payload: dict[str, object]) -> str:
                 else:
                     lines.append(f"- {item['name']}")
             items_text = "\n".join(lines)
-            return f"{seed}\n{items_text}\nMình thích món nào để em thêm vào giỏ nhé?"
-        return f"{seed} Mình muốn em gợi ý thêm không ạ?"
+            return f"{seed}\n{items_text}\nMÃ¬nh thÃ­ch mÃ³n nÃ o Ä‘á»ƒ em thÃªm vÃ o giá» nhÃ©?"
+        return f"{seed} MÃ¬nh muá»‘n em gá»£i Ã½ thÃªm khÃ´ng áº¡?"
     if scene == "ask_confirmation":
         if cart_summary:
             details = ", ".join(
-                f"{item['quantity']} {item['name']} ({item['line_total']}đ)"
+                f"{item['quantity']} {item['name']} ({item['line_total']}Ä‘)"
                 for item in cart_summary
             )
             total = sum(int(item['line_total']) for item in cart_summary)
             return (
-                f"Em đọc lại giỏ hàng nhé: {details}. "
-                f"Tổng cộng {total:,}đ ạ. "
-                f"Mình nói 'xác nhận' để em lên đơn, "
-                f"hoặc nói tên món để thêm nha."
+                f"Em Ä‘á»c láº¡i giá» hÃ ng nhÃ©: {details}. "
+                f"Tá»•ng cá»™ng {total:,}Ä‘ áº¡. "
+                f"MÃ¬nh nÃ³i 'xÃ¡c nháº­n' Ä‘á»ƒ em lÃªn Ä‘Æ¡n, "
+                f"hoáº·c nÃ³i tÃªn mÃ³n Ä‘á»ƒ thÃªm nha."
             )
-        return f"{seed} Mình nói 'xác nhận' giúp em nhé."
+        return f"{seed} MÃ¬nh nÃ³i 'xÃ¡c nháº­n' giÃºp em nhÃ©."
     if scene == "order_created":
         return seed + random.choice(_ORDER_CREATED_SUFFIXES)
     if scene == "cart_follow_up":
         if cart_summary:
             details = ", ".join(f"{item['quantity']} {item['name']}" for item in cart_summary)
-            return f"{seed} Giỏ hàng hiện có {details} ạ."
+            return f"{seed} Giá» hÃ ng hiá»‡n cÃ³ {details} áº¡."
         return seed
     return seed
 
@@ -1163,3 +1200,4 @@ def _render_soft_redirect(user_text: str) -> str | None:
         if any(pattern.search(normalized) for pattern in patterns):
             return random.choice(_SOFT_REDIRECT_REPLIES[key])
     return None
+

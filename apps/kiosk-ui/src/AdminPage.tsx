@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './admin.css'
+import RobotStudioPanel from './RobotStudioPanel'
 import {
   ADMIN_ENV_STORAGE_KEY,
   getAdminConfigUpdatedAt,
@@ -21,7 +22,7 @@ import {
 import { useLiveCaption } from './hooks/useLiveCaption'
 import { useSpeech } from './hooks/useSpeech'
 
-type AdminTab = 'overview' | 'voice' | 'config'
+type AdminTab = 'overview' | 'voice' | 'robotStudio' | 'config'
 
 type ServiceStatus = {
   name: string
@@ -56,6 +57,11 @@ const TAB_ITEMS: Array<{ id: AdminTab; label: string; hint: string }> = [
     id: 'voice',
     label: 'Giong noi',
     hint: 'Cai dat TTS va an test ky thuat.',
+  },
+  {
+    id: 'robotStudio',
+    label: 'Robot Studio',
+    hint: 'Skin, action, graph va trigger.',
   },
   {
     id: 'config',
@@ -1068,6 +1074,10 @@ export default function AdminPage() {
         </section>
       ) : null}
 
+      {activeTab === 'robotStudio' ? (
+        <RobotStudioPanel onNotice={setNotice} />
+      ) : null}
+
       {activeTab === 'config' ? (
         <section className="admin-panel admin-panel--stacked">
           <article className="admin-subcard">
@@ -1145,3 +1155,4 @@ export default function AdminPage() {
     </main>
   )
 }
+

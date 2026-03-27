@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import io
 import logging
 import os
@@ -15,6 +14,7 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Literal
 
+import anyio
 import edge_tts
 import pyttsx3
 from fastapi import UploadFile
@@ -153,7 +153,7 @@ class SpeechService:
 
         filename = file.filename or "speech.webm"
         await self._ensure_menu_items_loaded()
-        return await asyncio.to_thread(self._transcribe_sync, content, filename, mode)
+        return await anyio.to_thread.run_sync(self._transcribe_sync, content, filename, mode)
 
     async def transcribe_partial(
         self,
@@ -165,7 +165,7 @@ class SpeechService:
             return ""
 
         await self._ensure_menu_items_loaded()
-        return await asyncio.to_thread(self._transcribe_partial_sync, content, filename, mode)
+        return await anyio.to_thread.run_sync(self._transcribe_partial_sync, content, filename, mode)
 
     async def transcribe_bytes(
         self,
@@ -177,11 +177,11 @@ class SpeechService:
             raise ValueError("Audio upload trong.")
 
         await self._ensure_menu_items_loaded()
-        return await asyncio.to_thread(self._transcribe_sync, content, filename, mode)
+        return await anyio.to_thread.run_sync(self._transcribe_sync, content, filename, mode)
 
     async def preload_stt(self) -> None:
         await self._ensure_menu_items_loaded()
-        await asyncio.to_thread(self._preload_stt_assets)
+        await anyio.to_thread.run_sync(self._preload_stt_assets)
 
     async def _ensure_menu_items_loaded(self) -> None:
         if self._menu_items_cache is not None or self.core_client is None:
@@ -208,7 +208,7 @@ class SpeechService:
         try:
             return await self._synthesize_with_edge_tts(normalized_text, voice, rate)
         except Exception:
-            return await asyncio.to_thread(self._synthesize_sync, normalized_text)
+            return await anyio.to_thread.run_sync(self._synthesize_sync, normalized_text)
 
     async def _synthesize_with_edge_tts(self, text: str, voice: str | None = None, rate: int | None = None) -> SynthesizedAudio:
         actual_voice = voice or self.settings.tts_voice

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 from decimal import Decimal
@@ -30,7 +30,7 @@ class FakeCoreBackendClient:
                 item_id="matcha",
                 name="Matcha latte",
                 category="Latte",
-                description="Mem va thơm",
+                description="Mem va thÆ¡m",
                 price=Decimal("55000"),
                 available=True,
                 tags=["matcha", "it-ngot"],
@@ -170,6 +170,35 @@ async def test_conversation_engine_checkout_keywords_support_voice_only_flow() -
     created = await engine.handle_turn(start.session_id, "xac nhan")
     assert created.order_created is True
     assert created.order_id == "ORD-TEST"
+
+
+@pytest.mark.anyio
+async def test_conversation_response_includes_robot_metadata_hints() -> None:
+    settings = Settings(
+        ai_base_url="",
+        ai_api_key="",
+        ai_model="",
+        core_backend_url="http://127.0.0.1:8001",
+        voice_lang="vi-VN",
+        voice_style="cute_friendly",
+        tts_voice="vietnam",
+        tts_rate="165",
+        stt_model="small",
+        stt_device="cpu",
+        stt_compute_type="int8",
+    )
+    core_client = FakeCoreBackendClient()
+    engine = ConversationEngine(settings, core_client)
+
+    start = await engine.start_session()
+    assert start.scene == "greeting_intro"
+    assert start.emotion_hint in {"neutral", "happy", "cute", "excited", "focused"}
+    assert isinstance(start.action_hints, list)
+
+    updated = await engine.handle_turn(start.session_id, "cho minh 1 tra dao cam sa")
+    assert updated.scene in {"cart_updated", "ask_confirmation"}
+    assert updated.emotion_hint in {"neutral", "happy", "cute", "excited", "focused"}
+    assert isinstance(updated.action_hints, list)
 
 
 @pytest.mark.anyio
@@ -503,8 +532,8 @@ def test_fallback_reply_soft_redirects_singing_request() -> None:
         }
     )
 
-    assert "món" in reply or "uống" in reply
-    assert "chỉ phục vụ" not in reply
+    assert "mÃ³n" in reply or "uá»‘ng" in reply
+    assert "chá»‰ phá»¥c vá»¥" not in reply
 
 
 def test_greeting_reply_can_softly_handle_heart_to_heart_chat() -> None:
@@ -516,4 +545,5 @@ def test_greeting_reply_can_softly_handle_heart_to_heart_chat() -> None:
         }
     )
 
-    assert any(keyword in reply for keyword in ("tâm trạng", "nói chuyện", "gợi ý món", "hợp gu"))
+    assert any(keyword in reply for keyword in ("tÃ¢m tráº¡ng", "nÃ³i chuyá»‡n", "gá»£i Ã½ mÃ³n", "há»£p gu"))
+

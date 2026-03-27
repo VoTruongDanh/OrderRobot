@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import UTC, datetime
 from dataclasses import dataclass, field
@@ -100,6 +100,9 @@ class ConversationResponse(BaseModel):
     order_created: bool = False
     order_id: str | None = None
     voice_style: str
+    scene: str | None = None
+    emotion_hint: Literal["neutral", "happy", "cute", "excited", "focused"] | None = None
+    action_hints: list[str] = Field(default_factory=list)
 
 
 class CreateOrderLineItem(BaseModel):
@@ -137,3 +140,4 @@ class Decision:
     order_created: bool = False
     order_id: str | None = None
     user_text: str | None = None
+

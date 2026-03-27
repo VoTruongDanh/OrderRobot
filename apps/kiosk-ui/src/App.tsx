@@ -1,8 +1,9 @@
-import './App.css'
+﻿import './App.css'
 import { useEffect, useRef, useState } from 'react'
 import {
   getCameraPreviewVisible,
   getRobotScalePercent,
+  getRobotStudioConfig,
   subscribeAdminConfigChanges,
 } from './config'
 
@@ -17,6 +18,7 @@ function App() {
     const syncAdminConfigToIframe = () => {
       const nextScale = getRobotScalePercent()
       const nextCameraVisible = getCameraPreviewVisible()
+      const nextRobotStudioConfig = getRobotStudioConfig()
       setRobotScalePercent(nextScale)
       setCameraPreviewVisible(nextCameraVisible)
       iframeRef.current?.contentWindow?.postMessage(
@@ -25,6 +27,10 @@ function App() {
       )
       iframeRef.current?.contentWindow?.postMessage(
         { type: 'orderrobot:camera-preview-visible', visible: nextCameraVisible },
+        window.location.origin,
+      )
+      iframeRef.current?.contentWindow?.postMessage(
+        { type: 'orderrobot:robot-studio-config', config: nextRobotStudioConfig },
         window.location.origin,
       )
     }
@@ -55,6 +61,10 @@ function App() {
               { type: 'orderrobot:camera-preview-visible', visible: cameraPreviewVisible },
               window.location.origin,
             )
+            iframeRef.current?.contentWindow?.postMessage(
+              { type: 'orderrobot:robot-studio-config', config: getRobotStudioConfig() },
+              window.location.origin,
+            )
           }}
         />
       </div>
@@ -63,3 +73,4 @@ function App() {
 }
 
 export default App
+
