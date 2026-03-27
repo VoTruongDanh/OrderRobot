@@ -21,6 +21,7 @@ from typing import Literal
 
 import anyio
 import edge_tts
+import numpy as np
 import pyttsx3
 from fastapi import UploadFile
 from faster_whisper import WhisperModel
@@ -74,6 +75,18 @@ ACTIONABLE_KEYWORDS = {
     "it ngot",
     "nong",
     "lanh",
+}
+
+ORDERING_INTENT_KEYWORDS = {
+    "mon",
+    "menu",
+    "nuoc",
+    "uong",
+    "do uong",
+    "combo",
+    "gia",
+    "khuyen mai",
+    "ban chay",
 }
 
 ORDERING_FILLERS = [
@@ -984,7 +997,7 @@ $synth.Dispose()
         if len(tokens) == 1 and len(tokens[0]) <= 3:
             return False
 
-        return len(normalized) >= 6
+        return contains_keyword(normalized, ORDERING_INTENT_KEYWORDS)
 
     def is_actionable_transcript(self, transcript: str) -> bool:
         return self._looks_actionable(self._post_process_transcript(transcript))
@@ -995,9 +1008,11 @@ $synth.Dispose()
         return self._post_process_transcript(transcript)
 
     def _accept_transcript(self, transcript: str, *, mode: SpeechMode) -> bool:
+        normalized = normalize_vietnamese_text(transcript)
         if mode == "caption":
-            return len(normalize_vietnamese_text(transcript)) >= 2
-        return self._looks_actionable(transcript)
+            return len(normalized) >= 1
+        # User requested "always hear everything": do not enforce ordering-intent filters here.
+        return len(normalized) >= 1
 
     def _get_ordering_lexicon(self) -> list[tuple[str, str]]:
         if self._lexicon_cache is not None:

@@ -237,20 +237,23 @@ async def handle_turn(session_id: str, payload: TurnRequest) -> ConversationResp
 @app.post("/sessions/{session_id}/turn/stream")
 async def handle_turn_stream(session_id: str, payload: TurnRequest) -> StreamingResponse:
     """Stream conversation response with interleaved text and audio chunks for lower latency."""
-    try:
-        async def response_stream():
+    async def response_stream():
+        try:
             async for chunk in conversation_engine.handle_turn_stream(session_id, payload.transcript):
                 # Yield JSON-encoded chunks: {"type": "text", "content": "..."} or {"type": "audio", "content": base64}
                 yield json.dumps(chunk, ensure_ascii=False).encode("utf-8") + b"\n"
+        except httpx.HTTPStatusError as exc:
+            detail = exc.response.text or "Khong the tao don tu core backend."
+            yield json.dumps({"type": "error", "message": detail}, ensure_ascii=False).encode("utf-8") + b"\n"
+        except httpx.HTTPError:
+            yield json.dumps(
+                {"type": "error", "message": "Khong the ket noi toi core backend."},
+                ensure_ascii=False,
+            ).encode("utf-8") + b"\n"
+        except ProviderError as exc:
+            yield json.dumps({"type": "error", "message": str(exc)}, ensure_ascii=False).encode("utf-8") + b"\n"
 
-        return StreamingResponse(response_stream(), media_type="application/x-ndjson")
-    except httpx.HTTPStatusError as exc:
-        detail = exc.response.text or "Khong the tao don tu core backend."
-        raise HTTPException(status_code=502, detail=detail) from exc
-    except httpx.HTTPError as exc:
-        raise HTTPException(status_code=502, detail="Khong the ket noi toi core backend.") from exc
-    except ProviderError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return StreamingResponse(response_stream(), media_type="application/x-ndjson")
 
 
 @app.post("/sessions/{session_id}/reset", response_model=ConversationResponse)
@@ -358,6 +361,24 @@ async def transcribe_speech_ws(websocket: WebSocket) -> None:
     last_partial_size = 0
     min_partial_interval_sec = 0.32
     min_partial_delta_bytes = 6_000
+    websocket_open = True
+
+    async def send_ws_json(payload: dict[str, object]) -> bool:
+        nonlocal websocket_open
+        if not websocket_open:
+            return False
+        try:
+            await websocket.send_json(payload)
+            return True
+        except WebSocketDisconnect:
+            websocket_open = False
+            return False
+        except RuntimeError as exc:
+            # Starlette raises RuntimeError when attempting to send after close.
+            if "close message has been sent" in str(exc).lower():
+                websocket_open = False
+                return False
+            raise
 
     def configure_stream_mode(mode: str) -> None:
         nonlocal stream_mode, min_partial_interval_sec, min_partial_delta_bytes
@@ -399,7 +420,8 @@ async def transcribe_speech_ws(websocket: WebSocket) -> None:
 
         if transcript and transcript != last_partial:
             last_partial = transcript
-            await websocket.send_json({"type": "partial", "transcript": transcript})
+            if not await send_ws_json({"type": "partial", "transcript": transcript}):
+                return
         last_partial_at = now
         last_partial_size = snapshot_size
 
@@ -443,21 +465,23 @@ async def transcribe_speech_ws(websocket: WebSocket) -> None:
                 try:
                     snapshot = bytes(audio_buffer)
                     if not snapshot:
-                        await websocket.send_json(
+                        if not await send_ws_json(
                             {
                                 "type": "final",
                                 "status": "retry",
                                 "transcript": "",
                                 "message": "Minh nghe chua ro, ban noi lai giup minh nhe.",
                             },
-                        )
+                        ):
+                            return
                         continue
 
                     await flush_partial(force=True)
                     if stream_mode == "order" and last_partial and speech_service.is_actionable_transcript(last_partial):
-                        await websocket.send_json(
+                        if not await send_ws_json(
                             {"type": "final", "status": "ok", "transcript": last_partial},
-                        )
+                        ):
+                            return
                         audio_buffer.clear()
                         continue
 
@@ -466,17 +490,20 @@ async def transcribe_speech_ws(websocket: WebSocket) -> None:
                         filename,
                         mode=stream_mode,
                     )
-                    await websocket.send_json(
+                    if not await send_ws_json(
                         {"type": "final", "status": "ok", "transcript": final_transcript},
-                    )
+                    ):
+                        return
                 except SpeechNotHeardError as exc:
-                    await websocket.send_json(
+                    if not await send_ws_json(
                         {"type": "final", "status": "retry", "transcript": "", "message": str(exc)},
-                    )
+                    ):
+                        return
                 except Exception as exc:
-                    await websocket.send_json(
+                    if not await send_ws_json(
                         {"type": "final", "status": "error", "message": str(exc), "transcript": ""},
-                    )
+                    ):
+                        return
                 finally:
                     audio_buffer.clear()
                 continue

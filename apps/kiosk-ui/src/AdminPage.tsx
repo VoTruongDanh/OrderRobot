@@ -270,18 +270,10 @@ function normalizeApiBaseUrl(value: string): string {
 
 function getAiApiCandidates(preferredUrl: string): string[] {
   const normalizedPreferred = normalizeApiBaseUrl(preferredUrl)
-  const defaults = [
-    'http://127.0.0.1:18012',
-    'http://localhost:18012',
-    normalizedPreferred,
-    'http://127.0.0.1:18013',
-    'http://localhost:18013',
-    'http://127.0.0.1:8012',
-    'http://localhost:8012',
-  ]
-  return Array.from(
-    new Set(defaults.map((item) => normalizeApiBaseUrl(item)).filter((item) => item.length > 0)),
-  )
+  if (normalizedPreferred.length > 0) {
+    return [normalizedPreferred]
+  }
+  return ['http://127.0.0.1:8012']
 }
 
 function formatSyncTime(updatedAt: number | null, uiLanguage: UiLanguage): string {
@@ -684,69 +676,47 @@ export default function AdminPage() {
 
       setVieneuVoicesState('loading')
       try {
-        const candidates = getAiApiCandidates(currentAiApiUrl)
-        let resolvedApiBase = ''
-        let selectedVoices: Array<{ id: string; description: string }> = []
-        let selectedInstalledFlag: boolean | undefined
-        let lastNon404Error: Error | null = null
+        const [apiBase] = getAiApiCandidates(currentAiApiUrl)
+        const nextResponse = await fetch(`${apiBase}/speech/vieneu/voices`, {
+          method: 'GET',
+        })
 
-        for (const apiBase of candidates) {
-          try {
-            const nextResponse = await fetch(`${apiBase}/speech/vieneu/voices`, {
-              method: 'GET',
-            })
-            // Older backend builds return 404 for this endpoint; try next candidate.
-            if (nextResponse.status === 404) {
-              continue
-            }
-
-            if (!nextResponse.ok) {
-              lastNon404Error = new Error(`HTTP ${nextResponse.status}`)
-              continue
-            }
-
-            const payload = (await nextResponse.json()) as {
-              vieneu_installed?: boolean
-              voices?: Array<{ id?: string; description?: string }>
-            }
-            const voices = Array.isArray(payload.voices)
-              ? payload.voices
-                  .map((item) => ({
-                    id: String(item.id || '').trim(),
-                    description: String(item.description || '').trim(),
-                  }))
-                  .filter((item) => item.id.length > 0)
-              : []
-
-            // Keep track of the latest compatible endpoint.
-            resolvedApiBase = apiBase
-            selectedInstalledFlag = payload.vieneu_installed
-            selectedVoices = voices
-
-            // Prefer endpoint that actually has preset voices.
-            if (voices.length > 0) {
-              break
-            }
-          } catch (error) {
-            if (error instanceof Error) {
-              lastNon404Error = error
-            }
-            continue
-          }
+        if (nextResponse.status === 404) {
+          throw new Error(
+            t(
+              `Backend reachable but voices endpoint missing: ${apiBase}/speech/vieneu/voices`,
+              `Backend reachable but voices endpoint missing: ${apiBase}/speech/vieneu/voices`,
+            ),
+          )
         }
 
-        if (!resolvedApiBase) {
-          if (lastNon404Error) {
-            throw lastNon404Error
-          }
-          throw new Error('Khong tim thay AI backend ho tro /speech/vieneu/voices')
+        if (!nextResponse.ok) {
+          throw new Error(
+            t(
+              `Backend reachable but voices endpoint error (${nextResponse.status}) tại ${apiBase}/speech/vieneu/voices`,
+              `Backend reachable but voices endpoint error (${nextResponse.status}) at ${apiBase}/speech/vieneu/voices`,
+            ),
+          )
         }
+
+        const payload = (await nextResponse.json()) as {
+          vieneu_installed?: boolean
+          voices?: Array<{ id?: string; description?: string }>
+        }
+        const selectedVoices = Array.isArray(payload.voices)
+          ? payload.voices
+              .map((item) => ({
+                id: String(item.id || '').trim(),
+                description: String(item.description || '').trim(),
+              }))
+              .filter((item) => item.id.length > 0)
+          : []
 
         setVieneuVoices(selectedVoices)
-        setResolvedVieneuApiBase(resolvedApiBase)
+        setResolvedVieneuApiBase(apiBase)
         setVieneuVoicesState('ready')
         if (showSuccessNotice) {
-          if (selectedInstalledFlag === false) {
+          if (payload.vieneu_installed === false) {
             setNotice({
               tone: 'warning',
               text: t(
@@ -769,20 +739,30 @@ export default function AdminPage() {
           setNotice({
             tone: 'info',
             text: t(
-              `Da tai ${selectedVoices.length} preset giong VieNeu (${resolvedApiBase || currentAiApiUrl}).`,
-              `Loaded ${selectedVoices.length} VieNeu preset voices (${resolvedApiBase || currentAiApiUrl}).`,
+              `Voices loaded from ${apiBase}: ${selectedVoices.length} giong VieNeu.`,
+              `Voices loaded from ${apiBase}: ${selectedVoices.length} VieNeu presets.`,
             ),
           })
         }
       } catch (error) {
         setVieneuVoicesState('error')
+        const errorText = error instanceof Error ? error.message : ''
+        const normalizedError = errorText.toLowerCase()
+        const isNetworkError =
+          normalizedError.includes('failed to fetch') ||
+          normalizedError.includes('networkerror') ||
+          normalizedError.includes('err_connection_refused')
         if (showSuccessNotice) {
           setNotice({
             tone: 'warning',
-            text:
-              error instanceof Error
-                ? error.message
-                : t('Khong the tai danh sach voice VieNeu.', 'Cannot load VieNeu voice list.'),
+            text: isNetworkError
+              ? t(
+                  `Backend URL not reachable: ${currentAiApiUrl}`,
+                  `Backend URL not reachable: ${currentAiApiUrl}`,
+                )
+              : (error instanceof Error
+                  ? error.message
+                  : t('Khong the tai danh sach voice VieNeu.', 'Cannot load VieNeu voice list.')),
           })
         }
       }

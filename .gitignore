@@ -14,6 +14,8 @@ data/orders.csv
 agent/
 mau/
 tmp_*.log
+tmp-*.log
+tmp-*.bin
 .vscode/
 
 # Bridge auto-generated browser profiles and test scripts

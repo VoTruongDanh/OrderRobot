@@ -548,7 +548,7 @@ export function getCoreApiUrl(): string {
 }
 
 export function getAiApiUrl(): string {
-  return getEnvConfig('VITE_AI_API_URL', 'http://127.0.0.1:18012')
+  return getEnvConfig('VITE_AI_API_URL', 'http://127.0.0.1:8012')
 }
 
 export function getMenuApiUrl(): string {

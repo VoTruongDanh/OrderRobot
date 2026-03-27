@@ -1675,8 +1675,9 @@
     const PRESENCE_ABSENCE_FRAMES = 4;
     const CHAT_CLEAR_AFTER_ABSENCE_MS = 30000;
     const BACKEND_STT_FINALIZE_SILENCE_MS = 950;
+    const BACKEND_STT_FORCE_FINALIZE_MS = 3600;
     const BACKEND_STT_CHUNK_MS = 260;
-    const AI_RUNTIME_FALLBACK_URL = 'http://127.0.0.1:18012';
+    const AI_RUNTIME_FALLBACK_URL = 'http://127.0.0.1:8012';
     const AI_RUNTIME_PROBE_TIMEOUT_MS = 1600;
     const isAdminPreviewMode = new URLSearchParams(window.location.search).get('adminPreview') === '1';
     if (isAdminPreviewMode) {
@@ -1709,6 +1710,7 @@
     let voiceBackendStream = null;
     let voiceBackendRecorder = null;
     let voiceBackendFinalizeTimer = null;
+    let voiceBackendForceFinalizeTimer = null;
     let voiceBackendFinalizing = false;
     let voiceBackendLastFinal = '';
     let voiceBackendLastFinalAt = 0;
@@ -2010,6 +2012,17 @@
         }
     }
 
+    function readExplicitConfiguredAiApiUrl() {
+        try {
+            const raw = localStorage.getItem(ADMIN_ENV_STORAGE_KEY);
+            if (!raw) return '';
+            const parsed = JSON.parse(raw);
+            return normalizeAiApiUrl(parsed.VITE_AI_API_URL || '');
+        } catch {
+            return '';
+        }
+    }
+
     function readAdminEnvFields() {
         try {
             const raw = localStorage.getItem(ADMIN_ENV_STORAGE_KEY);
@@ -2093,22 +2106,11 @@
     }
 
     function getAiApiUrlCandidates() {
-        const configured = readConfiguredAiApiUrl();
-        return Array.from(
-            new Set([
-                AI_RUNTIME_FALLBACK_URL,
-                'http://localhost:18012',
-                configured,
-                'http://127.0.0.1:18013',
-                'http://localhost:18013',
-                'http://127.0.0.1:18014',
-                'http://localhost:18014',
-                'http://127.0.0.1:18015',
-                'http://localhost:18015',
-                'http://127.0.0.1:8012',
-                'http://localhost:8012',
-            ]),
-        ).map((item) => normalizeAiApiUrl(item)).filter(Boolean);
+        const explicitConfigured = readExplicitConfiguredAiApiUrl();
+        if (explicitConfigured) {
+            return [explicitConfigured];
+        }
+        return [readConfiguredAiApiUrl()];
     }
 
     async function probeAiApiHealth(baseUrl) {
@@ -2328,6 +2330,22 @@
         return mapped || raw;
     }
 
+    const SENSITIVE_WORD_PATTERNS = [
+        /\b(?:đm|dm|đmm|dmm|vcl|vl)\b/giu,
+        /\b(?:địt|dit|đéo|deo)\b/giu,
+        /\b(?:cặc|cac|buồi|buoi|lồn)\b/giu,
+        /\b(?:fuck|fck|shit)\b/giu,
+    ];
+
+    function maskSensitiveDisplayText(value) {
+        let output = String(value || '');
+        if (!output) return '';
+        for (const pattern of SENSITIVE_WORD_PATTERNS) {
+            output = output.replace(pattern, (matched) => '*'.repeat(Math.max(3, String(matched).length)));
+        }
+        return output;
+    }
+
     function renderChatMini() {
         if (!chatMiniList) return;
         const latest = chatHistory.slice(-8);
@@ -2344,7 +2362,7 @@
     }
 
     function appendChat(role, text) {
-        const cleanText = normalizeAssistantDisplayText(role, text);
+        const cleanText = maskSensitiveDisplayText(normalizeAssistantDisplayText(role, text));
         if (!cleanText) return;
         const now = Date.now();
         const last = chatHistory[chatHistory.length - 1];
@@ -3383,6 +3401,13 @@
         }
     }
 
+    function clearBackendForceFinalizeTimer() {
+        if (voiceBackendForceFinalizeTimer) {
+            window.clearTimeout(voiceBackendForceFinalizeTimer);
+            voiceBackendForceFinalizeTimer = null;
+        }
+    }
+
     function scheduleBackendFinalize() {
         clearBackendFinalizeTimer();
         voiceBackendFinalizeTimer = window.setTimeout(() => {
@@ -3394,6 +3419,20 @@
                 voiceBackendSocket.send('finalize');
             } catch {}
         }, BACKEND_STT_FINALIZE_SILENCE_MS);
+    }
+
+    function scheduleBackendForceFinalize() {
+        if (voiceBackendForceFinalizeTimer) return;
+        voiceBackendForceFinalizeTimer = window.setTimeout(() => {
+            voiceBackendForceFinalizeTimer = null;
+            if (!voiceListening || voiceInputMode !== 'backend' || !voiceBackendSocket) return;
+            if (voiceBackendSocket.readyState !== WebSocket.OPEN) return;
+            if (voiceBackendFinalizing) return;
+            try {
+                voiceBackendFinalizing = true;
+                voiceBackendSocket.send('finalize');
+            } catch {}
+        }, BACKEND_STT_FORCE_FINALIZE_MS);
     }
 
     async function ensureBackendMicStream() {
@@ -3450,13 +3489,15 @@
                     if (botSpeechActive) {
                         prioritizeUserSpeech();
                     }
-                    setVoiceStatus(`Dang nghe: ${partialText}`);
+                    // Avoid showing low-confidence partial text to users.
+                    setVoiceStatus('Dang nghe ban noi...');
                 }
                 return;
             }
 
             if (payload.type === 'final') {
                 voiceBackendFinalizing = false;
+                clearBackendForceFinalizeTimer();
                 const transcript = String(payload.transcript || '').trim();
                 const status = String(payload.status || '').toLowerCase();
                 const now = Date.now();
@@ -3519,6 +3560,7 @@
     function stopBackendSpeechListening(options = {}) {
         const finalize = options.finalize === true;
         clearBackendFinalizeTimer();
+        clearBackendForceFinalizeTimer();
         voiceBackendFinalizing = false;
         if (voiceInputMode === 'backend') {
             voiceInputMode = 'idle';
@@ -3562,8 +3604,9 @@
             ? new MediaRecorder(stream, { mimeType })
             : new MediaRecorder(stream);
 
-        socket.send('start:caption:speech.webm');
+        socket.send('start:order:speech.webm');
         voiceBackendFinalizing = false;
+        clearBackendForceFinalizeTimer();
 
         voiceBackendRecorder.ondataavailable = (event) => {
             if (!event.data || event.data.size <= 0) return;
@@ -3572,6 +3615,7 @@
                 voiceBackendSocket.send(event.data);
                 voiceBackendSocket.send('flush');
                 scheduleBackendFinalize();
+                scheduleBackendForceFinalize();
             } catch {}
         };
 
