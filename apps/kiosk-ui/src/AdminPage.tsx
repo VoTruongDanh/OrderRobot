@@ -391,6 +391,7 @@ export default function AdminPage() {
   )
   const [vieneuVoices, setVieneuVoices] = useState<Array<{ id: string; description: string }>>([])
   const [vieneuVoicesState, setVieneuVoicesState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [vieneuInstallState, setVieneuInstallState] = useState<'idle' | 'installing' | 'success' | 'error'>('idle')
   const [resolvedVieneuApiBase, setResolvedVieneuApiBase] = useState('')
   const [micNoiseFilterStrength, setMicNoiseFilterStrength] = useState<number>(() =>
     getMicNoiseFilterStrength(),
@@ -769,6 +770,68 @@ export default function AdminPage() {
     },
     [currentAiApiUrl, t, ttsEngine],
   )
+
+  const installVieneuRuntime = useCallback(async () => {
+    if (ttsEngine !== 'vieneu') {
+      return
+    }
+
+    setVieneuInstallState('installing')
+    try {
+      const [apiBase] = getAiApiCandidates(resolvedVieneuApiBase || currentAiApiUrl)
+      const response = await fetch(`${apiBase}/speech/vieneu/install`, {
+        method: 'POST',
+      })
+
+      if (!response.ok) {
+        let detail = `HTTP ${response.status}`
+        try {
+          const payload = (await response.json()) as { detail?: string }
+          if (payload?.detail) {
+            detail = payload.detail
+          }
+        } catch {}
+        throw new Error(detail)
+      }
+
+      const payload = (await response.json()) as {
+        vieneu_installed?: boolean
+        already_installed?: boolean
+      }
+      setResolvedVieneuApiBase(apiBase)
+
+      if (payload.vieneu_installed !== true) {
+        setVieneuInstallState('error')
+        setNotice({
+          tone: 'warning',
+          text: t(
+            'Da goi cai VieNeu nhung backend chua nhan module. Thu restart AI backend.',
+            'VieNeu install command finished but backend still cannot load module. Restart AI backend.',
+          ),
+        })
+        return
+      }
+
+      setVieneuInstallState('success')
+      setNotice({
+        tone: 'success',
+        text: payload.already_installed
+          ? t('VieNeu da duoc cai san tren backend.', 'VieNeu is already installed on backend.')
+          : t('Cai VieNeu thanh cong. Dang tai lai danh sach voice...', 'VieNeu installed successfully. Reloading voices...'),
+      })
+      await loadVieneuVoices(false)
+    } catch (error) {
+      setVieneuInstallState('error')
+      setNotice({
+        tone: 'error',
+        text: error instanceof Error ? error.message : t('Khong the cai VieNeu.', 'Cannot install VieNeu.'),
+      })
+    } finally {
+      window.setTimeout(() => {
+        setVieneuInstallState('idle')
+      }, 1800)
+    }
+  }, [currentAiApiUrl, loadVieneuVoices, resolvedVieneuApiBase, t, ttsEngine])
 
   useEffect(() => {
     if (activeTab !== 'voice' || ttsEngine !== 'vieneu') {
@@ -1424,6 +1487,22 @@ export default function AdminPage() {
                         ? t('Apply loi', 'Apply failed')
                         : t('Apply vao backend', 'Apply To Backend')}
                 </button>
+                {ttsEngine === 'vieneu' ? (
+                  <button
+                    className="admin-btn admin-btn--minimal"
+                    type="button"
+                    onClick={() => void installVieneuRuntime()}
+                    disabled={vieneuInstallState === 'installing'}
+                  >
+                    {vieneuInstallState === 'installing'
+                      ? t('Dang cai VieNeu...', 'Installing VieNeu...')
+                      : vieneuInstallState === 'success'
+                        ? t('Da cai VieNeu', 'VieNeu Installed')
+                        : vieneuInstallState === 'error'
+                          ? t('Cai VieNeu loi', 'VieNeu Install Failed')
+                          : t('Cai VieNeu', 'Install VieNeu')}
+                  </button>
+                ) : null}
                 {ttsEngine === 'vieneu' ? (
                   <button
                     className="admin-btn admin-btn--minimal"

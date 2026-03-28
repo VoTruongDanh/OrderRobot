@@ -2170,7 +2170,7 @@
                 const hasRealtimeStack =
                     ttsEngine.length > 0 &&
                     typeof health?.stt_model === 'string';
-                if (status === 'ok' && hasRealtimeStack && ttsEngine === 'vieneu') {
+                if (status === 'ok' && hasRealtimeStack && ttsEngine === 'vieneu' && health?.vieneu_installed === true) {
                     resolvedAiApiUrl = candidate;
                     resolvedAiApiHealth = health;
                     resolvedAiHasRealtimeStack = true;
@@ -3084,6 +3084,7 @@
         const safeText = String(text || '').trim();
         if (!safeText) return;
 
+        const aiApiUrl = await ensureAiApiUrlReady();
         interruptBotSpeech();
         const speechAbortController = new AbortController();
         activeBotSpeechAbortController = speechAbortController;
@@ -3093,7 +3094,6 @@
         const streamPlayer = createStreamingAudioPlayer();
         if (streamPlayer) {
             try {
-                const aiApiUrl = await ensureAiApiUrlReady();
                 const response = await fetch(`${aiApiUrl}/speech/synthesize/stream`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -3132,7 +3132,6 @@
             }
         }
 
-        const aiApiUrl = await ensureAiApiUrlReady();
         const response = await fetch(`${aiApiUrl}/speech/synthesize`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },

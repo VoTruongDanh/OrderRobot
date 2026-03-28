@@ -4,6 +4,8 @@ import asyncio
 import base64
 import json
 import logging
+import subprocess
+import sys
 import time
 
 import httpx
@@ -37,6 +39,7 @@ speech_service = SpeechService(settings, core_client)
 conversation_engine = ConversationEngine(settings, core_client, speech_service)
 logger = logging.getLogger(__name__)
 SUPPORTED_TTS_ENGINES = {"auto", "vieneu", "edge", "local", "pyttsx3"}
+VIENEU_INSTALL_TIMEOUT_SECONDS = 900
 
 app = FastAPI(title="Order Robot AI Backend", version="1.0.0")
 
@@ -208,6 +211,64 @@ async def list_vieneu_voices() -> dict[str, object]:
         "tts_engine": settings.tts_engine,
         "vieneu_installed": vieneu_installed,
         "voices": voices,
+    }
+
+
+def _run_vieneu_install() -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, "-m", "pip", "install", "vieneu"],
+        capture_output=True,
+        text=True,
+        timeout=VIENEU_INSTALL_TIMEOUT_SECONDS,
+        check=False,
+    )
+
+
+@app.post("/speech/vieneu/install")
+async def install_vieneu() -> dict[str, object]:
+    if speech_service._is_vieneu_available():
+        return {
+            "ok": True,
+            "already_installed": True,
+            "vieneu_installed": True,
+            "detail": "VieNeu already installed.",
+        }
+
+    logger.info("Installing VieNeu package via pip using python=%s", sys.executable)
+    try:
+        install_result = await asyncio.to_thread(_run_vieneu_install)
+    except subprocess.TimeoutExpired as exc:
+        raise HTTPException(
+            status_code=504,
+            detail=f"Cai vieneu bi timeout sau {VIENEU_INSTALL_TIMEOUT_SECONDS} giay.",
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Khong the chay pip install vieneu: {exc}") from exc
+
+    stdout_tail = (install_result.stdout or "")[-4000:]
+    stderr_tail = (install_result.stderr or "")[-4000:]
+
+    if install_result.returncode != 0:
+        detail = stderr_tail.strip() or stdout_tail.strip() or "Pip install failed without output."
+        raise HTTPException(
+            status_code=500,
+            detail=f"Cai vieneu that bai (code={install_result.returncode}): {detail}",
+        )
+
+    if not speech_service._is_vieneu_available():
+        raise HTTPException(
+            status_code=500,
+            detail="Da cai vieneu xong nhung backend chua nhan module. Thu restart AI backend.",
+        )
+
+    speech_service.reset_vieneu_runtime()
+    return {
+        "ok": True,
+        "already_installed": False,
+        "vieneu_installed": True,
+        "detail": "Cai vieneu thanh cong.",
+        "stdout_tail": stdout_tail,
+        "stderr_tail": stderr_tail,
     }
 
 
