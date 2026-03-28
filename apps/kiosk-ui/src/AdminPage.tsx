@@ -24,6 +24,7 @@ import { useSpeech } from './hooks/useSpeech'
 
 type AdminTab = 'overview' | 'voice' | 'robotStudio' | 'config'
 type UiLanguage = 'vi' | 'en'
+type AdminMenuGroup = 'monitor' | 'audio' | 'robot' | 'system'
 
 type ServiceStatus = {
   name: string
@@ -60,36 +61,57 @@ type TtsApplyStatus = 'idle' | 'saving' | 'success' | 'error'
 
 const ADMIN_UI_LANGUAGE_KEY = 'admin.ui.language'
 
-const TAB_ITEMS: Array<{ id: AdminTab; label: Record<UiLanguage, string>; hint: Record<UiLanguage, string> }> = [
+const MENU_GROUPS: Array<{ id: AdminMenuGroup; label: Record<UiLanguage, string> }> = [
+  { id: 'monitor', label: { vi: 'Giám sát', en: 'Monitoring' } },
+  { id: 'audio', label: { vi: 'Âm thanh', en: 'Audio' } },
+  { id: 'robot', label: { vi: 'Robot', en: 'Robot' } },
+  { id: 'system', label: { vi: 'Hệ thống', en: 'System' } },
+]
+
+const TAB_ITEMS: Array<{
+  id: AdminTab
+  group: AdminMenuGroup
+  icon: string
+  label: Record<UiLanguage, string>
+  hint: Record<UiLanguage, string>
+}> = [
   {
     id: 'overview',
-    label: { vi: 'Tong quan', en: 'Overview' },
+    group: 'monitor',
+    icon: '01',
+    label: { vi: 'Tổng quan', en: 'Overview' },
     hint: {
-      vi: 'Xem nhanh he thong dang song hay loi.',
+      vi: 'Theo dõi dịch vụ và độ trễ theo thời gian thực.',
       en: 'Quickly check what is healthy and what is failing.',
     },
   },
   {
     id: 'voice',
-    label: { vi: 'Giong noi', en: 'Voice' },
+    group: 'audio',
+    icon: '02',
+    label: { vi: 'Giọng nói', en: 'Voice' },
     hint: {
-      vi: 'Cai dat TTS va an test ky thuat.',
+      vi: 'Tinh chỉnh TTS, STT và kiểm tra microphone.',
       en: 'Configure TTS and run technical voice tests.',
     },
   },
   {
     id: 'robotStudio',
+    group: 'robot',
+    icon: '03',
     label: { vi: 'Robot Studio', en: 'Robot Studio' },
     hint: {
-      vi: 'Skin, action, graph va trigger.',
+      vi: 'Quản lý skin, hành vi và motion của robot.',
       en: 'Skin, actions, graphs, and triggers.',
     },
   },
   {
     id: 'config',
-    label: { vi: 'Cau hinh', en: 'Configuration' },
+    group: 'system',
+    icon: '04',
+    label: { vi: 'Cấu hình', en: 'Configuration' },
     hint: {
-      vi: 'Luu cai dat va dong bo sang kiosk ngay.',
+      vi: 'Lưu biến môi trường và đồng bộ kiosk ngay.',
       en: 'Save settings and sync to kiosk instantly.',
     },
   },
@@ -146,32 +168,32 @@ const ENV_TEMPLATE: EnvField[] = [
 ]
 
 const TTS_VOICE_OPTIONS = [
-  { value: 'vi-VN-HoaiMyNeural', label: 'HoaiMy Neural (Nu, tu nhien)' },
-  { value: 'vi-VN-NamMinhNeural', label: 'NamMinh Neural (Nam, tu nhien)' },
-  { value: 'en-US-AvaMultilingualNeural', label: 'Ava Multilingual Neural (Nu, mem)' },
-  { value: 'en-US-AndrewMultilingualNeural', label: 'Andrew Multilingual Neural (Nam, dam)' },
+  { value: 'vi-VN-HoaiMyNeural', label: 'Hoài My Neural (Nữ, tự nhiên)' },
+  { value: 'vi-VN-NamMinhNeural', label: 'Nam Minh Neural (Nam, tự nhiên)' },
+  { value: 'en-US-AvaMultilingualNeural', label: 'Ava Multilingual Neural (Nữ, mềm)' },
+  { value: 'en-US-AndrewMultilingualNeural', label: 'Andrew Multilingual Neural (Nam, đầm)' },
   { value: 'vi-VN-An', label: 'vi-VN-An (Nam, Standard)' },
-  { value: 'vi-VN-HoaiMy', label: 'vi-VN-HoaiMy (Nu, Standard)' },
+  { value: 'vi-VN-HoaiMy', label: 'vi-VN-HoaiMy (Nữ, Standard)' },
 ]
 
 const TTS_NATURAL_PRESETS: Array<{ label: Record<UiLanguage, string>; voice: string; rate: string }> = [
   {
-    label: { vi: 'Nu tu nhien', en: 'Natural Female' },
+    label: { vi: 'Nữ tự nhiên', en: 'Natural Female' },
     voice: 'vi-VN-HoaiMyNeural',
     rate: '165',
   },
   {
-    label: { vi: 'Nam tu nhien', en: 'Natural Male' },
+    label: { vi: 'Nam tự nhiên', en: 'Natural Male' },
     voice: 'vi-VN-NamMinhNeural',
     rate: '160',
   },
   {
-    label: { vi: 'Nu mem chat', en: 'Soft Chat Female' },
+    label: { vi: 'Nữ mềm chat', en: 'Soft Chat Female' },
     voice: 'en-US-AvaMultilingualNeural',
     rate: '155',
   },
   {
-    label: { vi: 'Nam am dam', en: 'Warm Deep Male' },
+    label: { vi: 'Nam âm đầm', en: 'Warm Deep Male' },
     voice: 'en-US-AndrewMultilingualNeural',
     rate: '155',
   },
@@ -181,7 +203,7 @@ const TTS_ENGINE_OPTIONS = [
   { value: 'vieneu', label: 'VieNeu-TTS (CPU/GPU offline)' },
   { value: 'edge', label: 'Edge Neural (cloud)' },
   { value: 'local', label: 'Local pyttsx3 (fallback)' },
-  { value: 'auto', label: 'Auto (uu tien VieNeu)' },
+  { value: 'auto', label: 'Auto (ưu tiên VieNeu)' },
 ]
 
 const VIENEU_REALTIME_PROFILES: VieneuRealtimeProfile[] = [
@@ -189,7 +211,7 @@ const VIENEU_REALTIME_PROFILES: VieneuRealtimeProfile[] = [
     id: 'cpu_realtime',
     label: { vi: 'CPU realtime (0.3B Q4)', en: 'CPU realtime (0.3B Q4)' },
     hint: {
-      vi: 'Uu tien do tre thap tren CPU, dung model GGUF 0.3B-q4.',
+      vi: 'Ưu tiên độ trễ thấp trên CPU, dùng model GGUF 0.3B-q4.',
       en: 'Prioritize low latency on CPU with GGUF 0.3B-q4 model.',
     },
     modelPath: 'pnnbao-ump/VieNeu-TTS-0.3B-q4-gguf',
@@ -201,7 +223,7 @@ const VIENEU_REALTIME_PROFILES: VieneuRealtimeProfile[] = [
     id: 'gpu_realtime',
     label: { vi: 'GPU realtime (0.3B)', en: 'GPU realtime (0.3B)' },
     hint: {
-      vi: 'Toc do nhanh hon tren NVIDIA GPU, can CUDA.',
+      vi: 'Tốc độ nhanh hơn trên NVIDIA GPU, cần CUDA.',
       en: 'Faster throughput on NVIDIA GPU, requires CUDA.',
     },
     modelPath: 'pnnbao-ump/VieNeu-TTS-0.3B',
@@ -211,9 +233,9 @@ const VIENEU_REALTIME_PROFILES: VieneuRealtimeProfile[] = [
   },
   {
     id: 'gpu_quality',
-    label: { vi: 'GPU chat luong cao (0.5B)', en: 'GPU high quality (0.5B)' },
+    label: { vi: 'GPU chất lượng cao (0.5B)', en: 'GPU high quality (0.5B)' },
     hint: {
-      vi: 'Giong dep hon, doi lai nhe hon ve latency so voi 0.3B.',
+      vi: 'Giọng đẹp hơn, đổi lại latency cao hơn nhẹ so với 0.3B.',
       en: 'Higher quality voice with slightly higher latency than 0.3B.',
     },
     modelPath: 'pnnbao-ump/VieNeu-TTS',
@@ -226,12 +248,12 @@ const VIENEU_REALTIME_PROFILES: VieneuRealtimeProfile[] = [
 function getMicNoiseFilterLabel(strength: number, uiLanguage: UiLanguage): string {
   const level = getMicNoiseFilterLevelFromStrength(strength)
   if (level === 'off') {
-    return uiLanguage === 'vi' ? 'Tat loc on' : 'Noise filter off'
+    return uiLanguage === 'vi' ? 'Tắt lọc ồn' : 'Noise filter off'
   }
   if (level === 'strong') {
-    return uiLanguage === 'vi' ? 'Loc on manh' : 'Strong noise filter'
+    return uiLanguage === 'vi' ? 'Lọc ồn mạnh' : 'Strong noise filter'
   }
-  return uiLanguage === 'vi' ? 'Can bang' : 'Balanced'
+  return uiLanguage === 'vi' ? 'Cân bằng' : 'Balanced'
 }
 
 function loadSavedEnv(): EnvField[] {
@@ -278,7 +300,7 @@ function getAiApiCandidates(preferredUrl: string): string[] {
 
 function formatSyncTime(updatedAt: number | null, uiLanguage: UiLanguage): string {
   if (!updatedAt) {
-    return uiLanguage === 'vi' ? 'Chua dong bo lan nao' : 'No sync yet'
+    return uiLanguage === 'vi' ? 'Chưa đồng bộ lần nào' : 'No sync yet'
   }
   return new Date(updatedAt).toLocaleString(uiLanguage === 'vi' ? 'vi-VN' : 'en-US', {
     hour: '2-digit',
@@ -352,7 +374,7 @@ export default function AdminPage() {
   const [lastSyncAt, setLastSyncAt] = useState<number | null>(() => getAdminConfigUpdatedAt())
   const [micState, setMicState] = useState<'idle' | 'checking' | 'ok' | 'error'>('idle')
   const [micDetail, setMicDetail] = useState(() =>
-    loadAdminUiLanguage() === 'vi' ? 'Chua check microphone' : 'Microphone has not been checked',
+    loadAdminUiLanguage() === 'vi' ? 'Chưa kiểm tra microphone' : 'Microphone has not been checked',
   )
   const [sttPartialText, setSttPartialText] = useState('')
   const [sttFinalText, setSttFinalText] = useState('')
@@ -411,7 +433,7 @@ export default function AdminPage() {
   } | null>(null)
   const [ttsTestText, setTtsTestText] = useState(() =>
     loadAdminUiLanguage() === 'vi'
-      ? 'Xin chao! Minh la robot dat mon. Ban muon goi gi hom nay?'
+      ? 'Xin chào! Mình là robot đặt món. Bạn muốn gọi gì hôm nay?'
       : 'Hello! I am your ordering robot. What would you like today?',
   )
   const [ttsTestStatus, setTtsTestStatus] = useState<'idle' | 'playing' | 'error'>('idle')
@@ -449,7 +471,7 @@ export default function AdminPage() {
       url: target.url,
       status: 'idle',
       latencyMs: null,
-      detail: uiLanguage === 'vi' ? 'Chua kiem tra' : 'Not checked yet',
+      detail: uiLanguage === 'vi' ? 'Chưa kiểm tra' : 'Not checked yet',
     })),
   )
 
@@ -458,7 +480,7 @@ export default function AdminPage() {
     onTranscript: (transcript) => {
       setSttFinalText(transcript)
       setMicState('ok')
-      setMicDetail('STT da nhan transcript')
+      setMicDetail('STT đã nhận transcript')
     },
     onNotice: (message, level = 'warning') => {
       setSpeechNotices((current) => {
@@ -514,7 +536,7 @@ export default function AdminPage() {
     setSttPartialText(interimTranscript)
     if (interimTranscript.trim()) {
       setMicState('ok')
-      setMicDetail('Dang nhan partial transcript...')
+      setMicDetail('Đang nhận partial transcript...')
     }
   }, [interimTranscript])
 
@@ -539,7 +561,7 @@ export default function AdminPage() {
             url: target.url,
             status: 'idle',
             latencyMs: null,
-            detail: uiLanguage === 'vi' ? 'Chua kiem tra' : 'Not checked yet',
+            detail: uiLanguage === 'vi' ? 'Chưa kiểm tra' : 'Not checked yet',
           }
         }
         if (existing.url === target.url) {
@@ -552,7 +574,7 @@ export default function AdminPage() {
           latencyMs: null,
           detail:
             uiLanguage === 'vi'
-              ? 'URL da thay doi, can check lai'
+              ? 'URL đã thay đổi, cần kiểm tra lại'
               : 'URL changed, please re-run check',
         }
       }),
@@ -583,7 +605,7 @@ export default function AdminPage() {
       setNotice({
         tone: 'info',
         text: t(
-          `Da ap preset ${profile.label.vi}. Nho bam "Apply vao backend".`,
+          `Đã áp preset ${profile.label.vi}. Nhớ bấm "Áp dụng vào backend".`,
           `Preset ${profile.label.en} applied. Click "Apply To Backend" to activate.`,
         ),
       })
@@ -611,7 +633,7 @@ export default function AdminPage() {
         ...service,
         status: 'error',
         latencyMs,
-        detail: error instanceof Error ? error.message : uiLanguage === 'vi' ? 'Loi khong ro' : 'Unknown error',
+        detail: error instanceof Error ? error.message : uiLanguage === 'vi' ? 'Lỗi không rõ' : 'Unknown error',
       }
     }
   }, [uiLanguage])
@@ -620,7 +642,7 @@ export default function AdminPage() {
     const checkingList = services.map((service) => ({
       ...service,
       status: 'checking' as const,
-      detail: uiLanguage === 'vi' ? 'Dang kiem tra...' : 'Checking...',
+      detail: uiLanguage === 'vi' ? 'Đang kiểm tra...' : 'Checking...',
     }))
     setServices(checkingList)
     const checked = await Promise.all(checkingList.map((service) => checkService(service)))
@@ -643,7 +665,7 @@ export default function AdminPage() {
     saveAndSyncConfig(
       envFields,
       t(
-        'Da luu cau hinh. Trang kiosk index se nhan ngay.',
+        'Đã lưu cấu hình. Trang kiosk index sẽ nhận ngay.',
         'Configuration saved. Kiosk index will receive updates immediately.',
       ),
     )
@@ -656,13 +678,13 @@ export default function AdminPage() {
       setCopied(true)
       setNotice({
         tone: 'info',
-        text: showAdvancedConfig ? t('Da copy full .env', 'Full .env copied') : t('Da copy .env voi nhom cau hinh thiet yeu', 'Essential .env block copied'),
+        text: showAdvancedConfig ? t('Đã copy full .env', 'Full .env copied') : t('Đã copy .env với nhóm cấu hình thiết yếu', 'Essential .env block copied'),
       })
       window.setTimeout(() => setCopied(false), 1500)
     } catch (error) {
       setNotice({
         tone: 'error',
-        text: error instanceof Error ? error.message : t('Khong the copy .env', 'Cannot copy .env'),
+        text: error instanceof Error ? error.message : t('Không thể copy .env', 'Cannot copy .env'),
       })
     }
   }, [envText, essentialEnvText, showAdvancedConfig, t])
@@ -721,7 +743,7 @@ export default function AdminPage() {
             setNotice({
               tone: 'warning',
               text: t(
-                'Backend chua cai vieneu. Cai package vieneu truoc khi dung preset voice.',
+                'Backend chưa cài vieneu. Cài package vieneu trước khi dùng preset voice.',
                 'The backend does not have vieneu installed yet. Install vieneu before using preset voices.',
               ),
             })
@@ -731,7 +753,7 @@ export default function AdminPage() {
             setNotice({
               tone: 'warning',
               text: t(
-                'Da ket noi VieNeu nhung endpoint nay chua tra preset voice. Thu doi model/preset trong backend roi tai lai.',
+                'Đã kết nối VieNeu nhưng endpoint này chưa trả preset voice. Thử đổi model/preset trong backend rồi tải lại.',
                 'Connected to VieNeu but this endpoint returned no preset voices. Try switching model/runtime and reload voices.',
               ),
             })
@@ -763,7 +785,7 @@ export default function AdminPage() {
                 )
               : (error instanceof Error
                   ? error.message
-                  : t('Khong the tai danh sach voice VieNeu.', 'Cannot load VieNeu voice list.')),
+                  : t('Không thể tải danh sách voice VieNeu.', 'Cannot load VieNeu voice list.')),
           })
         }
       }
@@ -805,7 +827,7 @@ export default function AdminPage() {
         setNotice({
           tone: 'warning',
           text: t(
-            'Da goi cai VieNeu nhung backend chua nhan module. Thu restart AI backend.',
+            'Đã gọi cài VieNeu nhưng backend chưa nhận module. Thử restart AI backend.',
             'VieNeu install command finished but backend still cannot load module. Restart AI backend.',
           ),
         })
@@ -816,15 +838,15 @@ export default function AdminPage() {
       setNotice({
         tone: 'success',
         text: payload.already_installed
-          ? t('VieNeu da duoc cai san tren backend.', 'VieNeu is already installed on backend.')
-          : t('Cai VieNeu thanh cong. Dang tai lai danh sach voice...', 'VieNeu installed successfully. Reloading voices...'),
+          ? t('VieNeu đã được cài sẵn trên backend.', 'VieNeu is already installed on backend.')
+          : t('Cài VieNeu thành công. Đang tải lại danh sách voice...', 'VieNeu installed successfully. Reloading voices...'),
       })
       await loadVieneuVoices(false)
     } catch (error) {
       setVieneuInstallState('error')
       setNotice({
         tone: 'error',
-        text: error instanceof Error ? error.message : t('Khong the cai VieNeu.', 'Cannot install VieNeu.'),
+        text: error instanceof Error ? error.message : t('Không thể cài VieNeu.', 'Cannot install VieNeu.'),
       })
     } finally {
       window.setTimeout(() => {
@@ -846,7 +868,7 @@ export default function AdminPage() {
     }
     stopListening()
     setMicState('ok')
-    setMicDetail(t('Da dung STT va cho transcript cuoi', 'STT stopped, waiting for final transcript'))
+    setMicDetail(t('Đã dừng STT và chờ transcript cuối', 'STT stopped, waiting for final transcript'))
   }, [listening, stopListening, t])
 
   const runQuickMicTest = useCallback(async () => {
@@ -859,30 +881,30 @@ export default function AdminPage() {
     setSttPartialText('')
     setSttFinalText('')
     setMicState('checking')
-    setMicDetail(t('Dang xin quyen microphone va khoi dong STT...', 'Requesting microphone permission and starting STT...'))
+    setMicDetail(t('Đang xin quyền microphone và khởi động STT...', 'Requesting microphone permission and starting STT...'))
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: getMicAudioConstraints(micNoiseFilterStrength),
       })
       const tracks = stream.getAudioTracks()
-      const trackLabel = tracks[0]?.label || t('Microphone san sang', 'Microphone ready')
+      const trackLabel = tracks[0]?.label || t('Microphone sẵn sàng', 'Microphone ready')
       tracks.forEach((track) => track.stop())
 
       if (!recognitionSupported) {
         setMicState('ok')
         setMicDetail(
-          `${trackLabel}. ${t('Trinh duyet khong ho tro STT kiosk flow.', 'This browser does not support the kiosk STT flow.')}`,
+          `${trackLabel}. ${t('Trình duyệt không hỗ trợ STT kiosk flow.', 'This browser does not support the kiosk STT flow.')}`,
         )
         return
       }
 
       await startListening()
       setMicState('ok')
-      setMicDetail(`Mic ok (${trackLabel}). ${t('Dang nghe...', 'Listening...')}`)
+      setMicDetail(`Mic ok (${trackLabel}). ${t('Đang nghe...', 'Listening...')}`)
     } catch (error) {
       setMicState('error')
-      setMicDetail(error instanceof Error ? error.message : t('Khong the test microphone', 'Cannot test microphone'))
+      setMicDetail(error instanceof Error ? error.message : t('Không thể kiểm tra microphone', 'Cannot test microphone'))
     }
   }, [listening, micNoiseFilterStrength, recognitionSupported, startListening, stopBrowserStt, t])
 
@@ -898,7 +920,7 @@ export default function AdminPage() {
     persistRobotScalePercent(safeValue)
     setNotice({
       tone: 'info',
-      text: t(`Da cap nhat do to robot: ${safeValue}%`, `Robot scale updated: ${safeValue}%`),
+      text: t(`Đã cập nhật độ to robot: ${safeValue}%`, `Robot scale updated: ${safeValue}%`),
     })
   }, [t])
 
@@ -908,8 +930,8 @@ export default function AdminPage() {
     setNotice({
       tone: 'info',
       text: visible
-        ? t('Da bat khung camera tren kiosk.', 'Camera preview enabled on kiosk.')
-        : t('Da an khung camera tren kiosk.', 'Camera preview hidden on kiosk.'),
+        ? t('Đã bật khung camera trên kiosk.', 'Camera preview enabled on kiosk.')
+        : t('Đã ẩn khung camera trên kiosk.', 'Camera preview hidden on kiosk.'),
     })
   }, [t])
 
@@ -983,7 +1005,7 @@ export default function AdminPage() {
       setNoiseMonitorActive(true)
       setNotice({
         tone: 'info',
-        text: t('Dang do do on truc tiep tu microphone.', 'Live microphone noise monitoring is running.'),
+        text: t('Đang đo độ ồn trực tiếp từ microphone.', 'Live microphone noise monitoring is running.'),
       })
     } catch (error) {
       setNotice({
@@ -991,7 +1013,7 @@ export default function AdminPage() {
         text:
           error instanceof Error
             ? error.message
-            : t('Khong the bat do on microphone.', 'Cannot start microphone noise monitor.'),
+            : t('Không thể bật đo ồn microphone.', 'Cannot start microphone noise monitor.'),
       })
       stopNoiseMonitor()
     }
@@ -1009,7 +1031,7 @@ export default function AdminPage() {
       setTtsTestStatus('error')
       setNotice({
         tone: 'warning',
-        text: t('TTS Rate phai la so trong khoang 100-300.', 'TTS rate must be a number between 100 and 300.'),
+        text: t('TTS Rate phải là số trong khoảng 100-300.', 'TTS rate must be a number between 100 and 300.'),
       })
       window.setTimeout(() => setTtsTestStatus('idle'), 2000)
       return
@@ -1028,7 +1050,7 @@ export default function AdminPage() {
       setNotice({
         tone: 'warning',
         text: t(
-          'Cau hinh VieNeu chua hop le. Temperature 0.1-2.0, Top-K 1-200, Max chars 32-512.',
+          'Cấu hình VieNeu chưa hợp lệ. Temperature 0.1-2.0, Top-K 1-200, Max chars 32-512.',
           'Invalid VieNeu config. Temperature 0.1-2.0, Top-K 1-200, Max chars 32-512.',
         ),
       })
@@ -1114,6 +1136,17 @@ export default function AdminPage() {
     vieneuVoiceId,
   ])
 
+  const secondaryLanguage: UiLanguage = uiLanguage === 'vi' ? 'en' : 'vi'
+  const activeTabMeta = TAB_ITEMS.find((tab) => tab.id === activeTab)
+  const menuGroups = useMemo(
+    () =>
+      MENU_GROUPS.map((group) => ({
+        ...group,
+        tabs: TAB_ITEMS.filter((tab) => tab.group === group.id),
+      })).filter((group) => group.tabs.length > 0),
+    [],
+  )
+
   const applyTtsConfig = useCallback(async () => {
     const normalizedRate = toSafeTtsRate(ttsRate)
     if (ttsEngine !== 'vieneu' && normalizedRate === null) {
@@ -1121,7 +1154,7 @@ export default function AdminPage() {
       setNotice({
         tone: 'warning',
         text: t(
-          'Khong the apply TTS: Rate phai nam trong khoang 100-300.',
+          'Không thể áp dụng TTS: Rate phải nằm trong khoảng 100-300.',
           'Cannot apply TTS: rate must be between 100 and 300.',
         ),
       })
@@ -1142,7 +1175,7 @@ export default function AdminPage() {
       setNotice({
         tone: 'warning',
         text: t(
-          'Khong the apply VieNeu: Temperature 0.1-2.0, Top-K 1-200, Max chars 32-512.',
+          'Không thể áp dụng VieNeu: Temperature 0.1-2.0, Top-K 1-200, Max chars 32-512.',
           'Cannot apply VieNeu: Temperature 0.1-2.0, Top-K 1-200, Max chars 32-512.',
         ),
       })
@@ -1212,7 +1245,7 @@ export default function AdminPage() {
         }
       }
       if (successCount === 0) {
-        throw (lastError || new Error('Khong apply duoc TTS cho backend nao.'))
+        throw (lastError || new Error('Không áp dụng được TTS cho backend nào.'))
       }
 
       const nextValues: Record<string, string> = {
@@ -1235,7 +1268,7 @@ export default function AdminPage() {
       saveAndSyncConfig(
         nextFields,
         t(
-          `Da apply TTS vao ${successCount} backend va dong bo vao kiosk.`,
+          `Đã áp dụng TTS vào ${successCount} backend và đồng bộ vào kiosk.`,
           `TTS applied to ${successCount} backend endpoints and synced to kiosk.`,
         ),
       )
@@ -1247,7 +1280,7 @@ export default function AdminPage() {
       setTtsApplyStatus('error')
       setNotice({
         tone: 'error',
-        text: error instanceof Error ? error.message : t('Khong the apply TTS config', 'Cannot apply TTS config'),
+        text: error instanceof Error ? error.message : t('Không thể áp dụng TTS config', 'Cannot apply TTS config'),
       })
     } finally {
       window.setTimeout(() => setTtsApplyStatus('idle'), 2000)
@@ -1276,120 +1309,174 @@ export default function AdminPage() {
     <main className="admin-page">
       <div className="admin-page__backdrop admin-page__backdrop--one" />
       <div className="admin-page__backdrop admin-page__backdrop--two" />
-
-      <header className="admin-header">
-        <div className="admin-header__title">
-          <p className="admin-kicker">Order Robot / Admin</p>
-          <h1>{t('Bang dieu khien de quan ly nhanh va ro', 'Control center for fast and clear operations')}</h1>
-          <p className="admin-subtitle">
-            {t(
-              'Khong can nho het tung config. Chi can lam theo thu tu: check he thong, test giong noi, sau do luu va dong bo.',
-              'No need to memorize every config. Follow this order: check system, test voice, then save and sync.',
-            )}
-          </p>
-        </div>
-        <div className="admin-header__actions">
-          <button
-            className="admin-link"
-            type="button"
-            onClick={() => setUiLanguage((current) => (current === 'vi' ? 'en' : 'vi'))}
-          >
-            {uiLanguage === 'vi' ? 'EN' : 'VI'}
-          </button>
-          <a className="admin-link" href="/debug">
-            {t('Bridge Debug', 'Bridge Debug')}
-          </a>
-          <a className="admin-link admin-link--primary" href="/">
-            {t('Ve Kiosk', 'Back To Kiosk')}
-          </a>
-        </div>
-      </header>
-
-      {notice ? (
-        <section className={`admin-notice admin-notice--${notice.tone}`} role="status">
-          {notice.text}
-        </section>
-      ) : null}
-
-      <section className="admin-metrics-grid">
-        <article className="admin-metric-card">
-          <p className="admin-metric-card__label">{t('He thong khoe', 'System Health')}</p>
-          <p className="admin-metric-card__value">
-            {healthyServiceCount}/{services.length}
-          </p>
-          <p className="admin-metric-card__hint">{t('service dang online', 'services online')}</p>
-        </article>
-        <article className="admin-metric-card">
-          <p className="admin-metric-card__label">{t('Dong bo index', 'Index Sync')}</p>
-          <p className="admin-metric-card__value">{formatSyncTime(lastSyncAt, uiLanguage)}</p>
-          <p className="admin-metric-card__hint">{t('moi thay doi se cap nhat vao kiosk', 'every change syncs to kiosk')}</p>
-        </article>
-        <article className="admin-metric-card">
-          <p className="admin-metric-card__label">Speech status</p>
-          <p className="admin-metric-card__value">{listening ? t('Dang nghe', 'Listening') : t('Dang nghi', 'Idle')}</p>
-          <p className="admin-metric-card__hint">
-            Mic: {micState} | Caption: {liveCaption.status}
-          </p>
-        </article>
-      </section>
-
-      <section className="admin-panel admin-panel--robot-first">
-        <header className="admin-panel__head">
-          <div>
-            <h2>{t('Tuy chinh robot', 'Robot Tuning')}</h2>
-            <p>{t('Chinh do to robot truoc tien. Keo la kiosk cap nhat ngay.', 'Adjust robot scale first. Drag to update kiosk instantly.')}</p>
+      <div className="admin-shell">
+        <aside className="admin-sidebar" aria-label={t('Menu quản trị bên trái', 'Left admin menu')}>
+          <div className="admin-sidebar__brand">
+            <p className="admin-kicker">Order Robot / Admin</p>
+            <h1>{t('Trung tâm quản trị', 'Admin Control Center')}</h1>
+            <p>
+              {t(
+                'Bố cục sáng, rõ từng nhóm chức năng để vận hành nhanh và ít nhầm thao tác.',
+                'Bright and structured layout for faster and safer operations.',
+              )}
+            </p>
           </div>
-          <p className="admin-chip admin-chip--ok">Scale: {robotScalePercent}%</p>
-        </header>
-        <div className="admin-fields-grid">
-          <label className="admin-field admin-field--full">
-            <span>{t('Do to robot (60-170%)', 'Robot scale (60-170%)')}</span>
-            <input
-              type="range"
-              min="60"
-              max="170"
-              step="1"
-              value={robotScalePercent}
-              onChange={(event) => handleRobotScaleChange(Number(event.target.value))}
-            />
-          </label>
-          <label className="admin-field">
-            <span>{t('Khung camera mini (goc phai tren)', 'Mini camera tile (top-right)')}</span>
-            <select
-              value={cameraPreviewVisible ? 'show' : 'hide'}
-              onChange={(event) => handleCameraPreviewVisibleChange(event.target.value === 'show')}
-            >
-              <option value="show">{t('Hien', 'Show')}</option>
-              <option value="hide">{t('An', 'Hide')}</option>
-            </select>
-          </label>
-        </div>
-      </section>
 
-      <nav className="admin-tabs" aria-label="Admin sections">
-        {TAB_ITEMS.map((tab) => (
-          <button
-            key={tab.id}
-            className={`admin-tab ${activeTab === tab.id ? 'admin-tab--active' : ''}`}
-            type="button"
-            onClick={() => setActiveTab(tab.id)}
-            aria-pressed={activeTab === tab.id}
-          >
-            <span>{tab.label[uiLanguage]}</span>
-            <small>{tab.hint[uiLanguage]}</small>
-          </button>
-        ))}
-      </nav>
+          <div className="admin-sidebar__controls">
+            <button
+              className="admin-link"
+              type="button"
+              onClick={() => setUiLanguage((current) => (current === 'vi' ? 'en' : 'vi'))}
+            >
+              {uiLanguage === 'vi' ? 'English / Tiếng Việt' : 'Tiếng Việt / English'}
+            </button>
+            <a className="admin-link" href="/debug">
+              {t('Debug Bridge', 'Bridge Debug')}
+            </a>
+            <a className="admin-link admin-link--primary" href="/">
+              {t('Về Kiosk', 'Back To Kiosk')}
+            </a>
+          </div>
+
+          <nav className="admin-sidebar__nav" aria-label={t('Điều hướng theo nhóm', 'Grouped navigation')}>
+            {menuGroups.map((group) => (
+              <section key={group.id} className="admin-sidebar__group">
+                <p className="admin-sidebar__group-title">{group.label[uiLanguage]}</p>
+                <div className="admin-sidebar__group-items">
+                  {group.tabs.map((tab) => (
+                    <button
+                      key={tab.id}
+                      className={`admin-nav-item ${activeTab === tab.id ? 'admin-nav-item--active' : ''}`}
+                      type="button"
+                      onClick={() => setActiveTab(tab.id)}
+                      aria-pressed={activeTab === tab.id}
+                    >
+                      <span className="admin-nav-item__badge">{tab.icon}</span>
+                      <span className="admin-nav-item__content">
+                        <strong>{tab.label[uiLanguage]}</strong>
+                        <small>{tab.hint[uiLanguage]}</small>
+                        <em>{tab.label[secondaryLanguage]}</em>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            ))}
+          </nav>
+
+          <div className="admin-sidebar__status">
+            <p>{t('Đồng bộ gần nhất', 'Last synced')}</p>
+            <strong>{formatSyncTime(lastSyncAt, uiLanguage)}</strong>
+            <span>
+              {t(
+                'Mọi thay đổi trong cấu hình sẽ đẩy sang kiosk ngay sau khi lưu.',
+                'Every saved configuration is synced to kiosk immediately.',
+              )}
+            </span>
+          </div>
+        </aside>
+
+        <section className="admin-main">
+          <header className="admin-header">
+            <div className="admin-header__title">
+              <p className="admin-kicker">{t('Bảng điều khiển vận hành', 'Operations Console')}</p>
+              <h2>{activeTabMeta ? activeTabMeta.label[uiLanguage] : t('Tổng quan', 'Overview')}</h2>
+              <p className="admin-subtitle">
+                {activeTabMeta
+                  ? activeTabMeta.hint[uiLanguage]
+                  : t('Quản lý hệ thống gọi món tại một nơi.', 'Manage ordering system in one place.')}
+              </p>
+            </div>
+            <div className="admin-header__actions">
+              <p className="admin-chip admin-chip--ok">
+                {t('Dịch vụ online', 'Services online')}: {healthyServiceCount}/{services.length}
+              </p>
+              <p className="admin-chip admin-chip--ok">
+                {t('Mic', 'Mic')}: {micState}
+              </p>
+              <p className="admin-chip admin-chip--ok">
+                Caption: {liveCaption.status}
+              </p>
+            </div>
+          </header>
+
+          {notice ? (
+            <section className={`admin-notice admin-notice--${notice.tone}`} role="status">
+              {notice.text}
+            </section>
+          ) : null}
+
+          <section className="admin-metrics-grid">
+            <article className="admin-metric-card">
+              <p className="admin-metric-card__label">{t('Sức khỏe hệ thống', 'System Health')}</p>
+              <p className="admin-metric-card__value">
+                {healthyServiceCount}/{services.length}
+              </p>
+              <p className="admin-metric-card__hint">{t('dịch vụ đang hoạt động', 'services online')}</p>
+            </article>
+            <article className="admin-metric-card">
+              <p className="admin-metric-card__label">{t('Lần đồng bộ', 'Latest Sync')}</p>
+              <p className="admin-metric-card__value">{formatSyncTime(lastSyncAt, uiLanguage)}</p>
+              <p className="admin-metric-card__hint">{t('thay đổi được đẩy ngay sang kiosk', 'changes are synced instantly')}</p>
+            </article>
+            <article className="admin-metric-card">
+              <p className="admin-metric-card__label">{t('Trạng thái hội thoại', 'Speech Status')}</p>
+              <p className="admin-metric-card__value">{listening ? t('Đang nghe', 'Listening') : t('Đang nghỉ', 'Idle')}</p>
+              <p className="admin-metric-card__hint">
+                Mic: {micState} | Caption: {liveCaption.status}
+              </p>
+            </article>
+          </section>
+
+          {activeTab !== 'robotStudio' ? (
+            <section className="admin-panel admin-panel--robot-first">
+              <header className="admin-panel__head">
+                <div>
+                  <h2>{t('Tối ưu robot nhanh', 'Quick Robot Tuning')}</h2>
+                  <p>
+                    {t(
+                      'Điều chỉnh nhanh tỷ lệ robot và khung camera để khớp màn kiosk tại quầy.',
+                      'Quickly tune robot scale and camera tile for kiosk display fit.',
+                    )}
+                  </p>
+                </div>
+                <p className="admin-chip admin-chip--ok">Scale: {robotScalePercent}%</p>
+              </header>
+              <div className="admin-fields-grid">
+                <label className="admin-field admin-field--full">
+                  <span>{t('Độ to robot (60-170%)', 'Robot scale (60-170%)')}</span>
+                  <input
+                    type="range"
+                    min="60"
+                    max="170"
+                    step="1"
+                    value={robotScalePercent}
+                    onChange={(event) => handleRobotScaleChange(Number(event.target.value))}
+                  />
+                </label>
+                <label className="admin-field">
+                  <span>{t('Khung camera mini (góc phải trên)', 'Mini camera tile (top-right)')}</span>
+                  <select
+                    value={cameraPreviewVisible ? 'show' : 'hide'}
+                    onChange={(event) => handleCameraPreviewVisibleChange(event.target.value === 'show')}
+                  >
+                    <option value="show">{t('Hiện', 'Show')}</option>
+                    <option value="hide">{t('Ẩn', 'Hide')}</option>
+                  </select>
+                </label>
+              </div>
+            </section>
+          ) : null}
 
       {activeTab === 'overview' ? (
         <section className="admin-panel">
           <header className="admin-panel__head">
             <div>
-              <h2>{t('Suc khoe backend', 'Backend Health')}</h2>
-              <p>{t('Kiem tra ngay cac endpoint quan trong de biet cai nao dang cham, cai nao dang loi.', 'Check critical endpoints to see what is slow or failing.')}</p>
+              <h2>{t('Sức khỏe backend', 'Backend Health')}</h2>
+              <p>{t('Kiểm tra các endpoint quan trọng để biết điểm nào đang chậm hoặc lỗi.', 'Check critical endpoints to see what is slow or failing.')}</p>
             </div>
             <button className="admin-btn" type="button" onClick={() => void runHealthChecks()}>
-              {isHealthChecking ? t('Dang kiem tra...', 'Checking...') : t('Check ngay', 'Run Check')}
+              {isHealthChecking ? t('Đang kiểm tra...', 'Checking...') : t('Kiểm tra ngay', 'Run Check')}
             </button>
           </header>
 
@@ -1415,16 +1502,16 @@ export default function AdminPage() {
             <header className="admin-subcard__head">
               <div>
                 <h3>{t('Mic Noise Filter', 'Mic Noise Filter')}</h3>
-                <p>{t('Keo slider de chinh muc loc on, va xem do on realtime tu mic.', 'Drag slider to tune noise filter and view live mic level.')}</p>
+                <p>{t('Kéo slider để chỉnh mức lọc ồn và xem độ ồn realtime từ mic.', 'Drag slider to tune noise filter and view live mic level.')}</p>
               </div>
               <div className="admin-inline-actions">
                 {noiseMonitorActive ? (
                   <button className="admin-btn admin-btn--ghost" type="button" onClick={stopNoiseMonitor}>
-                    {t('Dung do on', 'Stop Meter')}
+                    {t('Dừng đo ồn', 'Stop Meter')}
                   </button>
                 ) : (
                   <button className="admin-btn" type="button" onClick={() => void startNoiseMonitor()}>
-                    {t('Bat do on truc tiep', 'Start Live Meter')}
+                    {t('Bật đo ồn trực tiếp', 'Start Live Meter')}
                   </button>
                 )}
               </div>
@@ -1432,7 +1519,7 @@ export default function AdminPage() {
             <div className="admin-fields-grid">
               <label className="admin-field">
                 <span>
-                  {t('Muc loc on', 'Noise filter level')}: {micNoiseFilterStrength}% ({getMicNoiseFilterLabel(micNoiseFilterStrength, uiLanguage)})
+                  {t('Mức lọc ồn', 'Noise filter level')}: {micNoiseFilterStrength}% ({getMicNoiseFilterLabel(micNoiseFilterStrength, uiLanguage)})
                 </span>
                 <input
                   type="range"
@@ -1445,7 +1532,7 @@ export default function AdminPage() {
               </label>
             </div>
             <p className="admin-service-card__detail">
-              {t('Do on hien tai', 'Current noise')}: <strong>{noiseLevelDb.toFixed(1)} dB</strong>
+              {t('Độ ồn hiện tại', 'Current noise')}: <strong>{noiseLevelDb.toFixed(1)} dB</strong>
             </p>
             <div className="admin-noise-meter" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={noiseLevelPercent}>
               <div className="admin-noise-meter__bar" style={{ width: `${noiseLevelPercent}%` }} />
@@ -1455,9 +1542,9 @@ export default function AdminPage() {
           <article className="admin-subcard">
             <header className="admin-subcard__head">
               <div>
-                <h3>{t('Cai dat giong noi', 'Voice Settings')}</h3>
+                <h3>{t('Cài đặt giọng nói', 'Voice Settings')}</h3>
                 <p>
-                  {t('Chon voice va toc do doc. Test va apply ngay tai day.', 'Select voice and speaking rate. Test and apply right here.')}
+                  {t('Chọn voice và tốc độ đọc. Kiểm thử rồi áp dụng ngay tại đây.', 'Select voice and speaking rate. Test and apply right here.')}
                 </p>
               </div>
               <div className="admin-inline-actions">
@@ -1468,10 +1555,10 @@ export default function AdminPage() {
                   disabled={ttsTestStatus === 'playing'}
                 >
                   {ttsTestStatus === 'playing'
-                    ? t('Dang doc...', 'Speaking...')
+                    ? t('Đang đọc...', 'Speaking...')
                     : ttsTestStatus === 'error'
-                      ? t('Doc thu bi loi', 'Preview failed')
-                      : t('Doc thu', 'Preview')}
+                      ? t('Đọc thử bị lỗi', 'Preview failed')
+                      : t('Đọc thử', 'Preview')}
                 </button>
                 <button
                   className="admin-btn admin-btn--ghost"
@@ -1480,12 +1567,12 @@ export default function AdminPage() {
                   disabled={ttsApplyStatus === 'saving'}
                 >
                   {ttsApplyStatus === 'saving'
-                    ? t('Dang apply...', 'Applying...')
+                    ? t('Đang áp dụng...', 'Applying...')
                     : ttsApplyStatus === 'success'
-                      ? t('Apply xong', 'Applied')
+                      ? t('Áp dụng xong', 'Applied')
                       : ttsApplyStatus === 'error'
-                        ? t('Apply loi', 'Apply failed')
-                        : t('Apply vao backend', 'Apply To Backend')}
+                        ? t('Áp dụng lỗi', 'Apply failed')
+                        : t('Áp dụng vào backend', 'Apply To Backend')}
                 </button>
                 {ttsEngine === 'vieneu' ? (
                   <button
@@ -1495,12 +1582,12 @@ export default function AdminPage() {
                     disabled={vieneuInstallState === 'installing'}
                   >
                     {vieneuInstallState === 'installing'
-                      ? t('Dang cai VieNeu...', 'Installing VieNeu...')
+                      ? t('Đang cài VieNeu...', 'Installing VieNeu...')
                       : vieneuInstallState === 'success'
-                        ? t('Da cai VieNeu', 'VieNeu Installed')
+                        ? t('Đã cài VieNeu', 'VieNeu Installed')
                         : vieneuInstallState === 'error'
-                          ? t('Cai VieNeu loi', 'VieNeu Install Failed')
-                          : t('Cai VieNeu', 'Install VieNeu')}
+                          ? t('Cài VieNeu lỗi', 'VieNeu Install Failed')
+                          : t('Cài VieNeu', 'Install VieNeu')}
                   </button>
                 ) : null}
                 {ttsEngine === 'vieneu' ? (
@@ -1511,8 +1598,8 @@ export default function AdminPage() {
                     disabled={vieneuVoicesState === 'loading'}
                   >
                     {vieneuVoicesState === 'loading'
-                      ? t('Dang tai voice...', 'Loading voices...')
-                      : t('Tai voice VieNeu', 'Load VieNeu Voices')}
+                      ? t('Đang tải voice...', 'Loading voices...')
+                      : t('Tải voice VieNeu', 'Load VieNeu Voices')}
                   </button>
                 ) : null}
                 <button
@@ -1520,7 +1607,7 @@ export default function AdminPage() {
                   type="button"
                   onClick={() => setShowAdvancedVoiceTools((current) => !current)}
                 >
-                  {showAdvancedVoiceTools ? t('An test ky thuat', 'Hide Advanced Tests') : t('Hien test ky thuat', 'Show Advanced Tests')}
+                  {showAdvancedVoiceTools ? t('Ẩn test kỹ thuật', 'Hide Advanced Tests') : t('Hiện test kỹ thuật', 'Show Advanced Tests')}
                 </button>
               </div>
             </header>
@@ -1569,7 +1656,7 @@ export default function AdminPage() {
                           {profile.label[uiLanguage]}
                         </option>
                       ))}
-                      <option value="custom">{t('Tuy chinh thu cong', 'Manual custom')}</option>
+                      <option value="custom">{t('Tùy chỉnh thủ công', 'Manual custom')}</option>
                     </select>
                   </label>
                   <label className="admin-field">
@@ -1590,7 +1677,7 @@ export default function AdminPage() {
                   <label className="admin-field">
                     <span>{t('VieNeu Preset voice', 'VieNeu Preset voice')}</span>
                     <select value={vieneuVoiceId} onChange={(event) => setVieneuVoiceId(event.target.value)}>
-                      <option value="">{t('Mac dinh theo model', 'Model default voice')}</option>
+                      <option value="">{t('Mặc định theo model', 'Model default voice')}</option>
                       {hasCustomVieneuVoiceId ? (
                         <option value={normalizedVieneuVoiceId}>
                           {t(`Custom: ${normalizedVieneuVoiceId}`, `Custom: ${normalizedVieneuVoiceId}`)}
@@ -1604,11 +1691,11 @@ export default function AdminPage() {
                     </select>
                   </label>
                   <label className="admin-field">
-                    <span>{t('Or enter voice id manually', 'Or enter voice id manually')}</span>
+                    <span>{t('Hoặc nhập voice id thủ công', 'Or enter voice id manually')}</span>
                     <input
                       value={vieneuVoiceId}
                       onChange={(event) => setVieneuVoiceId(event.target.value)}
-                      placeholder={t('Vi du: Tuyen', 'Example: Tuyen')}
+                      placeholder={t('Ví dụ: Tuyen', 'Example: Tuyen')}
                     />
                   </label>
                   <label className="admin-field">
@@ -1661,7 +1748,7 @@ export default function AdminPage() {
                       value={vieneuRefText}
                       onChange={(event) => setVieneuRefText(event.target.value)}
                       placeholder={t(
-                        'Nhap cau text dung voi file mau de clone giong on dinh.',
+                        'Nhập câu text đúng với file mẫu để clone giọng ổn định.',
                         'Enter transcript matching the reference audio for stable cloning.',
                       )}
                     />
@@ -1673,7 +1760,7 @@ export default function AdminPage() {
                 <textarea
                   value={ttsTestText}
                   onChange={(event) => setTtsTestText(event.target.value)}
-                  placeholder={t('Nhap noi dung can doc thu...', 'Enter text to synthesize...')}
+                  placeholder={t('Nhập nội dung cần đọc thử...', 'Enter text to synthesize...')}
                 />
               </label>
             </div>
@@ -1689,7 +1776,7 @@ export default function AdminPage() {
                       setTtsRate(preset.rate)
                       setNotice({
                         tone: 'info',
-                        text: t(`Da chon preset ${preset.label.vi}.`, `Preset selected: ${preset.label.en}.`),
+                        text: t(`Đã chọn preset ${preset.label.vi}.`, `Preset selected: ${preset.label.en}.`),
                       })
                     }}
                   >
@@ -1700,8 +1787,8 @@ export default function AdminPage() {
             ) : null}
             <p className="admin-service-card__detail">
               {ttsEngine === 'vieneu'
-                ? t(
-                    'VieNeu: co the chon preset voice hoac clone giong bang ref audio + ref text, sau do bam Apply.',
+                  ? t(
+                    'VieNeu: có thể chọn preset voice hoặc clone giọng bằng ref audio + ref text, sau đó bấm Apply.',
                     'VieNeu: choose a preset voice or clone from ref audio + ref text, then press Apply.',
                   )
                 : t(
@@ -1730,17 +1817,17 @@ export default function AdminPage() {
               <article className="admin-subcard">
                 <header className="admin-subcard__head">
                   <div>
-                    <h3>{t('Test mic nhanh (1 nut)', 'Quick Mic Test (one button)')}</h3>
+                    <h3>{t('Test mic nhanh (1 nút)', 'Quick Mic Test (one button)')}</h3>
                     <p>
                       {t(
-                        'Bam mot lan de xin quyen mic va bat STT ngay. Bam lai de dung test.',
+                        'Bấm một lần để xin quyền mic và bật STT ngay. Bấm lại để dừng test.',
                         'Click once to request mic permission and start STT. Click again to stop.',
                       )}
                     </p>
                   </div>
                   <div className="admin-inline-actions">
                     <button className="admin-btn" type="button" onClick={() => void runQuickMicTest()}>
-                      {listening ? t('Dung test mic', 'Stop Mic Test') : t('Test mic ngay', 'Start Mic Test')}
+                      {listening ? t('Dừng test mic', 'Stop Mic Test') : t('Kiểm tra mic ngay', 'Start Mic Test')}
                     </button>
                   </div>
                 </header>
@@ -1749,11 +1836,11 @@ export default function AdminPage() {
                 <div className="admin-fields-grid admin-fields-grid--voice">
                   <label className="admin-field">
                     <span>{t('Realtime transcript', 'Realtime transcript')}</span>
-                    <textarea value={sttPartialText} readOnly placeholder={t('Text tam thoi se hien o day...', 'Interim text appears here...')} />
+                    <textarea value={sttPartialText} readOnly placeholder={t('Text tạm thời sẽ hiện ở đây...', 'Interim text appears here...')} />
                   </label>
                   <label className="admin-field">
                     <span>{t('Final transcript', 'Final transcript')}</span>
-                    <textarea value={sttFinalText} readOnly placeholder={t('Text final se hien o day...', 'Final text appears here...')} />
+                    <textarea value={sttFinalText} readOnly placeholder={t('Text final sẽ hiện ở đây...', 'Final text appears here...')} />
                   </label>
                 </div>
                 {speechNotices.length > 0 ? (
@@ -1774,19 +1861,19 @@ export default function AdminPage() {
                 <header className="admin-subcard__head">
                   <div>
                     <h3>Live caption alternative</h3>
-                    <p>{t('Che do caption de theo doi text lien tuc, huu ich khi test o moi truong on ao.', 'Caption mode helps track continuous text, useful in noisy environments.')}</p>
+                    <p>{t('Chế độ caption để theo dõi text liên tục, hữu ích khi test ở môi trường ồn ào.', 'Caption mode helps track continuous text, useful in noisy environments.')}</p>
                   </div>
                   <div className="admin-inline-actions">
                     <button className="admin-btn admin-btn--ghost" type="button" onClick={liveCaption.clear}>
-                      {t('Xoa caption', 'Clear Caption')}
+                      {t('Xóa caption', 'Clear Caption')}
                     </button>
                     {liveCaption.isListening ? (
                       <button className="admin-btn" type="button" onClick={liveCaption.stop}>
-                        {t('Dung Caption', 'Stop Caption')}
+                        {t('Dừng Caption', 'Stop Caption')}
                       </button>
                     ) : (
                       <button className="admin-btn" type="button" onClick={() => void liveCaption.start()}>
-                        {t('Bat Caption', 'Start Caption')}
+                        {t('Bật Caption', 'Start Caption')}
                       </button>
                     )}
                   </div>
@@ -1802,7 +1889,7 @@ export default function AdminPage() {
                 </p>
                 <p className="admin-service-card__detail">
                   Engine: {liveCaption.engine ?? 'none'} | {t('Backend support', 'Backend support')}:{' '}
-                  {liveCaption.backendSupported ? t('co', 'yes') : t('khong', 'no')}
+                  {liveCaption.backendSupported ? t('có', 'yes') : t('không', 'no')}
                 </p>
                 <div className="admin-fields-grid admin-fields-grid--voice">
                   <label className="admin-field">
@@ -1810,7 +1897,7 @@ export default function AdminPage() {
                     <textarea
                       value={liveCaption.finalTranscript}
                       readOnly
-                      placeholder={t('Caption final se tich luy o day...', 'Final caption accumulates here...')}
+                      placeholder={t('Caption final sẽ tích lũy ở đây...', 'Final caption accumulates here...')}
                     />
                   </label>
                   <label className="admin-field">
@@ -1818,7 +1905,7 @@ export default function AdminPage() {
                     <textarea
                       value={liveCaption.interimTranscript}
                       readOnly
-                      placeholder={t('Caption tam thoi se cap nhat o day...', 'Interim caption updates here...')}
+                      placeholder={t('Caption tạm thời sẽ cập nhật ở đây...', 'Interim caption updates here...')}
                     />
                   </label>
                 </div>
@@ -1840,26 +1927,26 @@ export default function AdminPage() {
           <article className="admin-subcard">
             <header className="admin-subcard__head">
               <div>
-                <h3>{t('Cau hinh thiet yeu', 'Essential Configuration')}</h3>
+                <h3>{t('Cấu hình thiết yếu', 'Essential Configuration')}</h3>
                 <p>
                   {t(
-                    'Nhom nay la du de van hanh. Nhan luu de dong bo ngay vao index, khong can refresh tay.',
+                    'Nhóm này là đủ để vận hành. Nhấn lưu để đồng bộ ngay vào index, không cần refresh tay.',
                     'This set is enough for daily operation. Save to sync immediately without manual refresh.',
                   )}
                 </p>
               </div>
               <div className="admin-inline-actions">
                 <button className="admin-btn admin-btn--ghost" type="button" onClick={handleSaveConfig}>
-                  {t('Luu va dong bo', 'Save And Sync')}
+                  {t('Lưu và đồng bộ', 'Save And Sync')}
                 </button>
                 <button className="admin-btn" type="button" onClick={() => void handleCopyEnv()}>
-                  {copied ? t('Da copy', 'Copied') : 'Copy .env'}
+                  {copied ? t('Đã copy', 'Copied') : 'Copy .env'}
                 </button>
               </div>
             </header>
 
             <p className="admin-service-card__detail">
-              {t('Lan dong bo gan nhat', 'Last synced')}:{' '}
+              {t('Lần đồng bộ gần nhất', 'Last synced')}:{' '}
               {formatSyncTime(lastSyncAt, uiLanguage)}
             </p>
 
@@ -1882,8 +1969,8 @@ export default function AdminPage() {
               onClick={() => setShowAdvancedConfig((current) => !current)}
             >
               {showAdvancedConfig
-                ? t('An cau hinh nang cao', 'Hide Advanced Config')
-                : t('Mo cau hinh nang cao', 'Show Advanced Config')}
+                ? t('Ẩn cấu hình nâng cao', 'Hide Advanced Config')
+                : t('Mở cấu hình nâng cao', 'Show Advanced Config')}
             </button>
 
             {showAdvancedConfig ? (
@@ -1908,8 +1995,8 @@ export default function AdminPage() {
                 <h3>Preview .env</h3>
                 <p>
                   {showAdvancedConfig
-                    ? t('Dang hien full cau hinh', 'Showing full config')
-                    : t('Dang hien nhom thiet yeu', 'Showing essential config')}
+                    ? t('Đang hiển thị full cấu hình', 'Showing full config')
+                    : t('Đang hiển thị nhóm thiết yếu', 'Showing essential config')}
                 </p>
               </div>
             </header>
@@ -1921,7 +2008,11 @@ export default function AdminPage() {
           </article>
         </section>
       ) : null}
+        </section>
+      </div>
     </main>
   )
 }
+
+
 
