@@ -388,15 +388,12 @@ class SpeechService:
         text: str,
         vieneu_overrides: dict[str, object] | None = None,
     ) -> SynthesizedAudio:
-        loop = asyncio.get_running_loop()
         if vieneu_overrides is None:
-            return await loop.run_in_executor(
-                self._vieneu_executor,
+            return await anyio.to_thread.run_sync(
                 self._synthesize_with_vieneu_sync,
                 text,
             )
-        return await loop.run_in_executor(
-            self._vieneu_executor,
+        return await anyio.to_thread.run_sync(
             self._synthesize_with_vieneu_sync,
             text,
             vieneu_overrides,

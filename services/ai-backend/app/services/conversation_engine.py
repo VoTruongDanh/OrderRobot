@@ -242,7 +242,12 @@ class ConversationEngine:
         )
         return await self._build_response(session_id, decision)
 
-    async def handle_turn(self, session_id: str, transcript: str) -> ConversationResponse:
+    async def handle_turn(
+        self,
+        session_id: str,
+        transcript: str,
+        turn_id: str | None = None,
+    ) -> ConversationResponse:
         async with self.lock:
             self._cleanup_expired_sessions()
             state = self.sessions.get(session_id)
@@ -329,6 +334,7 @@ class ConversationEngine:
                         user_text=transcript,
                     ),
                     menu,
+                    turn_id=turn_id,
                 )
 
         # Chitchat / name / non-ordering input â€” respond naturally
@@ -341,6 +347,7 @@ class ConversationEngine:
                     user_text=transcript,
                 ),
                 menu,
+                turn_id=turn_id,
             )
 
         segment_matches = self._extract_segment_matches(normalized, menu)
@@ -382,6 +389,7 @@ class ConversationEngine:
                     user_text=transcript,
                 ),
                 menu,
+                turn_id=turn_id,
             )
 
         if available_matches:
@@ -434,6 +442,7 @@ class ConversationEngine:
                     user_text=transcript,
                 ),
                 menu,
+                turn_id=turn_id,
             )
 
         if state.cart:
@@ -454,6 +463,7 @@ class ConversationEngine:
                 user_text=transcript,
             ),
             menu,
+            turn_id=turn_id,
         )
 
     def _match_explicit_items(self, normalized_transcript: str, menu: list[MenuItem]) -> list[tuple[MenuItem, float]]:
@@ -595,18 +605,24 @@ class ConversationEngine:
             return item_name
         return None
 
-    async def handle_turn_stream(self, session_id: str, transcript: str):
+    async def handle_turn_stream(
+        self,
+        session_id: str,
+        transcript: str,
+        turn_id: str | None = None,
+    ):
         """Stream conversation response with interleaved text and audio for lower latency.
         
         Simple scenes are handled locally (instant). Complex scenes use LLM streaming.
         """
         # Use handle_turn which already has smart LLM bypass
-        response = await self.handle_turn(session_id, transcript)
+        response = await self.handle_turn(session_id, transcript, turn_id=turn_id)
 
         # Send text + cart as first chunk
         yield {
             "type": "text",
             "content": response.reply_text,
+            "turn_id": turn_id,
             "cart": [item.model_dump() for item in response.cart],
             "scene": response.scene,
             "emotion_hint": response.emotion_hint,
@@ -620,8 +636,22 @@ class ConversationEngine:
             return
 
         try:
+            tts_started_at = time.perf_counter()
+            first_chunk_logged = False
             async for audio_chunk in self.speech_service.synthesize_stream(response.reply_text):
-                yield {"type": "audio", "content": base64.b64encode(audio_chunk).decode("ascii")}
+                if not first_chunk_logged:
+                    first_chunk_logged = True
+                    logger.info(
+                        "tts_first_chunk_ms=%s session_id=%s turn_id=%s",
+                        int((time.perf_counter() - tts_started_at) * 1000),
+                        session_id,
+                        turn_id or "",
+                    )
+                yield {
+                    "type": "audio",
+                    "content": base64.b64encode(audio_chunk).decode("ascii"),
+                    "turn_id": turn_id,
+                }
         except Exception:
             pass
 
@@ -819,6 +849,7 @@ class ConversationEngine:
         session_id: str,
         decision: Decision,
         menu: list[MenuItem] | None = None,
+        turn_id: str | None = None,
     ) -> ConversationResponse:
         state = self.sessions[session_id]
         menu = menu or await self._get_menu()
@@ -852,10 +883,23 @@ class ConversationEngine:
         # Only call bridge provider for complex scenes; simple scenes use local templates.
         if self.provider_client is not None and decision.scene in COMPLEX_SCENES:
             try:
-                provider_reply = await self.provider_client.compose_reply(prompt_payload)
+                bridge_started_at = time.perf_counter()
+                provider_reply = await self.provider_client.compose_reply(
+                    prompt_payload,
+                    session_id=session_id,
+                    turn_id=turn_id,
+                    latest_wins=True,
+                )
                 reply_text = provider_reply["reply_text"]
                 voice_style = provider_reply.get("voice_style", self.settings.voice_style)
                 reply_source = "bridge"
+                logger.info(
+                    "bridge_ms=%s session_id=%s turn_id=%s scene=%s",
+                    int((time.perf_counter() - bridge_started_at) * 1000),
+                    session_id,
+                    turn_id or "",
+                    decision.scene,
+                )
             except Exception as exc:
                 logger.warning("Bridge call failed for scene '%s': %s - using local fallback", decision.scene, exc)
                 reply_text = render_fallback_reply(prompt_payload)
@@ -866,7 +910,13 @@ class ConversationEngine:
             voice_style = self.settings.voice_style
 
         reply_text = ensure_frontend_safe_reply(decision.scene, reply_text)
-        logger.info("reply_source=%s scene=%s session_id=%s", reply_source, decision.scene, session_id)
+        logger.info(
+            "reply_source=%s scene=%s session_id=%s turn_id=%s",
+            reply_source,
+            decision.scene,
+            session_id,
+            turn_id or "",
+        )
 
         return ConversationResponse(
             session_id=session_id,

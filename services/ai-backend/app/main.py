@@ -223,8 +223,20 @@ async def start_session(_: SessionStartRequest) -> ConversationResponse:
 
 @app.post("/sessions/{session_id}/turn", response_model=ConversationResponse)
 async def handle_turn(session_id: str, payload: TurnRequest) -> ConversationResponse:
+    started_at = time.perf_counter()
     try:
-        return await conversation_engine.handle_turn(session_id, payload.transcript)
+        response = await conversation_engine.handle_turn(
+            session_id,
+            payload.transcript,
+            turn_id=payload.turn_id,
+        )
+        logger.info(
+            "turn_total_ms=%s session_id=%s turn_id=%s endpoint=turn",
+            int((time.perf_counter() - started_at) * 1000),
+            session_id,
+            payload.turn_id or "",
+        )
+        return response
     except httpx.HTTPStatusError as exc:
         detail = exc.response.text or "Khong the tao don tu core backend."
         raise HTTPException(status_code=502, detail=detail) from exc
@@ -238,20 +250,47 @@ async def handle_turn(session_id: str, payload: TurnRequest) -> ConversationResp
 async def handle_turn_stream(session_id: str, payload: TurnRequest) -> StreamingResponse:
     """Stream conversation response with interleaved text and audio chunks for lower latency."""
     async def response_stream():
+        started_at = time.perf_counter()
         try:
-            async for chunk in conversation_engine.handle_turn_stream(session_id, payload.transcript):
+            async for chunk in conversation_engine.handle_turn_stream(
+                session_id,
+                payload.transcript,
+                turn_id=payload.turn_id,
+            ):
                 # Yield JSON-encoded chunks: {"type": "text", "content": "..."} or {"type": "audio", "content": base64}
                 yield json.dumps(chunk, ensure_ascii=False).encode("utf-8") + b"\n"
+            logger.info(
+                "turn_total_ms=%s session_id=%s turn_id=%s endpoint=turn_stream",
+                int((time.perf_counter() - started_at) * 1000),
+                session_id,
+                payload.turn_id or "",
+            )
         except httpx.HTTPStatusError as exc:
             detail = exc.response.text or "Khong the tao don tu core backend."
-            yield json.dumps({"type": "error", "message": detail}, ensure_ascii=False).encode("utf-8") + b"\n"
+            yield json.dumps(
+                {"type": "error", "message": detail, "turn_id": payload.turn_id},
+                ensure_ascii=False,
+            ).encode("utf-8") + b"\n"
         except httpx.HTTPError:
             yield json.dumps(
-                {"type": "error", "message": "Khong the ket noi toi core backend."},
+                {
+                    "type": "error",
+                    "message": "Khong the ket noi toi core backend.",
+                    "turn_id": payload.turn_id,
+                },
                 ensure_ascii=False,
             ).encode("utf-8") + b"\n"
         except ProviderError as exc:
-            yield json.dumps({"type": "error", "message": str(exc)}, ensure_ascii=False).encode("utf-8") + b"\n"
+            yield json.dumps(
+                {"type": "error", "message": str(exc), "turn_id": payload.turn_id},
+                ensure_ascii=False,
+            ).encode("utf-8") + b"\n"
+        except Exception as exc:
+            logger.exception("turn stream unexpected error session_id=%s turn_id=%s", session_id, payload.turn_id)
+            yield json.dumps(
+                {"type": "error", "message": str(exc), "turn_id": payload.turn_id},
+                ensure_ascii=False,
+            ).encode("utf-8") + b"\n"
 
     return StreamingResponse(response_stream(), media_type="application/x-ndjson")
 
@@ -339,10 +378,13 @@ async def synthesize_speech_stream(payload: SpeechSynthesisRequest) -> Streaming
 
 @app.post("/speech/transcribe", response_model=SpeechTranscriptionResponse)
 async def transcribe_speech(file: UploadFile = File(...)) -> SpeechTranscriptionResponse:
+    started_at = time.perf_counter()
     try:
         transcript = await speech_service.transcribe(file)
+        logger.info("stt_ms=%s endpoint=transcribe", int((time.perf_counter() - started_at) * 1000))
         return SpeechTranscriptionResponse(transcript=transcript, status="ok")
     except SpeechNotHeardError as exc:
+        logger.info("stt_ms=%s endpoint=transcribe status=retry", int((time.perf_counter() - started_at) * 1000))
         return SpeechTranscriptionResponse(transcript="", status="retry", message=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -485,10 +527,16 @@ async def transcribe_speech_ws(websocket: WebSocket) -> None:
                         audio_buffer.clear()
                         continue
 
+                    final_started_at = time.perf_counter()
                     final_transcript = await speech_service.transcribe_bytes(
                         snapshot,
                         filename,
                         mode=stream_mode,
+                    )
+                    logger.info(
+                        "stt_ms=%s endpoint=transcribe_ws mode=%s",
+                        int((time.perf_counter() - final_started_at) * 1000),
+                        stream_mode,
                     )
                     if not await send_ws_json(
                         {"type": "final", "status": "ok", "transcript": final_transcript},

@@ -1674,9 +1674,9 @@
     const PRESENCE_MOTION_THRESHOLD = 16;
     const PRESENCE_ABSENCE_FRAMES = 4;
     const CHAT_CLEAR_AFTER_ABSENCE_MS = 30000;
-    const BACKEND_STT_FINALIZE_SILENCE_MS = 950;
-    const BACKEND_STT_FORCE_FINALIZE_MS = 3600;
-    const BACKEND_STT_CHUNK_MS = 260;
+    const BACKEND_STT_FINALIZE_SILENCE_MS = 650;
+    const BACKEND_STT_FORCE_FINALIZE_MS = 2400;
+    const BACKEND_STT_CHUNK_MS = 180;
     const AI_RUNTIME_FALLBACK_URL = 'http://127.0.0.1:8012';
     const AI_RUNTIME_PROBE_TIMEOUT_MS = 1600;
     const isAdminPreviewMode = new URLSearchParams(window.location.search).get('adminPreview') === '1';
@@ -1731,6 +1731,9 @@
     let activeOrderFlowToken = 0;
     const handledOrderIds = [];
     const pendingUserTurns = [];
+    let turnSequence = 0;
+    let latestIssuedTurnId = '';
+    let activeProcessingTurnId = '';
     const chatHistory = [];
     let cartState = [];
     const MENU_IMAGE_BY_ID = {
@@ -1966,6 +1969,27 @@
 
     function markSpeechActivity() {
         lastSpeechActivityAt = Date.now();
+    }
+
+    function createTurnId() {
+        turnSequence += 1;
+        return `turn-${turnSequence}`;
+    }
+
+    function isTurnStillLatest(turnId) {
+        return Boolean(turnId) && turnId === latestIssuedTurnId;
+    }
+
+    function createSupersededTurnError() {
+        const error = new Error('turn aborted by newer input');
+        error.name = 'AbortError';
+        return error;
+    }
+
+    function ensureLatestTurn(turnId) {
+        if (!isTurnStillLatest(turnId)) {
+            throw createSupersededTurnError();
+        }
     }
 
     function updateMenuPanelHeight(visibleCount) {
@@ -2761,12 +2785,12 @@
         return payload;
     }
 
-    async function sendConversationTurn(sessionId, transcript, signal = undefined) {
+    async function sendConversationTurn(sessionId, transcript, turnId = '', signal = undefined) {
         const aiApiUrl = await ensureAiApiUrlReady();
         const response = await fetch(`${aiApiUrl}/sessions/${encodeURIComponent(sessionId)}/turn`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ transcript }),
+            body: JSON.stringify({ transcript, turn_id: turnId || undefined }),
             signal,
         });
         if (!response.ok) {
@@ -2775,12 +2799,12 @@
         return response.json();
     }
 
-    async function streamConversationTurn(sessionId, transcript, onChunk, signal = undefined) {
+    async function streamConversationTurn(sessionId, transcript, turnId = '', onChunk, signal = undefined) {
         const aiApiUrl = await ensureAiApiUrlReady();
         const response = await fetch(`${aiApiUrl}/sessions/${encodeURIComponent(sessionId)}/turn/stream`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ transcript }),
+            body: JSON.stringify({ transcript, turn_id: turnId || undefined }),
             signal,
         });
         if (!response.ok) {
@@ -3172,16 +3196,16 @@
     function enqueueUserTurn(transcript) {
         const cleanText = String(transcript || '').trim();
         if (!cleanText) return;
+        const turnId = createTurnId();
+        latestIssuedTurnId = turnId;
         markSpeechActivity();
         prioritizeUserSpeech();
-        if (voiceQueueRunning) {
-            pendingUserTurns.unshift(cleanText);
-        } else {
-            pendingUserTurns.push(cleanText);
-        }
-        if (pendingUserTurns.length > 12) {
-            pendingUserTurns.length = 12;
-        }
+        pendingUserTurns.length = 0;
+        pendingUserTurns.push({
+            turnId,
+            text: cleanText,
+            queuedAt: Date.now(),
+        });
         if (!voiceQueueRunning) {
             void processVoiceQueue();
         }
@@ -3228,8 +3252,16 @@
         voiceQueueRunning = true;
         try {
             while (pendingUserTurns.length > 0) {
-                const userText = pendingUserTurns.shift();
-                if (!userText) continue;
+                const queuedTurn = pendingUserTurns.shift();
+                if (!queuedTurn) continue;
+                const turnId = String(queuedTurn.turnId || '').trim();
+                const userText = String(queuedTurn.text || '').trim();
+                if (!turnId || !userText) continue;
+                activeProcessingTurnId = turnId;
+                if (!isTurnStillLatest(turnId)) {
+                    activeProcessingTurnId = '';
+                    continue;
+                }
                 const cartSnapshotBeforeTurn = normalizeOrderItems(cartState);
 
                 appendChat('user', userText);
@@ -3250,10 +3282,18 @@
 
                 const turnAbortController = new AbortController();
                 activeTurnAbortController = turnAbortController;
+                const ensureNotStale = () => {
+                    if (turnAbortController.signal.aborted) {
+                        throw createSupersededTurnError();
+                    }
+                    ensureLatestTurn(turnId);
+                };
 
                 try {
+                    ensureNotStale();
                     if (!currentSessionId) {
                         const sessionPayload = await startConversationSession('manual', turnAbortController.signal);
+                        ensureNotStale();
                         const opening = String(sessionPayload?.reply_text || '').trim();
                         if (opening && chatHistory.length < 3) {
                             appendChat('assistant', opening);
@@ -3268,9 +3308,13 @@
                     let replyText = '';
                     let streamedAudioChunks = 0;
                     let streamPlayer = createStreamingAudioPlayer();
+                    let streamChunkErrorMessage = '';
 
                     try {
-                        await streamConversationTurn(currentSessionId, userText, (chunk) => {
+                        await streamConversationTurn(currentSessionId, userText, turnId, (chunk) => {
+                            if (!isTurnStillLatest(turnId)) {
+                                return;
+                            }
                             if (chunk?.type === 'text') {
                                 replyPayload = chunk;
                                 replyText = String(chunk.content || '').trim();
@@ -3279,17 +3323,31 @@
                                 }
                                 return;
                             }
+                            if (chunk?.type === 'error') {
+                                streamChunkErrorMessage = String(chunk.message || '').trim() || 'Streaming turn failed.';
+                                return;
+                            }
                             if (chunk?.type === 'audio' && streamPlayer && chunk.content) {
                                 streamedAudioChunks += 1;
                                 streamPlayer.appendChunk(decodeBase64AudioChunk(chunk.content));
                             }
                         }, turnAbortController.signal);
+                        if (streamChunkErrorMessage) {
+                            throw new Error(`stream chunk error: ${streamChunkErrorMessage}`);
+                        }
                     } catch (streamError) {
                         if (isAbortError(streamError)) {
                             throw streamError;
                         }
                         console.warn('[voice-turn-stream] fallback to legacy turn endpoint:', streamError);
-                        replyPayload = await sendConversationTurn(currentSessionId, userText, turnAbortController.signal);
+                        ensureNotStale();
+                        replyPayload = await sendConversationTurn(
+                            currentSessionId,
+                            userText,
+                            turnId,
+                            turnAbortController.signal,
+                        );
+                        ensureNotStale();
                         replyText = String(replyPayload?.reply_text || '').trim();
                         updateMiniCart(replyPayload?.cart);
                     } finally {
@@ -3301,6 +3359,7 @@
                             }
                         }
                     }
+                    ensureNotStale();
 
                     const backendScene = String(replyPayload?.scene || '').trim();
                     const backendEmotionHint = String(replyPayload?.emotion_hint || '').trim();
@@ -3328,6 +3387,7 @@
                         }
                     }
                     if (replyText) {
+                        ensureNotStale();
                         appendChat('assistant', replyText);
                         if (streamedAudioChunks === 0 && !turnAbortController.signal.aborted) {
                             setVoiceStatus('Robot dang tra loi...');
@@ -3364,6 +3424,9 @@
                 } finally {
                     if (activeTurnAbortController === turnAbortController) {
                         activeTurnAbortController = null;
+                    }
+                    if (activeProcessingTurnId === turnId) {
+                        activeProcessingTurnId = '';
                     }
                 }
             }
@@ -3736,6 +3799,8 @@
             interruptTurnProcessingForUser();
             interruptBotSpeech();
             pendingUserTurns.length = 0;
+            latestIssuedTurnId = '';
+            activeProcessingTurnId = '';
             try {
                 if (voiceRecognition) {
                     voiceRecognition.stop();
@@ -3887,7 +3952,12 @@
             absenceFrames += 1;
             const inPresenceHold = presenceDetected && now - presenceEnteredAt < presenceHoldMs;
             const recentlySpoke = voiceListening && (now - lastSpeechActivityAt) < Math.max(5000, presenceHoldMs);
-            const busyConversation = voiceQueueRunning || pendingUserTurns.length > 0 || botSpeechActive || Boolean(activeTurnAbortController);
+            const busyConversation =
+                voiceQueueRunning
+                || pendingUserTurns.length > 0
+                || botSpeechActive
+                || Boolean(activeTurnAbortController)
+                || Boolean(activeProcessingTurnId);
 
             if (inPresenceHold || recentlySpoke || busyConversation) {
                 absenceFrames = Math.min(absenceFrames, Math.max(0, presenceAbsenceFrames - 1));

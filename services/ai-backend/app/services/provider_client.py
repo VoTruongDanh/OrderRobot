@@ -44,6 +44,24 @@ class ProviderClient:
             {"role": "user", "content": user_prompt},
         ]
 
+    def _build_bridge_request_payload(
+        self,
+        prompt_payload: dict[str, Any],
+        *,
+        session_id: str | None = None,
+        turn_id: str | None = None,
+        latest_wins: bool = True,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "messages": self._build_bridge_messages(prompt_payload),
+            "latest_wins": latest_wins,
+        }
+        if session_id:
+            payload["session_id"] = session_id
+        if turn_id:
+            payload["turn_id"] = turn_id
+        return payload
+
     @staticmethod
     def _error_detail(response: httpx.Response | None, fallback_message: str) -> str:
         if response is None:
@@ -56,7 +74,14 @@ class ProviderClient:
             pass
         return f"HTTP {response.status_code}"
 
-    async def compose_reply(self, prompt_payload: dict[str, Any]) -> dict[str, str]:
+    async def compose_reply(
+        self,
+        prompt_payload: dict[str, Any],
+        *,
+        session_id: str | None = None,
+        turn_id: str | None = None,
+        latest_wins: bool = True,
+    ) -> dict[str, str]:
         if not self.settings.provider_enabled:
             raise ProviderError("Bridge provider is disabled.")
 
@@ -64,7 +89,12 @@ class ProviderClient:
         try:
             response = await self.client.post(
                 "/internal/bridge/chat",
-                json={"messages": self._build_bridge_messages(prompt_payload)},
+                json=self._build_bridge_request_payload(
+                    prompt_payload,
+                    session_id=session_id,
+                    turn_id=turn_id,
+                    latest_wins=latest_wins,
+                ),
             )
             response.raise_for_status()
             payload = response.json()
@@ -95,7 +125,14 @@ class ProviderClient:
             detail = self._error_detail(response, f"{type(exc).__name__}: {exc}")
             raise ProviderError(f"Bridge temporary chat reset failed: internal={detail}") from exc
 
-    async def compose_reply_stream(self, prompt_payload: dict[str, Any]) -> AsyncIterator[str]:
+    async def compose_reply_stream(
+        self,
+        prompt_payload: dict[str, Any],
+        *,
+        session_id: str | None = None,
+        turn_id: str | None = None,
+        latest_wins: bool = True,
+    ) -> AsyncIterator[str]:
         if not self.settings.provider_enabled:
             raise ProviderError("Bridge provider is disabled.")
 
@@ -110,9 +147,12 @@ class ProviderClient:
             async with self.client.stream(
                 "POST",
                 "/internal/bridge/chat/stream",
-                json={
-                    "messages": self._build_bridge_messages(prompt_payload),
-                },
+                json=self._build_bridge_request_payload(
+                    prompt_payload,
+                    session_id=session_id,
+                    turn_id=turn_id,
+                    latest_wins=latest_wins,
+                ),
                 timeout=stream_timeout,
             ) as response:
                 response.raise_for_status()
@@ -141,7 +181,12 @@ class ProviderClient:
             pass
 
         # Non-stream fallback path to keep the stream API stable.
-        fallback = await self.compose_reply(prompt_payload)
+        fallback = await self.compose_reply(
+            prompt_payload,
+            session_id=session_id,
+            turn_id=turn_id,
+            latest_wins=latest_wins,
+        )
         for sentence in split_sentences(fallback["reply_text"]):
             if sentence:
                 yield sentence

@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 
 from app.config import Settings, get_settings
-from app.models import CreateOrderResponse, MenuItem, TTSConfigRequest
-from app.services.conversation_engine import ConversationEngine, render_fallback_reply
+from app.models import CreateOrderResponse, MenuItem, TTSConfigRequest, TurnRequest
+from app.services.conversation_engine import ConversationEngine, normalize_text, render_fallback_reply
 
 
 class FakeCoreBackendClient:
@@ -78,6 +78,11 @@ def test_tts_config_request_accepts_legacy_and_new_payload_keys() -> None:
     new_payload = TTSConfigRequest.model_validate({"voice": "vi-VN-NamMinhNeural", "rate": 180})
     assert new_payload.voice == "vi-VN-NamMinhNeural"
     assert new_payload.rate == 180
+
+
+def test_turn_request_accepts_optional_turn_id() -> None:
+    payload = TurnRequest.model_validate({"transcript": "xin chao", "turn_id": "turn-123"})
+    assert payload.turn_id == "turn-123"
 
 
 @pytest.mark.anyio
@@ -440,10 +445,18 @@ async def test_handle_turn_stream_uses_injected_speech_service() -> None:
     engine = ConversationEngine(settings, core_client, speech_service)
 
     start = await engine.start_session()
-    chunks = [chunk async for chunk in engine.handle_turn_stream(start.session_id, "cho minh 1 tra dao cam sa")]
+    chunks = [
+        chunk
+        async for chunk in engine.handle_turn_stream(
+            start.session_id,
+            "cho minh 1 tra dao cam sa",
+            turn_id="turn-test-1",
+        )
+    ]
 
     assert any(chunk["type"] == "text" for chunk in chunks)
     assert any(chunk["type"] == "audio" for chunk in chunks)
+    assert all(chunk.get("turn_id") == "turn-test-1" for chunk in chunks)
     assert speech_service.calls
 
 
@@ -532,8 +545,9 @@ def test_fallback_reply_soft_redirects_singing_request() -> None:
         }
     )
 
-    assert "mÃ³n" in reply or "uá»‘ng" in reply
-    assert "chá»‰ phá»¥c vá»¥" not in reply
+    normalized_reply = normalize_text(reply)
+    assert "mon" in normalized_reply or "uong" in normalized_reply
+    assert "chi phuc vu" not in normalized_reply
 
 
 def test_greeting_reply_can_softly_handle_heart_to_heart_chat() -> None:
@@ -545,5 +559,9 @@ def test_greeting_reply_can_softly_handle_heart_to_heart_chat() -> None:
         }
     )
 
-    assert any(keyword in reply for keyword in ("tÃ¢m tráº¡ng", "nÃ³i chuyá»‡n", "gá»£i Ã½ mÃ³n", "há»£p gu"))
+    normalized_reply = normalize_text(reply)
+    assert any(
+        keyword in normalized_reply
+        for keyword in ("tam trang", "noi chuyen", "goi y mon", "hop gu")
+    )
 

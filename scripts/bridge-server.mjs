@@ -25,7 +25,7 @@ const PROFILE_DIR = path.resolve(process.cwd(), '.bridge-chrome-profile');
 let browser = null;
 let chatPage = null;
 let isShuttingDown = false;
-let isBusy = false;
+let activeRequest = null;
 
 function isTruthyEnv(value, defaultValue = false) {
   if (value === undefined || value === null || String(value).trim() === '') {
@@ -180,6 +180,35 @@ async function closeBrowser() {
   }
 }
 
+function createBridgeAbortError(code, message = code) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
+
+async function stopActiveGeneration(page) {
+  if (!page) return;
+  try {
+    await page.evaluate(() => {
+      const stopButton =
+        document.querySelector('button[data-testid="stop-button"]') ||
+        document.querySelector('button[data-testid="fruitjuice-stop-button"]') ||
+        document.querySelector('button[aria-label*="Stop"]');
+      if (stopButton && !stopButton.disabled) {
+        stopButton.click();
+      }
+    });
+  } catch {}
+}
+
+async function waitForRequestIdle(timeoutMs = 2500) {
+  const startedAt = Date.now();
+  while (activeRequest && Date.now() - startedAt < timeoutMs) {
+    await new Promise((resolve) => setTimeout(resolve, 40));
+  }
+  return !activeRequest;
+}
+
 // --- ChatGPT Interaction via Puppeteer (like a real user) ---
 
 async function findInput(page, timeoutMs = 15000) {
@@ -202,15 +231,21 @@ async function findInput(page, timeoutMs = 15000) {
   return null;
 }
 
-async function waitForGenerationDone(page, timeoutMs = 10000) {
+async function waitForGenerationDone(page, timeoutMs = 10000, requestControl = null) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
+    if (requestControl?.cancelled) {
+      throw createBridgeAbortError(
+        requestControl.reason || 'aborted_by_newer_turn',
+        'Request aborted while waiting for generation to stop',
+      );
+    }
     const generating = await page.evaluate(() => {
       const btn = document.querySelector('button[aria-label*="Stop"], button[data-testid="stop-button"], button[data-testid="fruitjuice-stop-button"]');
       return !!(btn && !btn.disabled);
     });
     if (!generating) return true;
-    await new Promise(r => setTimeout(r, 300));
+    await new Promise(r => setTimeout(r, 160));
   }
   return false;
 }
@@ -233,124 +268,124 @@ async function isGenerating(page) {
   });
 }
 
-async function sendPromptAndWaitResponse(prompt, maxTimeoutMs = 120000) {
+async function sendPromptAndWaitResponse(prompt, requestControl, maxTimeoutMs = 120000) {
   if (!chatPage || !browser) throw new Error('Browser not ready');
-  if (isBusy) throw new Error('Already processing a task');
-  
-  isBusy = true;
-  try {
-    // 1. Wait for any previous generation to finish
-    await waitForGenerationDone(chatPage, 12000);
-    
-    // 2. Count existing assistant messages (baseline)
-    const baselineCount = await chatPage.evaluate(() => 
-      document.querySelectorAll('[data-message-author-role="assistant"]').length
-    );
 
-    // 3. Find input
-    const input = await findInput(chatPage);
-    if (!input) throw new Error('Cannot find ChatGPT input field');
+  const throwIfAborted = () => {
+    if (requestControl?.cancelled) {
+      throw createBridgeAbortError(
+        requestControl.reason || 'aborted_by_newer_turn',
+        'Request aborted by newer turn',
+      );
+    }
+  };
 
-    // 4. Clear and type prompt
-    await chatPage.evaluate((sel) => {
+  throwIfAborted();
+
+  await waitForGenerationDone(chatPage, 12000, requestControl);
+  throwIfAborted();
+
+  const baselineCount = await chatPage.evaluate(() =>
+    document.querySelectorAll('[data-message-author-role="assistant"]').length
+  );
+
+  const input = await findInput(chatPage);
+  if (!input) throw new Error('Cannot find ChatGPT input field');
+  throwIfAborted();
+
+  await chatPage.evaluate((sel) => {
+    const el = document.querySelector(sel);
+    if (el) {
+      el.focus();
+      if (el.contentEditable === 'true') {
+        el.textContent = '';
+      } else {
+        el.value = '';
+      }
+    }
+  }, input.sel);
+
+  if (input.sel.includes('contenteditable') || input.sel === '#prompt-textarea') {
+    await chatPage.evaluate((sel, textValue) => {
       const el = document.querySelector(sel);
       if (el) {
         el.focus();
         if (el.contentEditable === 'true') {
-          el.textContent = '';
+          el.textContent = textValue;
         } else {
-          el.value = '';
+          el.value = textValue;
         }
+        el.dispatchEvent(new Event('input', { bubbles: true }));
       }
-    }, input.sel);
+    }, input.sel, prompt);
+  }
 
-    // Type with slight delay to look human
-    if (input.sel.includes('contenteditable') || input.sel === '#prompt-textarea') {
-      await chatPage.evaluate((sel, text) => {
-        const el = document.querySelector(sel);
-        if (el) {
-          el.focus();
-          if (el.contentEditable === 'true') {
-            el.textContent = text;
-          } else {
-            el.value = text;
-          }
-          el.dispatchEvent(new Event('input', { bubbles: true }));
-        }
-      }, input.sel, prompt);
+  await new Promise((resolve) => setTimeout(resolve, 220));
+  throwIfAborted();
+
+  const sent = await chatPage.evaluate(() => {
+    const selectors = [
+      'button[data-testid="send-button"]',
+      'button[data-testid="fruitjuice-send-button"]',
+      'button[aria-label*="Send"]',
+      'button[type="submit"]',
+    ];
+    for (const sel of selectors) {
+      const btn = document.querySelector(sel);
+      if (btn && !btn.disabled) {
+        btn.click();
+        return true;
+      }
+    }
+    return false;
+  });
+
+  if (!sent) {
+    await chatPage.keyboard.press('Enter');
+  }
+
+  console.log('[Bridge] Prompt sent, waiting for response...');
+
+  const startTime = Date.now();
+  let lastText = '';
+  let stableCount = 0;
+  let hasNewMessage = false;
+
+  while (Date.now() - startTime < maxTimeoutMs) {
+    throwIfAborted();
+    await new Promise((resolve) => setTimeout(resolve, 250));
+
+    const currentCount = await chatPage.evaluate(() =>
+      document.querySelectorAll('[data-message-author-role="assistant"]').length
+    );
+
+    if (currentCount > baselineCount) {
+      hasNewMessage = true;
     }
 
-    await new Promise(r => setTimeout(r, 300));
+    if (!hasNewMessage) continue;
 
-    // 5. Click send button
-    const sent = await chatPage.evaluate(() => {
-      const selectors = [
-        'button[data-testid="send-button"]',
-        'button[data-testid="fruitjuice-send-button"]',
-        'button[aria-label*="Send"]',
-        'button[type="submit"]',
-      ];
-      for (const sel of selectors) {
-        const btn = document.querySelector(sel);
-        if (btn && !btn.disabled) {
-          btn.click();
-          return true;
-        }
-      }
-      return false;
-    });
+    const generating = await isGenerating(chatPage);
+    const textValue = await readLatestAssistant(chatPage);
 
-    if (!sent) {
-      // Try Enter key
-      await chatPage.keyboard.press('Enter');
-    }
-
-    console.log(`[Bridge] 📤 Prompt sent, waiting for response...`);
-
-    // 6. Wait for response
-    const startTime = Date.now();
-    let lastText = '';
-    let stableCount = 0;
-    let hasNewMessage = false;
-
-    while (Date.now() - startTime < maxTimeoutMs) {
-      await new Promise(r => setTimeout(r, 1000));
-
-      const currentCount = await chatPage.evaluate(() =>
-        document.querySelectorAll('[data-message-author-role="assistant"]').length
-      );
-
-      if (currentCount > baselineCount) {
-        hasNewMessage = true;
-      }
-
-      if (!hasNewMessage) continue;
-
-      const generating = await isGenerating(chatPage);
-      const text = await readLatestAssistant(chatPage);
-
-      if (!generating && text && text.length > 0) {
-        if (text === lastText) {
-          stableCount++;
-          if (stableCount >= 3) {
-            console.log(`[Bridge] 📥 Response received (${text.length} chars)`);
-            return text;
-          }
-        } else {
-          stableCount = 0;
+    if (!generating && textValue && textValue.length > 0) {
+      if (textValue === lastText) {
+        stableCount += 1;
+        if (stableCount >= 1) {
+          console.log(`[Bridge] Response received (${textValue.length} chars)`);
+          return textValue;
         }
       } else {
         stableCount = 0;
       }
-      lastText = text;
+    } else {
+      stableCount = 0;
     }
-
-    if (lastText) return lastText;
-    throw new Error('Timeout waiting for ChatGPT response');
-
-  } finally {
-    isBusy = false;
+    lastText = textValue;
   }
+
+  if (lastText) return lastText;
+  throw new Error('Timeout waiting for ChatGPT response');
 }
 
 // --- Cleanup ---
@@ -392,14 +427,27 @@ const httpServer = http.createServer(async (req, res) => {
       mode: 'puppeteer-direct',
       port: PORT,
       browserReady: !!browser && !!chatPage,
-      busy: isBusy,
+      busy: Boolean(activeRequest),
+      active_session_id: activeRequest?.sessionId || null,
+      active_turn_id: activeRequest?.turnId || null,
     });
   }
 
-  if (req.method === 'POST' && (url.pathname === '/internal/bridge/chat' || url.pathname === '/v1/chat/completions')) {
+  if (
+    req.method === 'POST'
+    && (
+      url.pathname === '/internal/bridge/chat'
+      || url.pathname === '/v1/chat/completions'
+      || url.pathname === '/internal/bridge/chat/stream'
+    )
+  ) {
+    let requestControl = null;
     try {
       const body = await readJsonBody(req);
       const messages = Array.isArray(body?.messages) ? body.messages : [];
+      const sessionId = String(body?.session_id || '').trim();
+      const turnId = String(body?.turn_id || '').trim();
+      const latestWins = body?.latest_wins !== false;
       
       // Build prompt from messages
       let prompt = '';
@@ -410,13 +458,49 @@ const httpServer = http.createServer(async (req, res) => {
         prompt = JSON.stringify(body);
       }
 
-      console.log(`[Bridge] Received chat request (${prompt.length} chars)`);
+      console.log(`[Bridge] Received chat request (${prompt.length} chars) session=${sessionId || '-'} turn=${turnId || '-'}`);
+
+      if (activeRequest) {
+        const canPreempt =
+          latestWins
+          && sessionId
+          && activeRequest.sessionId
+          && activeRequest.sessionId === sessionId;
+
+        if (!canPreempt) {
+          return json(429, {
+            error: 'Bridge is busy',
+            code: 'busy',
+            active_session_id: activeRequest.sessionId || null,
+            active_turn_id: activeRequest.turnId || null,
+          });
+        }
+
+        activeRequest.cancelled = true;
+        activeRequest.reason = 'aborted_by_newer_turn';
+        await stopActiveGeneration(chatPage);
+        const released = await waitForRequestIdle(2500);
+        if (!released) {
+          return json(409, {
+            error: 'Could not preempt active request in time.',
+            code: 'preempt_timeout',
+          });
+        }
+      }
+
+      requestControl = {
+        sessionId,
+        turnId,
+        cancelled: false,
+        reason: '',
+      };
+      activeRequest = requestControl;
 
       const startTime = Date.now();
-      const content = await sendPromptAndWaitResponse(prompt);
+      const content = await sendPromptAndWaitResponse(prompt, requestControl);
       const latencyMs = Date.now() - startTime;
 
-      console.log(`[Bridge] Chat fulfilled in ${latencyMs}ms`);
+      console.log(`[Bridge] Chat fulfilled in ${latencyMs}ms session=${sessionId || '-'} turn=${turnId || '-'}`);
 
       if (url.pathname === '/v1/chat/completions') {
         return json(200, {
@@ -427,10 +511,32 @@ const httpServer = http.createServer(async (req, res) => {
           choices: [{ index: 0, message: { role: 'assistant', content }, finish_reason: 'stop' }]
         });
       }
+      if (url.pathname === '/internal/bridge/chat/stream') {
+        res.writeHead(200, {
+          'Content-Type': 'application/x-ndjson; charset=utf-8',
+          'Transfer-Encoding': 'chunked',
+          'Access-Control-Allow-Origin': '*',
+        });
+        for (const segment of splitResponseSegments(content)) {
+          res.write(`${JSON.stringify({ type: 'content', content: segment })}\n`);
+        }
+        res.write(`${JSON.stringify({ type: 'done' })}\n`);
+        return res.end();
+      }
       return json(200, { reply_text: content, source: 'puppeteer-direct', latency_ms: latencyMs });
     } catch (err) {
+      if (err?.code === 'aborted_by_newer_turn') {
+        return json(409, {
+          error: 'aborted_by_newer_turn',
+          code: 'aborted_by_newer_turn',
+        });
+      }
       console.error('[Bridge] API Error:', err.message);
       return json(500, { error: err.message });
+    } finally {
+      if (requestControl && activeRequest === requestControl) {
+        activeRequest = null;
+      }
     }
   }
 
@@ -454,6 +560,19 @@ function readJsonBody(req) {
     });
     req.on('error', reject);
   });
+}
+
+function splitResponseSegments(text) {
+  const normalized = String(text || '').trim();
+  if (!normalized) return [];
+  const bySentence = normalized
+    .split(/(?<=[.!?])\s+/)
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+  if (bySentence.length > 0) {
+    return bySentence;
+  }
+  return [normalized];
 }
 
 // --- Start ---

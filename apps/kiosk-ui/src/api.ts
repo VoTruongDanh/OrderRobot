@@ -53,28 +53,31 @@ export async function debugBridgeChat(text: string, rule: string): Promise<Bridg
 export async function sendTurn(
   sessionId: string,
   transcript: string,
+  turnId?: string,
 ): Promise<ConversationResponse> {
   const response = await fetch(`${getAiApiUrl()}/sessions/${sessionId}/turn`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ transcript }),
+    body: JSON.stringify({ transcript, turn_id: turnId }),
   })
   return readJson<ConversationResponse>(response)
 }
 
 export type StreamChunk =
   | { type: 'text'; content: string; cart?: Array<{ item_id: string; name: string; quantity: number; unit_price: string; line_total: string }> }
-  | { type: 'audio'; content: string }
+  | { type: 'audio'; content: string; turn_id?: string }
+  | { type: 'error'; message: string; turn_id?: string }
 
 export async function* sendTurnStream(
   sessionId: string,
   transcript: string,
+  turnId?: string,
   signal?: AbortSignal,
 ): AsyncGenerator<StreamChunk> {
   const response = await fetch(`${getAiApiUrl()}/sessions/${sessionId}/turn/stream`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ transcript }),
+    body: JSON.stringify({ transcript, turn_id: turnId }),
     signal,
   })
 
