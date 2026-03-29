@@ -3448,6 +3448,19 @@
         return bytes;
     }
 
+    function looksLikeWavBytes(bytes) {
+        return bytes instanceof Uint8Array
+            && bytes.length >= 12
+            && bytes[0] === 0x52 // R
+            && bytes[1] === 0x49 // I
+            && bytes[2] === 0x46 // F
+            && bytes[3] === 0x46 // F
+            && bytes[8] === 0x57 // W
+            && bytes[9] === 0x41 // A
+            && bytes[10] === 0x56 // V
+            && bytes[11] === 0x45; // E
+    }
+
     function isAbortError(error) {
         if (!error) return false;
         const name = String(error?.name || '').toLowerCase();
@@ -3682,8 +3695,11 @@
         activeBotSpeechAbortController = speechAbortController;
         const speechPayload = buildSpeechSynthesisPayload(safeText);
         const forcedVieneu = isVieneuForced(speechPayload);
+        // VieNeu streaming may emit many small WAV fragments and sound choppy.
+        // Prefer single-response synthesis for forced VieNeu playback.
+        const allowStreamPlayback = !forcedVieneu;
 
-        const streamPlayer = createStreamingAudioPlayer();
+        const streamPlayer = allowStreamPlayback ? createStreamingAudioPlayer() : null;
         if (streamPlayer) {
             try {
                 const response = await fetch(`${aiApiUrl}/speech/synthesize/stream`, {
@@ -3898,7 +3914,8 @@
                     let replyPayload = null;
                     let replyText = '';
                     let streamedAudioChunks = 0;
-                    let streamPlayer = createStreamingAudioPlayer();
+                    let streamPlayer = null;
+                    let streamAudioMode = 'unknown';
                     let streamChunkErrorMessage = '';
 
                     try {
@@ -3918,9 +3935,26 @@
                                 streamChunkErrorMessage = String(chunk.message || '').trim() || 'Streaming turn failed.';
                                 return;
                             }
-                            if (chunk?.type === 'audio' && streamPlayer && chunk.content) {
+                            if (chunk?.type === 'audio' && chunk.content) {
+                                const audioBytes = decodeBase64AudioChunk(chunk.content);
+                                if (!audioBytes.length) {
+                                    return;
+                                }
+                                if (streamAudioMode === 'unknown') {
+                                    streamAudioMode = looksLikeWavBytes(audioBytes) ? 'wav' : 'mpeg';
+                                }
+                                // Skip chunk playback for WAV streams (often tiny fragments => choppy speech).
+                                if (streamAudioMode === 'wav') {
+                                    return;
+                                }
+                                if (!streamPlayer) {
+                                    streamPlayer = createStreamingAudioPlayer();
+                                }
+                                if (!streamPlayer) {
+                                    return;
+                                }
                                 streamedAudioChunks += 1;
-                                streamPlayer.appendChunk(decodeBase64AudioChunk(chunk.content));
+                                streamPlayer.appendChunk(audioBytes);
                             }
                         }, turnAbortController.signal);
                         if (streamChunkErrorMessage) {
@@ -4179,7 +4213,7 @@
 
         voiceBackendSocket.onerror = () => {
             if (!voiceListening || voiceInputMode !== 'backend') return;
-            setVoiceStatus('Backend STT websocket gap loi, dang thu ket noi lai...');
+            setVoiceStatus('Backend STT tam ngat, dang ket noi lai...');
         };
 
         voiceBackendSocket.onclose = () => {
@@ -4350,12 +4384,18 @@
         voiceRecognition.onerror = (event) => {
             if (!voiceListening || voiceInputMode !== 'browser') return;
             const errCode = String(event?.error || '').toLowerCase();
+            const transientErrors = ['no-speech', 'aborted'];
             const fallbackErrors = ['audio-capture', 'not-allowed', 'service-not-allowed', 'network', 'language-not-supported'];
+            if (transientErrors.includes(errCode)) {
+                // Browser STT frequently emits transient no-speech/aborted even when pipeline is still healthy.
+                setVoiceStatus('Dang nghe ban noi...');
+                return;
+            }
             if (fallbackErrors.includes(errCode)) {
                 void fallbackToBackendStt('STT browser khong on dinh, da chuyen sang backend STT.');
                 return;
             }
-            setVoiceStatus('STT gap loi, dang thu ket noi lai...');
+            setVoiceStatus('STT tam ngat, dang thu ket noi lai...');
         };
 
         voiceRecognition.onend = () => {
