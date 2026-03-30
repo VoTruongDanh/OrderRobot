@@ -46,6 +46,9 @@ type VieneuRealtimeProfile = {
   label: Record<UiLanguage, string>
   hint: Record<UiLanguage, string>
   modelPath: string
+  vieneuMode: string
+  backboneDevice: string
+  codecDevice: string
   sttModel: string
   sttDevice: string
   sttComputeType: string
@@ -140,12 +143,21 @@ const ENV_TEMPLATE: EnvField[] = [
   { key: 'VOICE_STYLE', label: 'Voice Style', value: 'cute_friendly' },
   { key: 'TTS_ENGINE', label: 'TTS Engine', value: 'vieneu' },
   { key: 'TTS_VIENEU_MODEL_PATH', label: 'VieNeu Model Path', value: 'pnnbao-ump/VieNeu-TTS-0.3B-q4-gguf' },
+  { key: 'TTS_VIENEU_MODE', label: 'VieNeu Mode', value: 'standard' },
+  { key: 'TTS_VIENEU_BACKBONE_DEVICE', label: 'VieNeu Backbone Device', value: 'cpu' },
+  { key: 'TTS_VIENEU_CODEC_REPO', label: 'VieNeu Codec Repo', value: '' },
+  { key: 'TTS_VIENEU_CODEC_DEVICE', label: 'VieNeu Codec Device', value: 'cpu' },
+  { key: 'TTS_VIENEU_REMOTE_API_BASE', label: 'VieNeu Remote API Base', value: 'http://localhost:23333/v1' },
   { key: 'TTS_VIENEU_VOICE_ID', label: 'VieNeu Voice ID', value: '' },
   { key: 'TTS_VIENEU_REF_AUDIO', label: 'VieNeu Ref Audio Path', value: '' },
   { key: 'TTS_VIENEU_REF_TEXT', label: 'VieNeu Ref Text', value: '' },
   { key: 'TTS_VIENEU_TEMPERATURE', label: 'VieNeu Temperature', value: '1.0' },
   { key: 'TTS_VIENEU_TOP_K', label: 'VieNeu Top K', value: '50' },
   { key: 'TTS_VIENEU_MAX_CHARS', label: 'VieNeu Max Chars', value: '256' },
+  { key: 'TTS_VIENEU_STREAM_FRAMES_PER_CHUNK', label: 'VieNeu Stream Frames/Chunk', value: '25' },
+  { key: 'TTS_VIENEU_STREAM_LOOKFORWARD', label: 'VieNeu Stream Lookforward', value: '4' },
+  { key: 'TTS_VIENEU_STREAM_LOOKBACK', label: 'VieNeu Stream Lookback', value: '48' },
+  { key: 'TTS_VIENEU_STREAM_OVERLAP_FRAMES', label: 'VieNeu Stream Overlap Frames', value: '1' },
   { key: 'VIENEU_REALTIME_PROFILE', label: 'VieNeu Realtime Profile', value: 'cpu_realtime' },
   { key: 'TTS_VOICE', label: 'TTS Voice', value: 'vi-VN-HoaiMyNeural' },
   { key: 'TTS_RATE', label: 'TTS Rate', value: '165' },
@@ -154,8 +166,12 @@ const ENV_TEMPLATE: EnvField[] = [
   { key: 'STT_COMPUTE_TYPE', label: 'STT Compute Type', value: 'int8' },
   { key: 'STT_BEAM_SIZE', label: 'STT Beam Size', value: '5' },
   { key: 'STT_BEST_OF', label: 'STT Best Of', value: '3' },
-  { key: 'STT_PARTIAL_BEAM_SIZE', label: 'STT Partial Beam', value: '2' },
+  { key: 'STT_PARTIAL_BEAM_SIZE', label: 'STT Partial Beam', value: '1' },
   { key: 'STT_PARTIAL_BEST_OF', label: 'STT Partial Best Of', value: '1' },
+  { key: 'BACKEND_STT_CHUNK_MS', label: 'Kiosk STT Chunk Ms', value: '120' },
+  { key: 'BACKEND_STT_FINALIZE_SILENCE_MS', label: 'Kiosk STT Finalize Silence Ms', value: '420' },
+  { key: 'BACKEND_STT_FORCE_FINALIZE_MS', label: 'Kiosk STT Force Finalize Ms', value: '1400' },
+  { key: 'TTS_STREAM_PLAYBACK_RATE', label: 'TTS Stream Playback Rate', value: '1.0' },
   { key: 'STT_VAD_MIN_SILENCE_MS', label: 'STT VAD Min Silence', value: '450' },
   { key: 'STT_PRELOAD', label: 'STT Preload', value: 'true' },
   { key: 'STT_CPU_THREADS', label: 'STT CPU Threads', value: '8' },
@@ -215,6 +231,9 @@ const VIENEU_REALTIME_PROFILES: VieneuRealtimeProfile[] = [
       en: 'Prioritize low latency on CPU with GGUF 0.3B-q4 model.',
     },
     modelPath: 'pnnbao-ump/VieNeu-TTS-0.3B-q4-gguf',
+    vieneuMode: 'standard',
+    backboneDevice: 'cpu',
+    codecDevice: 'cpu',
     sttModel: 'base',
     sttDevice: 'cpu',
     sttComputeType: 'int8',
@@ -227,6 +246,9 @@ const VIENEU_REALTIME_PROFILES: VieneuRealtimeProfile[] = [
       en: 'Faster throughput on NVIDIA GPU, requires CUDA.',
     },
     modelPath: 'pnnbao-ump/VieNeu-TTS-0.3B',
+    vieneuMode: 'fast',
+    backboneDevice: 'cuda',
+    codecDevice: 'cuda',
     sttModel: 'small',
     sttDevice: 'cuda',
     sttComputeType: 'float16',
@@ -239,6 +261,9 @@ const VIENEU_REALTIME_PROFILES: VieneuRealtimeProfile[] = [
       en: 'Higher quality voice with slightly higher latency than 0.3B.',
     },
     modelPath: 'pnnbao-ump/VieNeu-TTS',
+    vieneuMode: 'fast',
+    backboneDevice: 'cuda',
+    codecDevice: 'cuda',
     sttModel: 'small',
     sttDevice: 'cuda',
     sttComputeType: 'float16',
@@ -599,9 +624,24 @@ export default function AdminPage() {
       setFieldValue('TTS_ENGINE', 'vieneu')
       setFieldValue('VIENEU_REALTIME_PROFILE', profile.id)
       setFieldValue('TTS_VIENEU_MODEL_PATH', profile.modelPath)
+      setFieldValue('TTS_VIENEU_MODE', profile.vieneuMode)
+      setFieldValue('TTS_VIENEU_BACKBONE_DEVICE', profile.backboneDevice)
+      setFieldValue('TTS_VIENEU_CODEC_DEVICE', profile.codecDevice)
+      setFieldValue('TTS_VIENEU_STREAM_FRAMES_PER_CHUNK', '25')
+      setFieldValue('TTS_VIENEU_STREAM_LOOKFORWARD', '4')
+      setFieldValue('TTS_VIENEU_STREAM_LOOKBACK', '48')
+      setFieldValue('TTS_VIENEU_STREAM_OVERLAP_FRAMES', '1')
       setFieldValue('STT_MODEL', profile.sttModel)
       setFieldValue('STT_DEVICE', profile.sttDevice)
       setFieldValue('STT_COMPUTE_TYPE', profile.sttComputeType)
+      setFieldValue('STT_BEAM_SIZE', '5')
+      setFieldValue('STT_BEST_OF', '3')
+      setFieldValue('STT_PARTIAL_BEAM_SIZE', '1')
+      setFieldValue('STT_PARTIAL_BEST_OF', '1')
+      setFieldValue('BACKEND_STT_CHUNK_MS', '120')
+      setFieldValue('BACKEND_STT_FINALIZE_SILENCE_MS', '420')
+      setFieldValue('BACKEND_STT_FORCE_FINALIZE_MS', '1400')
+      setFieldValue('TTS_STREAM_PLAYBACK_RATE', '1.0')
       setNotice({
         tone: 'info',
         text: t(
@@ -1199,8 +1239,45 @@ export default function AdminPage() {
         tts_rate: normalizedRate ?? 165,
       }
       if (ttsEngine === 'vieneu') {
+        const vieneuMode = toSingleLine(getFieldValue(envFields, 'TTS_VIENEU_MODE', 'standard')).toLowerCase()
+        const vieneuBackboneDevice = toSingleLine(
+          getFieldValue(envFields, 'TTS_VIENEU_BACKBONE_DEVICE', 'cpu'),
+        ).toLowerCase()
+        const vieneuCodecRepo = toSingleLine(getFieldValue(envFields, 'TTS_VIENEU_CODEC_REPO', ''))
+        const vieneuCodecDevice = toSingleLine(
+          getFieldValue(envFields, 'TTS_VIENEU_CODEC_DEVICE', 'cpu'),
+        ).toLowerCase()
+        const vieneuRemoteApiBase = toSingleLine(
+          getFieldValue(envFields, 'TTS_VIENEU_REMOTE_API_BASE', 'http://localhost:23333/v1'),
+        )
+        const streamFramesPerChunk = Number.parseInt(
+          getFieldValue(envFields, 'TTS_VIENEU_STREAM_FRAMES_PER_CHUNK', '25'),
+          10,
+        )
+        const streamLookforward = Number.parseInt(
+          getFieldValue(envFields, 'TTS_VIENEU_STREAM_LOOKFORWARD', '4'),
+          10,
+        )
+        const streamLookback = Number.parseInt(
+          getFieldValue(envFields, 'TTS_VIENEU_STREAM_LOOKBACK', '48'),
+          10,
+        )
+        const streamOverlapFrames = Number.parseInt(
+          getFieldValue(envFields, 'TTS_VIENEU_STREAM_OVERLAP_FRAMES', '1'),
+          10,
+        )
         requestPayload.vieneu_model_path = toSingleLine(vieneuModelPath)
         requestPayload.tts_vieneu_model_path = toSingleLine(vieneuModelPath)
+        requestPayload.vieneu_mode = vieneuMode
+        requestPayload.tts_vieneu_mode = vieneuMode
+        requestPayload.vieneu_backbone_device = vieneuBackboneDevice
+        requestPayload.tts_vieneu_backbone_device = vieneuBackboneDevice
+        requestPayload.vieneu_codec_repo = vieneuCodecRepo
+        requestPayload.tts_vieneu_codec_repo = vieneuCodecRepo
+        requestPayload.vieneu_codec_device = vieneuCodecDevice
+        requestPayload.tts_vieneu_codec_device = vieneuCodecDevice
+        requestPayload.vieneu_remote_api_base = vieneuRemoteApiBase
+        requestPayload.tts_vieneu_remote_api_base = vieneuRemoteApiBase
         requestPayload.vieneu_voice_id = effectiveVieneuVoiceId
         requestPayload.tts_vieneu_voice_id = effectiveVieneuVoiceId
         requestPayload.vieneu_ref_audio = cloneRefAudioValue
@@ -1213,6 +1290,22 @@ export default function AdminPage() {
         requestPayload.tts_vieneu_top_k = normalizedVieneuTopK
         requestPayload.vieneu_max_chars = normalizedVieneuMaxChars
         requestPayload.tts_vieneu_max_chars = normalizedVieneuMaxChars
+        requestPayload.vieneu_stream_frames_per_chunk =
+          Number.isFinite(streamFramesPerChunk) && streamFramesPerChunk > 0 ? streamFramesPerChunk : 25
+        requestPayload.tts_vieneu_stream_frames_per_chunk =
+          Number.isFinite(streamFramesPerChunk) && streamFramesPerChunk > 0 ? streamFramesPerChunk : 25
+        requestPayload.vieneu_stream_lookforward =
+          Number.isFinite(streamLookforward) && streamLookforward >= 0 ? streamLookforward : 4
+        requestPayload.tts_vieneu_stream_lookforward =
+          Number.isFinite(streamLookforward) && streamLookforward >= 0 ? streamLookforward : 4
+        requestPayload.vieneu_stream_lookback =
+          Number.isFinite(streamLookback) && streamLookback > 0 ? streamLookback : 48
+        requestPayload.tts_vieneu_stream_lookback =
+          Number.isFinite(streamLookback) && streamLookback > 0 ? streamLookback : 48
+        requestPayload.vieneu_stream_overlap_frames =
+          Number.isFinite(streamOverlapFrames) && streamOverlapFrames > 0 ? streamOverlapFrames : 1
+        requestPayload.tts_vieneu_stream_overlap_frames =
+          Number.isFinite(streamOverlapFrames) && streamOverlapFrames > 0 ? streamOverlapFrames : 1
       }
 
       const targets =
@@ -1253,6 +1346,15 @@ export default function AdminPage() {
         TTS_VOICE: ttsVoice,
         TTS_RATE: String(normalizedRate ?? 165),
         TTS_VIENEU_MODEL_PATH: toSingleLine(vieneuModelPath),
+        TTS_VIENEU_MODE: getFieldValue(envFields, 'TTS_VIENEU_MODE', 'standard'),
+        TTS_VIENEU_BACKBONE_DEVICE: getFieldValue(envFields, 'TTS_VIENEU_BACKBONE_DEVICE', 'cpu'),
+        TTS_VIENEU_CODEC_REPO: getFieldValue(envFields, 'TTS_VIENEU_CODEC_REPO', ''),
+        TTS_VIENEU_CODEC_DEVICE: getFieldValue(envFields, 'TTS_VIENEU_CODEC_DEVICE', 'cpu'),
+        TTS_VIENEU_REMOTE_API_BASE: getFieldValue(
+          envFields,
+          'TTS_VIENEU_REMOTE_API_BASE',
+          'http://localhost:23333/v1',
+        ),
         VIENEU_REALTIME_PROFILE: vieneuRealtimeProfile,
         TTS_VIENEU_VOICE_ID: effectiveVieneuVoiceId,
         TTS_VIENEU_REF_AUDIO: cloneRefAudioValue,
@@ -1260,6 +1362,10 @@ export default function AdminPage() {
         TTS_VIENEU_TEMPERATURE: String(normalizedVieneuTemperature ?? 1.0),
         TTS_VIENEU_TOP_K: String(normalizedVieneuTopK ?? 50),
         TTS_VIENEU_MAX_CHARS: String(normalizedVieneuMaxChars ?? 256),
+        TTS_VIENEU_STREAM_FRAMES_PER_CHUNK: getFieldValue(envFields, 'TTS_VIENEU_STREAM_FRAMES_PER_CHUNK', '25'),
+        TTS_VIENEU_STREAM_LOOKFORWARD: getFieldValue(envFields, 'TTS_VIENEU_STREAM_LOOKFORWARD', '4'),
+        TTS_VIENEU_STREAM_LOOKBACK: getFieldValue(envFields, 'TTS_VIENEU_STREAM_LOOKBACK', '48'),
+        TTS_VIENEU_STREAM_OVERLAP_FRAMES: getFieldValue(envFields, 'TTS_VIENEU_STREAM_OVERLAP_FRAMES', '1'),
       }
       const nextFields = envFields.map((field) =>
         field.key in nextValues ? { ...field, value: nextValues[field.key] } : field,

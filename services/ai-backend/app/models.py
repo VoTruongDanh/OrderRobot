@@ -76,12 +76,21 @@ class TTSConfigRequest(BaseModel):
     rate: int | None = Field(default=None, ge=100, le=300)
     engine: str | None = None
     vieneu_model_path: str | None = Field(default=None, max_length=1024)
+    vieneu_mode: str | None = Field(default=None, max_length=24)
+    vieneu_backbone_device: str | None = Field(default=None, max_length=24)
+    vieneu_codec_repo: str | None = Field(default=None, max_length=1024)
+    vieneu_codec_device: str | None = Field(default=None, max_length=24)
+    vieneu_remote_api_base: str | None = Field(default=None, max_length=1024)
     vieneu_voice_id: str | None = Field(default=None, max_length=120)
     vieneu_ref_audio: str | None = Field(default=None, max_length=1024)
     vieneu_ref_text: str | None = Field(default=None, max_length=1000)
     vieneu_temperature: float | None = Field(default=None, ge=0.1, le=2.0)
     vieneu_top_k: int | None = Field(default=None, ge=1, le=200)
     vieneu_max_chars: int | None = Field(default=None, ge=32, le=512)
+    vieneu_stream_frames_per_chunk: int | None = Field(default=None, ge=8, le=64)
+    vieneu_stream_lookforward: int | None = Field(default=None, ge=0, le=32)
+    vieneu_stream_lookback: int | None = Field(default=None, ge=8, le=256)
+    vieneu_stream_overlap_frames: int | None = Field(default=None, ge=1, le=8)
 
     @model_validator(mode="before")
     @classmethod
@@ -93,12 +102,21 @@ class TTSConfigRequest(BaseModel):
             "tts_rate": "rate",
             "tts_engine": "engine",
             "tts_vieneu_model_path": "vieneu_model_path",
+            "tts_vieneu_mode": "vieneu_mode",
+            "tts_vieneu_backbone_device": "vieneu_backbone_device",
+            "tts_vieneu_codec_repo": "vieneu_codec_repo",
+            "tts_vieneu_codec_device": "vieneu_codec_device",
+            "tts_vieneu_remote_api_base": "vieneu_remote_api_base",
             "tts_vieneu_voice_id": "vieneu_voice_id",
             "tts_vieneu_ref_audio": "vieneu_ref_audio",
             "tts_vieneu_ref_text": "vieneu_ref_text",
             "tts_vieneu_temperature": "vieneu_temperature",
             "tts_vieneu_top_k": "vieneu_top_k",
             "tts_vieneu_max_chars": "vieneu_max_chars",
+            "tts_vieneu_stream_frames_per_chunk": "vieneu_stream_frames_per_chunk",
+            "tts_vieneu_stream_lookforward": "vieneu_stream_lookforward",
+            "tts_vieneu_stream_lookback": "vieneu_stream_lookback",
+            "tts_vieneu_stream_overlap_frames": "vieneu_stream_overlap_frames",
         }
         payload = dict(data)
         for legacy_key, canonical_key in aliases.items():

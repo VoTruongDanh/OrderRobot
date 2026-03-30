@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
 from app.config import Settings
@@ -196,6 +197,59 @@ def test_should_use_vieneu_honors_engine_override() -> None:
 
     assert service._should_use_vieneu({"engine": "edge"}) is False
     assert service._should_use_vieneu({"engine": "vieneu"}) is True
+
+
+def test_vieneu_stream_emits_single_wav_header_then_pcm(monkeypatch) -> None:
+    service = SpeechService(build_settings())
+
+    class FakeVieneuEngine:
+        sample_rate = 24000
+
+        def infer_stream(self, text: str):
+            assert text == "xin chao"
+            yield np.array([0.0, 0.2, -0.2, 0.0], dtype=np.float32)
+            yield np.array([0.1, 0.0], dtype=np.float32)
+
+    monkeypatch.setattr(service, "_get_vieneu_instance", lambda: FakeVieneuEngine())
+    monkeypatch.setattr(
+        service,
+        "_build_vieneu_infer_kwargs",
+        lambda _engine, text, vieneu_overrides=None: {"text": text},
+    )
+
+    chunks = list(service._synthesize_with_vieneu_stream_sync("xin chao"))
+    assert len(chunks) >= 3
+    assert chunks[0][:4] == b"RIFF"
+    assert chunks[1][:4] != b"RIFF"
+    assert chunks[2][:4] != b"RIFF"
+    assert len(chunks[1]) == 8
+    assert len(chunks[2]) == 4
+
+
+def test_configure_vieneu_streaming_applies_runtime_settings() -> None:
+    service = SpeechService(build_settings())
+
+    class FakeVieneuEngine:
+        hop_length = 320
+        streaming_frames_per_chunk = 25
+        streaming_lookforward = 10
+        streaming_lookback = 100
+        streaming_overlap_frames = 1
+        streaming_stride_samples = 8000
+
+    engine = FakeVieneuEngine()
+    service.settings.tts_vieneu_stream_frames_per_chunk = 20
+    service.settings.tts_vieneu_stream_lookforward = 5
+    service.settings.tts_vieneu_stream_lookback = 40
+    service.settings.tts_vieneu_stream_overlap_frames = 2
+
+    service._configure_vieneu_streaming(engine)
+
+    assert engine.streaming_frames_per_chunk == 20
+    assert engine.streaming_lookforward == 5
+    assert engine.streaming_lookback == 40
+    assert engine.streaming_overlap_frames == 2
+    assert engine.streaming_stride_samples == 6400
 
 
 def test_build_vieneu_infer_kwargs_prefers_ref_audio_over_preset_voice() -> None:

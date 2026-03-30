@@ -89,6 +89,7 @@ async def shutdown_clients() -> None:
 
 @app.get("/health")
 async def health() -> dict[str, object]:
+    vieneu_diag = speech_service.get_vieneu_diagnostics()
     return {
         "status": "ok",
         "provider_enabled": settings.provider_enabled,
@@ -100,12 +101,22 @@ async def health() -> dict[str, object]:
         "tts_voice": settings.tts_voice,
         "tts_rate": settings.tts_rate,
         "tts_vieneu_model_path": settings.tts_vieneu_model_path,
+        "tts_vieneu_mode": settings.tts_vieneu_mode,
+        "tts_vieneu_backbone_device": settings.tts_vieneu_backbone_device,
+        "tts_vieneu_codec_repo": settings.tts_vieneu_codec_repo,
+        "tts_vieneu_codec_device": settings.tts_vieneu_codec_device,
+        "tts_vieneu_remote_api_base": settings.tts_vieneu_remote_api_base,
         "tts_vieneu_voice_id": settings.tts_vieneu_voice_id,
         "tts_vieneu_ref_audio": settings.tts_vieneu_ref_audio,
         "tts_vieneu_has_ref_text": bool(settings.tts_vieneu_ref_text.strip()),
         "tts_vieneu_temperature": settings.tts_vieneu_temperature,
         "tts_vieneu_top_k": settings.tts_vieneu_top_k,
         "tts_vieneu_max_chars": settings.tts_vieneu_max_chars,
+        "tts_vieneu_stream_frames_per_chunk": settings.tts_vieneu_stream_frames_per_chunk,
+        "tts_vieneu_stream_lookforward": settings.tts_vieneu_stream_lookforward,
+        "tts_vieneu_stream_lookback": settings.tts_vieneu_stream_lookback,
+        "tts_vieneu_stream_overlap_frames": settings.tts_vieneu_stream_overlap_frames,
+        "vieneu_stream_realtime_factor": vieneu_diag.get("stream_realtime_factor", 0),
         "vieneu_installed": speech_service._is_vieneu_available(),
         "active_sessions": await conversation_engine.active_session_count(),
     }
@@ -182,6 +193,34 @@ async def update_tts_config(payload: TTSConfigRequest) -> dict[str, str]:
         if normalized_model_path != settings.tts_vieneu_model_path:
             should_reset_vieneu = True
         settings.tts_vieneu_model_path = normalized_model_path
+    if payload.vieneu_mode is not None:
+        normalized_mode = payload.vieneu_mode.strip().lower()
+        if normalized_mode in {"standard", "fast", "gpu", "xpu", "remote", "api"}:
+            if normalized_mode in {"gpu"}:
+                normalized_mode = "fast"
+            if normalized_mode != settings.tts_vieneu_mode:
+                should_reset_vieneu = True
+            settings.tts_vieneu_mode = normalized_mode
+    if payload.vieneu_backbone_device is not None:
+        normalized_backbone_device = payload.vieneu_backbone_device.strip().lower()
+        if normalized_backbone_device and normalized_backbone_device != settings.tts_vieneu_backbone_device:
+            should_reset_vieneu = True
+        settings.tts_vieneu_backbone_device = normalized_backbone_device or settings.tts_vieneu_backbone_device
+    if payload.vieneu_codec_repo is not None:
+        normalized_codec_repo = payload.vieneu_codec_repo.strip()
+        if normalized_codec_repo != settings.tts_vieneu_codec_repo:
+            should_reset_vieneu = True
+        settings.tts_vieneu_codec_repo = normalized_codec_repo
+    if payload.vieneu_codec_device is not None:
+        normalized_codec_device = payload.vieneu_codec_device.strip().lower()
+        if normalized_codec_device and normalized_codec_device != settings.tts_vieneu_codec_device:
+            should_reset_vieneu = True
+        settings.tts_vieneu_codec_device = normalized_codec_device or settings.tts_vieneu_codec_device
+    if payload.vieneu_remote_api_base is not None:
+        normalized_remote_api_base = payload.vieneu_remote_api_base.strip()
+        if normalized_remote_api_base and normalized_remote_api_base != settings.tts_vieneu_remote_api_base:
+            should_reset_vieneu = True
+        settings.tts_vieneu_remote_api_base = normalized_remote_api_base or settings.tts_vieneu_remote_api_base
     if payload.vieneu_voice_id is not None:
         settings.tts_vieneu_voice_id = payload.vieneu_voice_id.strip()
     if payload.vieneu_ref_audio is not None:
@@ -194,6 +233,14 @@ async def update_tts_config(payload: TTSConfigRequest) -> dict[str, str]:
         settings.tts_vieneu_top_k = payload.vieneu_top_k
     if payload.vieneu_max_chars is not None:
         settings.tts_vieneu_max_chars = payload.vieneu_max_chars
+    if payload.vieneu_stream_frames_per_chunk is not None:
+        settings.tts_vieneu_stream_frames_per_chunk = payload.vieneu_stream_frames_per_chunk
+    if payload.vieneu_stream_lookforward is not None:
+        settings.tts_vieneu_stream_lookforward = payload.vieneu_stream_lookforward
+    if payload.vieneu_stream_lookback is not None:
+        settings.tts_vieneu_stream_lookback = payload.vieneu_stream_lookback
+    if payload.vieneu_stream_overlap_frames is not None:
+        settings.tts_vieneu_stream_overlap_frames = payload.vieneu_stream_overlap_frames
 
     if should_reset_vieneu:
         speech_service.reset_vieneu_runtime()
@@ -204,11 +251,20 @@ async def update_tts_config(payload: TTSConfigRequest) -> dict[str, str]:
         "tts_voice": settings.tts_voice,
         "tts_rate": settings.tts_rate,
         "tts_vieneu_model_path": settings.tts_vieneu_model_path,
+        "tts_vieneu_mode": settings.tts_vieneu_mode,
+        "tts_vieneu_backbone_device": settings.tts_vieneu_backbone_device,
+        "tts_vieneu_codec_repo": settings.tts_vieneu_codec_repo,
+        "tts_vieneu_codec_device": settings.tts_vieneu_codec_device,
+        "tts_vieneu_remote_api_base": settings.tts_vieneu_remote_api_base,
         "tts_vieneu_voice_id": settings.tts_vieneu_voice_id,
         "tts_vieneu_ref_audio": settings.tts_vieneu_ref_audio,
         "tts_vieneu_temperature": str(settings.tts_vieneu_temperature),
         "tts_vieneu_top_k": str(settings.tts_vieneu_top_k),
         "tts_vieneu_max_chars": str(settings.tts_vieneu_max_chars),
+        "tts_vieneu_stream_frames_per_chunk": str(settings.tts_vieneu_stream_frames_per_chunk),
+        "tts_vieneu_stream_lookforward": str(settings.tts_vieneu_stream_lookforward),
+        "tts_vieneu_stream_lookback": str(settings.tts_vieneu_stream_lookback),
+        "tts_vieneu_stream_overlap_frames": str(settings.tts_vieneu_stream_overlap_frames),
     }
 
 
@@ -331,6 +387,8 @@ async def handle_turn_stream(session_id: str, payload: TurnRequest) -> Streaming
     """Stream conversation response with interleaved text and audio chunks for lower latency."""
     async def response_stream():
         started_at = time.perf_counter()
+        first_text_at = 0.0
+        first_audio_at = 0.0
         try:
             async for chunk in conversation_engine.handle_turn_stream(
                 session_id,
@@ -338,11 +396,30 @@ async def handle_turn_stream(session_id: str, payload: TurnRequest) -> Streaming
                 turn_id=payload.turn_id,
                 include_audio=payload.include_audio,
             ):
+                chunk_type = str(chunk.get("type") or "").lower() if isinstance(chunk, dict) else ""
+                if chunk_type == "text" and not first_text_at:
+                    first_text_at = time.perf_counter()
+                    logger.info(
+                        "turn_first_text_ms=%s session_id=%s turn_id=%s endpoint=turn_stream",
+                        int((first_text_at - started_at) * 1000),
+                        session_id,
+                        payload.turn_id or "",
+                    )
+                elif chunk_type == "audio" and not first_audio_at:
+                    first_audio_at = time.perf_counter()
+                    logger.info(
+                        "turn_first_audio_ms=%s session_id=%s turn_id=%s endpoint=turn_stream",
+                        int((first_audio_at - started_at) * 1000),
+                        session_id,
+                        payload.turn_id or "",
+                    )
                 # Yield JSON-encoded chunks: {"type": "text", "content": "..."} or {"type": "audio", "content": base64}
                 yield json.dumps(chunk, ensure_ascii=False).encode("utf-8") + b"\n"
             logger.info(
-                "turn_total_ms=%s session_id=%s turn_id=%s endpoint=turn_stream",
+                "turn_total_ms=%s turn_first_text_ms=%s turn_first_audio_ms=%s session_id=%s turn_id=%s endpoint=turn_stream",
                 int((time.perf_counter() - started_at) * 1000),
+                int((first_text_at - started_at) * 1000) if first_text_at else -1,
+                int((first_audio_at - started_at) * 1000) if first_audio_at else -1,
                 session_id,
                 payload.turn_id or "",
             )
@@ -456,6 +533,8 @@ async def synthesize_speech(payload: SpeechSynthesisRequest) -> Response:
 async def synthesize_speech_stream(payload: SpeechSynthesisRequest) -> StreamingResponse:
     started_at = time.perf_counter()
     vieneu_overrides = build_vieneu_overrides(payload)
+    requested_engine = str((vieneu_overrides or {}).get("engine") or "").strip().lower()
+    stream_media_type = "audio/wav" if requested_engine == "vieneu" else "audio/mpeg"
     try:
         async def audio_stream():
             stream_bytes = 0
@@ -478,7 +557,7 @@ async def synthesize_speech_stream(payload: SpeechSynthesisRequest) -> Streaming
                 stream_bytes,
             )
 
-        return StreamingResponse(audio_stream(), media_type="audio/mpeg")
+        return StreamingResponse(audio_stream(), media_type=stream_media_type)
     except Exception as exc:
         logger.exception(
             "tts_total_ms=%s endpoint=synthesize_stream status=error chars=%s engine=%s",

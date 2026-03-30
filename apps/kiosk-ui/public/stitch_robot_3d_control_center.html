@@ -1078,6 +1078,10 @@
             line-height: 1.35;
             min-height: 1.8em;
         }
+        .voice-mini-status.is-thinking::after {
+            content: ' ...';
+            animation: voice-status-thinking 900ms ease-in-out infinite;
+        }
         .voice-mini-panel.content-only {
             background: transparent;
             border: none;
@@ -1123,6 +1127,15 @@
         }
         .chat-mini-line.assistant .chat-mini-line-label {
             color: #3730a3;
+        }
+        .chat-mini-line.thinking {
+            opacity: 0.92;
+            font-style: italic;
+        }
+        @keyframes voice-status-thinking {
+            0% { opacity: 0.25; }
+            50% { opacity: 1; }
+            100% { opacity: 0.25; }
         }
 
         .order-status-hud {
@@ -1599,6 +1612,10 @@
             font-size: 0.74rem;
             min-height: 1.9em;
         }
+        .voice-mini-status.is-thinking::after {
+            content: ' ...';
+            animation: voice-status-thinking 900ms ease-in-out infinite;
+        }
 
         .voice-mini-toggle {
             border: 1px solid rgba(168, 145, 219, 0.3);
@@ -1648,6 +1665,11 @@
         .chat-mini-line.assistant {
             background: linear-gradient(135deg, rgba(167, 244, 224, 0.26), rgba(172, 210, 255, 0.22));
             border-color: rgba(99, 198, 173, 0.3);
+        }
+        .chat-mini-line.thinking {
+            border-style: dashed;
+            opacity: 0.92;
+            font-style: italic;
         }
 
         .chat-mini-line-label {
@@ -2259,6 +2281,8 @@
     const ROBOT_STUDIO_COMMAND_STORAGE_KEY = 'admin.robot.studio.command.v1';
     const KIOSK_HEARTBEAT_STORAGE_KEY = 'orderrobot.kiosk.heartbeat';
     const CHAT_HISTORY_STORAGE_KEY = 'orderrobot.kiosk.chat-history.v1';
+    const CHAT_ARCHIVE_STORAGE_KEY = 'orderrobot.kiosk.chat-archive.v1';
+    const CHAT_ARCHIVE_LIMIT = 40;
     const AUTO_GREETING_COOLDOWN_MS = 25000;
     const AUTO_GREETING_RETRY_BASE_MS = 900;
     const AUTO_GREETING_MAX_RETRIES = 5;
@@ -2268,9 +2292,10 @@
     const PRESENCE_MOTION_THRESHOLD = 16;
     const PRESENCE_ABSENCE_FRAMES = 4;
     const CHAT_CLEAR_AFTER_ABSENCE_MS = 30000;
-    const BACKEND_STT_FINALIZE_SILENCE_MS = 650;
-    const BACKEND_STT_FORCE_FINALIZE_MS = 2400;
-    const BACKEND_STT_CHUNK_MS = 180;
+    const DEFAULT_BACKEND_STT_FINALIZE_SILENCE_MS = 420;
+    const DEFAULT_BACKEND_STT_FORCE_FINALIZE_MS = 1400;
+    const DEFAULT_BACKEND_STT_CHUNK_MS = 120;
+    const DEFAULT_TTS_STREAM_PLAYBACK_RATE = 1.0;
     const AI_RUNTIME_FALLBACK_URL = 'http://127.0.0.1:8012';
     const AI_RUNTIME_PROBE_TIMEOUT_MS = 1600;
     const isAdminPreviewMode = new URLSearchParams(window.location.search).get('adminPreview') === '1';
@@ -2321,6 +2346,10 @@
     let activeTurnAbortController = null;
     let voicePinnedByUser = false;
     let micNoiseFilterStrength = 60;
+    let backendSttFinalizeSilenceMs = DEFAULT_BACKEND_STT_FINALIZE_SILENCE_MS;
+    let backendSttForceFinalizeMs = DEFAULT_BACKEND_STT_FORCE_FINALIZE_MS;
+    let backendSttChunkMs = DEFAULT_BACKEND_STT_CHUNK_MS;
+    let ttsStreamPlaybackRate = DEFAULT_TTS_STREAM_PLAYBACK_RATE;
     let lastSpeechActivityAt = 0;
     let kioskHeartbeatTimer = null;
     let orderPopupTimer = null;
@@ -2331,6 +2360,14 @@
     let turnSequence = 0;
     let latestIssuedTurnId = '';
     let activeProcessingTurnId = '';
+    let lastQueuedUserTranscriptNorm = '';
+    let lastQueuedUserTranscriptAt = 0;
+    let lastRobotSpokenNorm = '';
+    let lastRobotSpokenAt = 0;
+    let voiceLatencyStatusTimer = null;
+    let thinkingTurnId = '';
+    let thinkingMotionTimer = null;
+    let thinkingMotionTurnId = '';
     const chatHistory = [];
     let cartState = [];
     const MENU_IMAGE_BY_ID = {
@@ -2669,6 +2706,44 @@
         return Number(numeric.toFixed(2));
     }
 
+    function refreshVoiceRuntimeConfigFromAdmin() {
+        const env = readAdminEnvFields();
+        const configuredFinalizeSilenceMs = toSafeInt(
+            env.BACKEND_STT_FINALIZE_SILENCE_MS,
+            250,
+            2200,
+        );
+        const configuredForceFinalizeMs = toSafeInt(
+            env.BACKEND_STT_FORCE_FINALIZE_MS,
+            700,
+            6000,
+        );
+        const configuredChunkMs = toSafeInt(
+            env.BACKEND_STT_CHUNK_MS,
+            80,
+            500,
+        );
+        const configuredPlaybackRate = toSafeFloat(
+            env.TTS_STREAM_PLAYBACK_RATE,
+            0.9,
+            1.35,
+        );
+
+        backendSttFinalizeSilenceMs = configuredFinalizeSilenceMs ?? DEFAULT_BACKEND_STT_FINALIZE_SILENCE_MS;
+        backendSttForceFinalizeMs = Math.max(
+            backendSttFinalizeSilenceMs + 120,
+            configuredForceFinalizeMs ?? DEFAULT_BACKEND_STT_FORCE_FINALIZE_MS,
+        );
+        backendSttChunkMs = configuredChunkMs ?? DEFAULT_BACKEND_STT_CHUNK_MS;
+        ttsStreamPlaybackRate = configuredPlaybackRate ?? DEFAULT_TTS_STREAM_PLAYBACK_RATE;
+        console.info('[voice-runtime-config]', {
+            backendSttChunkMs,
+            backendSttFinalizeSilenceMs,
+            backendSttForceFinalizeMs,
+            ttsStreamPlaybackRate,
+        });
+    }
+
     function buildSpeechSynthesisPayload(text) {
         const payload = { text: String(text || '').trim() };
         const env = readAdminEnvFields();
@@ -2724,6 +2799,18 @@
     function isVieneuForced(payload) {
         const engine = String(payload?.tts_engine || payload?.engine || '').trim().toLowerCase();
         return engine === 'vieneu';
+    }
+
+    function isVieneuRealtimeCapable() {
+        const configuredMode = String(resolvedAiApiHealth?.tts_vieneu_mode || '').trim().toLowerCase();
+        if (configuredMode === 'fast' || configuredMode === 'xpu') {
+            return true;
+        }
+        const realtimeFactor = Number(resolvedAiApiHealth?.vieneu_stream_realtime_factor);
+        if (Number.isFinite(realtimeFactor) && realtimeFactor >= 0.85) {
+            return true;
+        }
+        return false;
     }
 
     function getAiApiUrlCandidates() {
@@ -2844,9 +2931,28 @@
         robotController.setFaceState(state);
     }
 
-    function setVoiceStatus(text) {
+    function setVoiceStatus(text, options = {}) {
         if (!voiceMiniStatus) return;
+        const isThinking = options?.thinking === true;
+        voiceMiniStatus.classList.toggle('is-thinking', isThinking);
         voiceMiniStatus.textContent = String(text || '').trim();
+    }
+
+    function showVoiceLatencyStatus(firstTextMs, speechStartMs, turnTotalMs) {
+        const textDelay = Number.isFinite(firstTextMs) ? `${firstTextMs}ms` : '--';
+        const speechDelay = Number.isFinite(speechStartMs) ? `${speechStartMs}ms` : '--';
+        const totalDelay = Number.isFinite(turnTotalMs) ? `${turnTotalMs}ms` : '--';
+        setVoiceStatus(`Delay text ${textDelay} | doc ${speechDelay} | tong ${totalDelay}`);
+        if (voiceLatencyStatusTimer) {
+            window.clearTimeout(voiceLatencyStatusTimer);
+            voiceLatencyStatusTimer = null;
+        }
+        voiceLatencyStatusTimer = window.setTimeout(() => {
+            voiceLatencyStatusTimer = null;
+            if (voiceListening) {
+                setVoiceStatus('Dang nghe ban noi...');
+            }
+        }, 2200);
     }
 
     function toSafeInlineText(value) {
@@ -2970,16 +3076,42 @@
     function renderChatMini() {
         if (!chatMiniList) return;
         const latest = chatHistory.slice(-8);
-        if (latest.length === 0) {
+        const displayItems = [...latest];
+        if (thinkingTurnId && isTurnStillLatest(thinkingTurnId)) {
+            displayItems.push({
+                role: 'assistant',
+                text: '...',
+                at: Date.now(),
+                isThinking: true,
+            });
+        }
+        if (displayItems.length === 0) {
             chatMiniList.innerHTML = '<p class="chat-mini-empty">Chua co hoi thoai.</p>';
             return;
         }
-        chatMiniList.innerHTML = latest.map((entry) => `
-            <p class="chat-mini-line ${entry.role}">
+        chatMiniList.innerHTML = displayItems.map((entry) => `
+            <p class="chat-mini-line ${entry.role} ${entry.isThinking ? 'thinking' : ''}">
                 <span class="chat-mini-line-label">${entry.role === 'user' ? 'Khach' : 'Robot'}:</span>${toSafeInlineText(entry.text)}
             </p>
         `).join('');
         chatMiniList.scrollTop = chatMiniList.scrollHeight;
+    }
+
+    function showThinkingIndicator(turnId) {
+        const safeTurnId = String(turnId || '').trim();
+        if (!safeTurnId) return;
+        thinkingTurnId = safeTurnId;
+        renderChatMini();
+    }
+
+    function hideThinkingIndicator(turnId = '') {
+        const safeTurnId = String(turnId || '').trim();
+        if (safeTurnId && thinkingTurnId && safeTurnId !== thinkingTurnId) {
+            return;
+        }
+        if (!thinkingTurnId) return;
+        thinkingTurnId = '';
+        renderChatMini();
     }
 
     function appendChat(role, text) {
@@ -3042,10 +3174,47 @@
 
     function clearChatHistory() {
         chatHistory.length = 0;
+        stopThinkingMotion();
+        hideThinkingIndicator();
         try {
             localStorage.removeItem(CHAT_HISTORY_STORAGE_KEY);
         } catch {}
         renderChatMini();
+    }
+
+    function archiveChatHistorySnapshot(orderData) {
+        const transcript = toFeedbackHistoryPayload();
+        if (transcript.length === 0) return;
+
+        const orderItems = normalizeOrderItems(orderData?.items);
+        const total = orderItems.reduce((sum, item) => sum + Number(item.line_total || 0), 0);
+        const payload = {
+            archived_at: new Date().toISOString(),
+            session_id: String(orderData?.sessionId || ''),
+            order_id: String(orderData?.orderId || ''),
+            order_total: total,
+            item_count: orderItems.length,
+            items: orderItems,
+            transcript_history: transcript,
+        };
+
+        try {
+            const raw = localStorage.getItem(CHAT_ARCHIVE_STORAGE_KEY);
+            const parsed = JSON.parse(raw || '[]');
+            const current = Array.isArray(parsed) ? parsed : [];
+            const next = [...current, payload];
+            if (next.length > CHAT_ARCHIVE_LIMIT) {
+                next.splice(0, next.length - CHAT_ARCHIVE_LIMIT);
+            }
+            localStorage.setItem(CHAT_ARCHIVE_STORAGE_KEY, JSON.stringify(next));
+            console.info('[chat-archive] saved', {
+                orderId: payload.order_id,
+                sessionId: payload.session_id,
+                lines: transcript.length,
+            });
+        } catch (error) {
+            console.warn('[chat-archive] save failed:', error);
+        }
     }
 
     function clearOrderFlowTimers() {
@@ -3326,14 +3495,17 @@
         if (items.length === 0) return;
         if (!shouldHandleOrderId(orderData.orderId)) return;
 
+        const finalizedOrderData = { ...orderData, items };
         activeOrderFlowToken += 1;
         const flowToken = activeOrderFlowToken;
         try {
-            await showOrderPopupStep({ ...orderData, items }, flowToken);
+            await showOrderPopupStep(finalizedOrderData, flowToken);
             if (flowToken !== activeOrderFlowToken) return;
-            await showRatingPopupStep({ ...orderData, items }, flowToken);
+            await showRatingPopupStep(finalizedOrderData, flowToken);
         } finally {
             if (flowToken === activeOrderFlowToken) {
+                archiveChatHistorySnapshot(finalizedOrderData);
+                clearChatHistory();
                 hideOrderFlow();
             }
         }
@@ -3494,6 +3666,16 @@
             .trim();
     }
 
+    function normalizeTranscriptForDedup(text) {
+        return String(text || '')
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
     function isAbortError(error) {
         if (!error) return false;
         const name = String(error?.name || '').toLowerCase();
@@ -3556,7 +3738,9 @@
         try {
             const aiApiUrl = await ensureAiApiUrlReady();
             const runtimeTtsEngine = String(resolvedAiApiHealth?.tts_engine || '').trim().toLowerCase();
+            const vieneuMode = String(resolvedAiApiHealth?.tts_vieneu_mode || '').trim().toLowerCase();
             if (runtimeTtsEngine !== 'vieneu') return;
+            if (!(vieneuMode === 'fast' || vieneuMode === 'xpu')) return;
 
             const warmupPayload = buildSpeechSynthesisPayload('Xin chao');
             warmupPayload.tts_engine = 'vieneu';
@@ -3617,9 +3801,38 @@
         if (audioCtx.state !== 'running') {
             throw new Error(`AudioContext is not running (${audioCtx.state})`);
         }
-        let nextPlayTime = audioCtx.currentTime + 0.08;
+        const streamPlaybackRate = Math.max(0.75, Math.min(1.1, Number(ttsStreamPlaybackRate) || 1));
+        let nextPlayTime = audioCtx.currentTime + 0.03;
         let streamSampleRate = 24000;
         let streamHeaderParsed = false;
+        const prebufferChunkCount = 2;
+        const prebufferQueue = [];
+        let playbackStarted = false;
+
+        const scheduleBuffer = (buffer) => {
+            const source = audioCtx.createBufferSource();
+            source.buffer = buffer;
+            source.playbackRate.value = streamPlaybackRate;
+            source.connect(audioCtx.destination);
+            if (nextPlayTime < audioCtx.currentTime) {
+                nextPlayTime = audioCtx.currentTime;
+            }
+            source.start(nextPlayTime);
+            nextPlayTime += buffer.duration / streamPlaybackRate;
+        };
+
+        const flushPrebufferIfReady = (force = false) => {
+            if (playbackStarted) return;
+            if (!force && prebufferQueue.length < prebufferChunkCount) return;
+            if (nextPlayTime < audioCtx.currentTime) {
+                nextPlayTime = audioCtx.currentTime + 0.02;
+            }
+            for (const buffer of prebufferQueue) {
+                scheduleBuffer(buffer);
+            }
+            prebufferQueue.length = 0;
+            playbackStarted = true;
+        };
 
         try {
             while (true) {
@@ -3659,20 +3872,18 @@
 
                 const buffer = audioCtx.createBuffer(1, float32.length, streamSampleRate);
                 buffer.getChannelData(0).set(float32);
-                const source = audioCtx.createBufferSource();
-                source.buffer = buffer;
-                source.connect(audioCtx.destination);
-
-                if (nextPlayTime < audioCtx.currentTime) {
-                    nextPlayTime = audioCtx.currentTime;
+                if (!playbackStarted) {
+                    prebufferQueue.push(buffer);
+                    flushPrebufferIfReady();
+                    continue;
                 }
-                source.start(nextPlayTime);
-                nextPlayTime += buffer.duration;
+                scheduleBuffer(buffer);
             }
 
+            flushPrebufferIfReady(true);
             const remainingSec = Math.max(0, nextPlayTime - audioCtx.currentTime);
             if (remainingSec > 0.01) {
-                await new Promise((resolve) => window.setTimeout(resolve, remainingSec * 1000 + 40));
+                await new Promise((resolve) => window.setTimeout(resolve, remainingSec * 1000 + 16));
             }
         } finally {
             try {
@@ -3713,6 +3924,33 @@
     function prioritizeUserSpeech() {
         interruptBotSpeech();
         interruptTurnProcessingForUser();
+        stopThinkingMotion();
+        hideThinkingIndicator();
+    }
+
+    function startThinkingMotion(turnId) {
+        const safeTurnId = String(turnId || '').trim();
+        if (!safeTurnId) return;
+        stopThinkingMotion();
+        thinkingMotionTurnId = safeTurnId;
+        const playThinkingNod = () => {
+            if (!thinkingMotionTurnId || !isTurnStillLatest(thinkingMotionTurnId)) return;
+            void robotController.actions.trigger('nodYes', { force: true });
+        };
+        playThinkingNod();
+        thinkingMotionTimer = window.setInterval(playThinkingNod, 950);
+    }
+
+    function stopThinkingMotion(turnId = '') {
+        const safeTurnId = String(turnId || '').trim();
+        if (safeTurnId && thinkingMotionTurnId && safeTurnId !== thinkingMotionTurnId) {
+            return;
+        }
+        thinkingMotionTurnId = '';
+        if (thinkingMotionTimer) {
+            window.clearInterval(thinkingMotionTimer);
+            thinkingMotionTimer = null;
+        }
     }
 
     function createStreamingAudioPlayer() {
@@ -3915,6 +4153,8 @@
         const speechAbortController = new AbortController();
         activeBotSpeechAbortController = speechAbortController;
         const ttsText = normalizeTextForTtsPlayback(safeText);
+        lastRobotSpokenNorm = normalizeTranscriptForDedup(ttsText);
+        lastRobotSpokenAt = Date.now();
         const speechPayload = buildSpeechSynthesisPayload(ttsText);
         const requestedTtsEngine = String(speechPayload?.tts_engine || '').trim().toLowerCase();
         const runtimeTtsEngine = String(resolvedAiApiHealth?.tts_engine || '').trim().toLowerCase();
@@ -3935,7 +4175,8 @@
             delete speechPayload.tts_vieneu_max_chars;
         }
         const forcedVieneu = isVieneuForced(speechPayload);
-        if (forcedVieneu) {
+        const allowRealtimeVieneuStream = forcedVieneu && isVieneuRealtimeCapable();
+        if (allowRealtimeVieneuStream) {
             setFaceState('happy');
             botSpeechActive = true;
             try {
@@ -3965,6 +4206,12 @@
                     setFaceState('normal');
                 }
             }
+        } else if (forcedVieneu) {
+            const realtimeFactor = Number(resolvedAiApiHealth?.vieneu_stream_realtime_factor);
+            console.info('[voice-vieneu] use full synth path for smooth playback', {
+                mode: String(resolvedAiApiHealth?.tts_vieneu_mode || '').trim().toLowerCase() || 'standard',
+                realtimeFactor: Number.isFinite(realtimeFactor) ? realtimeFactor : null,
+            });
         }
 
         const response = await fetch(`${aiApiUrl}/speech/synthesize`, {
@@ -4017,6 +4264,26 @@
     function enqueueUserTurn(transcript) {
         const cleanText = String(transcript || '').trim();
         if (!cleanText) return;
+        const normalizedTranscript = normalizeTranscriptForDedup(cleanText);
+        const now = Date.now();
+        if (!normalizedTranscript) return;
+        if (
+            normalizedTranscript === lastQueuedUserTranscriptNorm
+            && now - lastQueuedUserTranscriptAt < 4500
+        ) {
+            console.info('[voice-dedup] dropped duplicated transcript', { transcript: cleanText });
+            return;
+        }
+        if (
+            lastRobotSpokenNorm
+            && normalizedTranscript === lastRobotSpokenNorm
+            && now - lastRobotSpokenAt < 3500
+        ) {
+            console.info('[voice-dedup] dropped likely echo transcript', { transcript: cleanText });
+            return;
+        }
+        lastQueuedUserTranscriptNorm = normalizedTranscript;
+        lastQueuedUserTranscriptAt = now;
         const turnId = createTurnId();
         latestIssuedTurnId = turnId;
         markSpeechActivity();
@@ -4112,6 +4379,9 @@
                 const turnStartedAt = performance.now();
                 let turnFirstTextAt = 0;
                 let turnSpeechStartAt = 0;
+                showThinkingIndicator(turnId);
+                startThinkingMotion(turnId);
+                setVoiceStatus('Robot dang suy nghi', { thinking: true });
 
                 try {
                     ensureNotStale();
@@ -4232,6 +4502,8 @@
                             });
                         }
                     }
+                    hideThinkingIndicator(turnId);
+                    stopThinkingMotion(turnId);
                     if (replyText) {
                         ensureNotStale();
                         appendChat('assistant', replyText);
@@ -4271,8 +4543,10 @@
                         turnTotalMs,
                         mode: voiceInputMode,
                     });
-                    setVoiceStatus(voiceListening ? 'Dang nghe ban noi...' : 'Da tra loi xong.');
+                    showVoiceLatencyStatus(firstTextMs, speechStartMs, turnTotalMs);
                 } catch (error) {
+                    hideThinkingIndicator(turnId);
+                    stopThinkingMotion(turnId);
                     if (isAbortError(error)) {
                         setVoiceStatus('Dang uu tien loi noi moi...');
                     } else {
@@ -4280,6 +4554,8 @@
                         setVoiceStatus('Gap loi khi xu ly hoi thoai.');
                     }
                 } finally {
+                    hideThinkingIndicator(turnId);
+                    stopThinkingMotion(turnId);
                     if (activeTurnAbortController === turnAbortController) {
                         activeTurnAbortController = null;
                     }
@@ -4290,7 +4566,7 @@
             }
         } finally {
             voiceQueueRunning = false;
-            if (voiceListening) {
+            if (voiceListening && !voiceLatencyStatusTimer) {
                 setVoiceStatus('Dang nghe ban noi...');
             }
         }
@@ -4339,7 +4615,7 @@
                 voiceBackendFinalizing = true;
                 voiceBackendSocket.send('finalize');
             } catch {}
-        }, BACKEND_STT_FINALIZE_SILENCE_MS);
+        }, backendSttFinalizeSilenceMs);
     }
 
     function scheduleBackendForceFinalize() {
@@ -4353,7 +4629,7 @@
                 voiceBackendFinalizing = true;
                 voiceBackendSocket.send('finalize');
             } catch {}
-        }, BACKEND_STT_FORCE_FINALIZE_MS);
+        }, backendSttForceFinalizeMs);
     }
 
     async function ensureBackendMicStream() {
@@ -4544,7 +4820,7 @@
             setVoiceStatus('Mic gap loi khi thu am backend STT.');
         };
 
-        voiceBackendRecorder.start(BACKEND_STT_CHUNK_MS);
+        voiceBackendRecorder.start(backendSttChunkMs);
         voiceInputMode = 'backend';
         setVoiceStatus('Dang nghe ban noi...');
     }
@@ -5157,6 +5433,7 @@
     }
     
     // Initial reset
+    refreshVoiceRuntimeConfigFromAdmin();
     syncMicSensitivityFromAdmin({ restartBackend: false });
     loadRobotScalePercent();
     if (isAdminPreviewMode) {
@@ -5199,6 +5476,12 @@
     }, true);
 
     window.addEventListener('storage', (event) => {
+        if (event.key === ADMIN_ENV_STORAGE_KEY) {
+            refreshVoiceRuntimeConfigFromAdmin();
+            if (voiceListening && voiceInputMode === 'backend') {
+                void startBackendSpeechListening().catch(() => {});
+            }
+        }
         if (event.key === ROBOT_SCALE_STORAGE_KEY) {
             loadRobotScalePercent();
         }
@@ -5244,6 +5527,13 @@
                 recalcPresenceSensitivity();
             }
             syncMicSensitivityFromAdmin({ restartBackend: true });
+            return;
+        }
+        if (event.data.type === 'orderrobot:admin-env-config') {
+            refreshVoiceRuntimeConfigFromAdmin();
+            if (voiceListening && voiceInputMode === 'backend') {
+                void startBackendSpeechListening().catch(() => {});
+            }
         }
     });
 
@@ -5270,6 +5560,12 @@
             } catch {}
             voiceRecognition = null;
         }
+        if (voiceLatencyStatusTimer) {
+            window.clearTimeout(voiceLatencyStatusTimer);
+            voiceLatencyStatusTimer = null;
+        }
+        stopThinkingMotion();
+        hideThinkingIndicator();
         hideOrderFlow();
         stopBackendSpeechListening({ finalize: false });
     });

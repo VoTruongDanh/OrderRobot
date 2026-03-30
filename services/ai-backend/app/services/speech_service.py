@@ -173,6 +173,9 @@ class SpeechService:
         self._vieneu_last_init_ms: int = 0
         self._vieneu_prewarmed_at: float = 0.0
         self._vieneu_prewarm_ms: int = 0
+        self._vieneu_stream_guard = threading.Lock()
+        self._vieneu_active_stream_cancel: threading.Event | None = None
+        self._vieneu_stream_last_realtime_factor: float = 0.0
 
     async def synthesize(
         self,
@@ -294,19 +297,65 @@ class SpeechService:
             logger.exception("tts_prewarm_failed engine=vieneu")
 
     def get_vieneu_diagnostics(self) -> dict[str, object]:
+        configured_mode = (self.settings.tts_vieneu_mode or "standard").strip().lower()
+        if configured_mode == "gpu":
+            configured_mode = "fast"
+        if configured_mode == "api":
+            configured_mode = "remote"
         return {
             "available": self._is_vieneu_available(),
             "engine": self.settings.tts_engine,
+            "mode": configured_mode,
             "model_path": self.settings.tts_vieneu_model_path.strip() or DEFAULT_VIENEU_CPU_MODEL,
+            "backbone_device": self.settings.tts_vieneu_backbone_device,
+            "codec_repo": self.settings.tts_vieneu_codec_repo,
+            "codec_device": self.settings.tts_vieneu_codec_device,
+            "remote_api_base": self.settings.tts_vieneu_remote_api_base,
             "instance_ready": self._vieneu_instance is not None,
             "last_init_ms": self._vieneu_last_init_ms,
             "prewarm_ms": self._vieneu_prewarm_ms,
             "prewarmed_at_unix": self._vieneu_prewarmed_at or 0,
             "last_error": self._vieneu_last_error,
+            "stream_realtime_factor": round(self._vieneu_stream_last_realtime_factor, 4),
+            "stream_cfg": {
+                "frames_per_chunk": self.settings.tts_vieneu_stream_frames_per_chunk,
+                "lookforward": self.settings.tts_vieneu_stream_lookforward,
+                "lookback": self.settings.tts_vieneu_stream_lookback,
+                "overlap_frames": self.settings.tts_vieneu_stream_overlap_frames,
+            },
         }
 
     def _preload_vieneu_sync(self) -> None:
         self._get_vieneu_instance()
+
+    def _configure_vieneu_streaming(self, engine: object) -> None:
+        updates: dict[str, int] = {
+            "streaming_frames_per_chunk": self.settings.tts_vieneu_stream_frames_per_chunk,
+            "streaming_lookforward": self.settings.tts_vieneu_stream_lookforward,
+            "streaming_lookback": self.settings.tts_vieneu_stream_lookback,
+            "streaming_overlap_frames": self.settings.tts_vieneu_stream_overlap_frames,
+        }
+        applied: dict[str, int] = {}
+        for attr, value in updates.items():
+            if hasattr(engine, attr):
+                try:
+                    setattr(engine, attr, int(value))
+                    applied[attr] = int(getattr(engine, attr))
+                except Exception:
+                    logger.debug("Unable to set VieNeu stream attr '%s'.", attr, exc_info=True)
+
+        if hasattr(engine, "hop_length") and hasattr(engine, "streaming_frames_per_chunk"):
+            try:
+                hop_length = int(getattr(engine, "hop_length"))
+                frames = int(getattr(engine, "streaming_frames_per_chunk"))
+                stride = max(1, frames * hop_length)
+                setattr(engine, "streaming_stride_samples", stride)
+                applied["streaming_stride_samples"] = stride
+            except Exception:
+                logger.debug("Unable to set VieNeu streaming stride.", exc_info=True)
+
+        if applied:
+            logger.info("vieneu_stream_config_applied %s", applied)
 
     async def _ensure_menu_items_loaded(self) -> None:
         if self._menu_items_cache is not None or self.core_client is None:
@@ -353,44 +402,81 @@ class SpeechService:
 
     def _get_vieneu_instance(self):
         if self._vieneu_instance is not None:
+            self._configure_vieneu_streaming(self._vieneu_instance)
             return self._vieneu_instance
 
         with self._vieneu_lock:
             if self._vieneu_instance is not None:
+                self._configure_vieneu_streaming(self._vieneu_instance)
                 return self._vieneu_instance
 
             from vieneu import Vieneu  # type: ignore[import-not-found]
 
+            requested_mode = (self.settings.tts_vieneu_mode or "standard").strip().lower()
+            if requested_mode == "gpu":
+                requested_mode = "fast"
+            elif requested_mode == "api":
+                requested_mode = "remote"
+            vieneu_mode = requested_mode if requested_mode in {"standard", "fast", "xpu", "remote"} else "standard"
+
             configured_model_path = self.settings.tts_vieneu_model_path.strip()
             model_path = configured_model_path or DEFAULT_VIENEU_CPU_MODEL
-            init_attempts: list[dict[str, object]]
-            if model_path:
-                init_attempts = []
-                try:
-                    signature = inspect.signature(Vieneu)
-                    accepted_params = set(signature.parameters.keys())
-                    has_var_keyword = any(
-                        parameter.kind == inspect.Parameter.VAR_KEYWORD
-                        for parameter in signature.parameters.values()
-                    )
-                except (TypeError, ValueError):
-                    accepted_params = set()
-                    has_var_keyword = False
+            backbone_device = (self.settings.tts_vieneu_backbone_device or "cpu").strip().lower() or "cpu"
+            codec_repo = (self.settings.tts_vieneu_codec_repo or "").strip()
+            codec_device = (self.settings.tts_vieneu_codec_device or "cpu").strip().lower() or "cpu"
+            remote_api_base = (self.settings.tts_vieneu_remote_api_base or "http://localhost:23333/v1").strip()
 
-                if has_var_keyword or not accepted_params or "backbone_repo" in accepted_params:
-                    init_attempts.append({"backbone_repo": model_path})
-                if (not has_var_keyword) and "model_path" in accepted_params:
-                    init_attempts.append({"model_path": model_path})
-                init_attempts.append({})
-            else:
-                init_attempts = [{}]
+            init_attempts: list[dict[str, object]] = []
+            if vieneu_mode in {"standard", "fast", "xpu"}:
+                primary_kwargs: dict[str, object] = {
+                    "backbone_repo": model_path,
+                    "backbone_device": backbone_device,
+                    "codec_device": codec_device,
+                }
+                if codec_repo:
+                    primary_kwargs["codec_repo"] = codec_repo
+                init_attempts.append(primary_kwargs)
+                if codec_repo:
+                    fallback_kwargs = dict(primary_kwargs)
+                    fallback_kwargs.pop("codec_repo", None)
+                    init_attempts.append(fallback_kwargs)
+            elif vieneu_mode == "remote":
+                primary_kwargs = {
+                    "api_base": remote_api_base,
+                    "model_name": model_path,
+                    "codec_device": codec_device,
+                }
+                if codec_repo:
+                    primary_kwargs["codec_repo"] = codec_repo
+                init_attempts.append(primary_kwargs)
+                if codec_repo:
+                    fallback_kwargs = dict(primary_kwargs)
+                    fallback_kwargs.pop("codec_repo", None)
+                    init_attempts.append(fallback_kwargs)
+
+            init_attempts.append({})
+
+            deduplicated_attempts: list[dict[str, object]] = []
+            seen_keys: set[tuple[tuple[str, str], ...]] = set()
+            for attempt in init_attempts:
+                fingerprint = tuple(sorted((key, str(value)) for key, value in attempt.items()))
+                if fingerprint in seen_keys:
+                    continue
+                seen_keys.add(fingerprint)
+                deduplicated_attempts.append(attempt)
+            init_attempts = deduplicated_attempts
 
             is_local_model_path = False
             try:
                 is_local_model_path = Path(model_path).exists()
             except Exception:
                 is_local_model_path = False
-            prefers_offline_cache = bool(model_path) and ("/" in model_path) and not is_local_model_path
+            prefers_offline_cache = (
+                vieneu_mode != "remote"
+                and bool(model_path)
+                and ("/" in model_path)
+                and not is_local_model_path
+            )
 
             last_error: Exception | None = None
             for kwargs in init_attempts:
@@ -410,11 +496,13 @@ class SpeechService:
                             os.environ["HF_HUB_OFFLINE"] = previous_offline_env
 
                     try:
-                        self._vieneu_instance = Vieneu(**kwargs)
+                        self._vieneu_instance = Vieneu(mode=vieneu_mode, **kwargs)
+                        self._configure_vieneu_streaming(self._vieneu_instance)
                         self._vieneu_last_init_ms = int((time.perf_counter() - init_started_at) * 1000)
                         logger.info(
-                            "vieneu_init_ok ms=%s kwargs=%s offline=%s",
+                            "vieneu_init_ok ms=%s mode=%s kwargs=%s offline=%s",
                             self._vieneu_last_init_ms,
+                            vieneu_mode,
                             kwargs,
                             offline_mode,
                         )
@@ -424,7 +512,8 @@ class SpeechService:
                         last_error = exc
                         self._vieneu_last_error = f"{type(exc).__name__}: {exc}"
                         logger.warning(
-                            "vieneu_init_failed kwargs=%s offline=%s err=%s",
+                            "vieneu_init_failed mode=%s kwargs=%s offline=%s err=%s",
+                            vieneu_mode,
                             kwargs,
                             offline_mode,
                             self._vieneu_last_error,
@@ -442,7 +531,8 @@ class SpeechService:
                 raise last_error
 
             logger.info(
-                "vieneu_ready requested=%s effective=%s init_ms=%s",
+                "vieneu_ready mode=%s requested=%s effective=%s init_ms=%s",
+                vieneu_mode,
                 configured_model_path or "default",
                 model_path or "default",
                 self._vieneu_last_init_ms,
@@ -511,6 +601,17 @@ class SpeechService:
             except Exception:
                 logger.debug("Ignoring VieNeu close error while resetting runtime.", exc_info=True)
 
+    def _register_vieneu_stream(self, current_cancel_event: threading.Event) -> threading.Event | None:
+        with self._vieneu_stream_guard:
+            previous = self._vieneu_active_stream_cancel
+            self._vieneu_active_stream_cancel = current_cancel_event
+            return previous
+
+    def _unregister_vieneu_stream(self, current_cancel_event: threading.Event) -> None:
+        with self._vieneu_stream_guard:
+            if self._vieneu_active_stream_cancel is current_cancel_event:
+                self._vieneu_active_stream_cancel = None
+
     async def _synthesize_with_vieneu_async(
         self,
         text: str,
@@ -536,17 +637,30 @@ class SpeechService:
         loop = asyncio.get_running_loop()
         queue: asyncio.Queue[object] = asyncio.Queue()
         done_sentinel = object()
+        current_cancel_event = threading.Event()
+        previous_cancel_event = self._register_vieneu_stream(current_cancel_event)
+        if previous_cancel_event is not None:
+            previous_cancel_event.set()
 
         def push(item: object) -> None:
-            future = asyncio.run_coroutine_threadsafe(queue.put(item), loop)
-            future.result()
+            if current_cancel_event.is_set():
+                return
+            try:
+                future = asyncio.run_coroutine_threadsafe(queue.put(item), loop)
+                future.result()
+            except Exception:
+                # Request may already be cancelled and loop closed for this generator.
+                return
 
         def worker() -> None:
             try:
                 for chunk in self._synthesize_with_vieneu_stream_sync(
                     text,
                     vieneu_overrides=vieneu_overrides,
+                    cancel_event=current_cancel_event,
                 ):
+                    if current_cancel_event.is_set():
+                        break
                     push(chunk)
             except Exception as exc:  # pragma: no cover - exercised in runtime flow
                 push(exc)
@@ -558,33 +672,56 @@ class SpeechService:
         first_chunk_at = 0.0
         chunk_count = 0
         chunk_bytes = 0
-        while True:
-            item = await queue.get()
-            if item is done_sentinel:
-                break
-            if isinstance(item, Exception):
-                raise item
-            if isinstance(item, (bytes, bytearray)):
-                chunk = bytes(item)
-                if chunk:
-                    if not first_chunk_at:
-                        first_chunk_at = time.perf_counter()
-                    chunk_count += 1
-                    chunk_bytes += len(chunk)
-                    yield chunk
-        logger.info(
-            "tts_stream_ms=%s tts_first_chunk_ms=%s chunks=%s bytes=%s engine=vieneu text_chars=%s",
-            int((time.perf_counter() - request_started_at) * 1000),
-            int((first_chunk_at - request_started_at) * 1000) if first_chunk_at else -1,
-            chunk_count,
-            chunk_bytes,
-            len(text),
-        )
+        sample_rate = 24000
+        header_bytes = 0
+        try:
+            while True:
+                item = await queue.get()
+                if item is done_sentinel:
+                    break
+                if isinstance(item, Exception):
+                    raise item
+                if isinstance(item, (bytes, bytearray)):
+                    chunk = bytes(item)
+                    if chunk:
+                        if not first_chunk_at:
+                            first_chunk_at = time.perf_counter()
+                            if len(chunk) >= 44 and chunk[:4] == b"RIFF":
+                                try:
+                                    sample_rate = int.from_bytes(chunk[24:28], "little", signed=False)
+                                    header_bytes = 44
+                                except Exception:
+                                    sample_rate = 24000
+                        chunk_count += 1
+                        chunk_bytes += len(chunk)
+                        yield chunk
+        except asyncio.CancelledError:
+            current_cancel_event.set()
+            raise
+        finally:
+            current_cancel_event.set()
+            self._unregister_vieneu_stream(current_cancel_event)
+            elapsed_sec = time.perf_counter() - request_started_at
+            payload_bytes = max(0, chunk_bytes - header_bytes)
+            audio_sec = payload_bytes / 2 / max(sample_rate, 1)
+            realtime_factor = (audio_sec / elapsed_sec) if elapsed_sec > 0 else 0.0
+            self._vieneu_stream_last_realtime_factor = realtime_factor
+            logger.info(
+                "tts_stream_ms=%s tts_first_chunk_ms=%s chunks=%s bytes=%s audio_sec=%.3f realtime_factor=%.3f engine=vieneu text_chars=%s",
+                int(elapsed_sec * 1000),
+                int((first_chunk_at - request_started_at) * 1000) if first_chunk_at else -1,
+                chunk_count,
+                chunk_bytes,
+                audio_sec,
+                realtime_factor,
+                len(text),
+            )
 
     def _synthesize_with_vieneu_stream_sync(
         self,
         text: str,
         vieneu_overrides: dict[str, object] | None = None,
+        cancel_event: threading.Event | None = None,
     ):
         safe_text = text.strip()
         if not safe_text:
@@ -615,13 +752,38 @@ class SpeechService:
                     yielded_any = True
                     yield payload
             elif isinstance(stream_result, np.ndarray):
-                payload = self._to_wav_chunk_bytes(stream_result, sample_rate)
+                if cancel_event is not None and cancel_event.is_set():
+                    return
+                header = self._build_wav_stream_header(sample_rate)
+                payload = self._to_pcm16_chunk_bytes(stream_result)
+                if header:
+                    yielded_any = True
+                    yield header
                 if payload:
                     yielded_any = True
                     yield payload
             elif stream_result is not None:
+                header_sent = False
                 for item in stream_result:
-                    payload = self._to_wav_chunk_bytes(item, sample_rate)
+                    if cancel_event is not None and cancel_event.is_set():
+                        close_fn = getattr(stream_result, "close", None)
+                        if callable(close_fn):
+                            try:
+                                close_fn()
+                            except Exception:
+                                logger.debug("Ignored VieNeu stream close error.", exc_info=True)
+                        break
+
+                    if isinstance(item, np.ndarray):
+                        if not header_sent:
+                            header = self._build_wav_stream_header(sample_rate)
+                            if header:
+                                yielded_any = True
+                                header_sent = True
+                                yield header
+                        payload = self._to_pcm16_chunk_bytes(item)
+                    else:
+                        payload = self._to_wav_chunk_bytes(item, sample_rate)
                     if payload:
                         yielded_any = True
                         yield payload
@@ -751,7 +913,19 @@ class SpeechService:
             return 24000
         return parsed
 
-    def _to_wav_chunk_bytes(self, chunk: object, sample_rate: int) -> bytes:
+    def _build_wav_stream_header(self, sample_rate: int) -> bytes:
+        try:
+            buffer = io.BytesIO()
+            with wave.open(buffer, "wb") as wav_writer:
+                wav_writer.setnchannels(1)
+                wav_writer.setsampwidth(2)
+                wav_writer.setframerate(sample_rate)
+                wav_writer.writeframes(b"")
+            return buffer.getvalue()
+        except Exception:
+            return b""
+
+    def _to_pcm16_chunk_bytes(self, chunk: object) -> bytes:
         if chunk is None:
             return b""
         if isinstance(chunk, (bytes, bytearray)):
@@ -764,7 +938,6 @@ class SpeechService:
 
         if waveform.size == 0:
             return b""
-
         if waveform.ndim > 1:
             waveform = waveform.reshape(-1)
 
@@ -781,14 +954,24 @@ class SpeechService:
 
         if pcm16.size == 0:
             return b""
+        return np.ascontiguousarray(pcm16).tobytes()
 
-        pcm16 = np.ascontiguousarray(pcm16)
+    def _to_wav_chunk_bytes(self, chunk: object, sample_rate: int) -> bytes:
+        if chunk is None:
+            return b""
+        if isinstance(chunk, (bytes, bytearray)):
+            return bytes(chunk)
+
+        pcm_payload = self._to_pcm16_chunk_bytes(chunk)
+        if not pcm_payload:
+            return b""
+
         buffer = io.BytesIO()
         with wave.open(buffer, "wb") as wav_writer:
             wav_writer.setnchannels(1)
             wav_writer.setsampwidth(2)
             wav_writer.setframerate(sample_rate)
-            wav_writer.writeframes(pcm16.tobytes())
+            wav_writer.writeframes(pcm_payload)
         return buffer.getvalue()
 
     async def _synthesize_async(
