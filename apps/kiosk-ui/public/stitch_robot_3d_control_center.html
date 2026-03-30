@@ -2260,6 +2260,8 @@
     const KIOSK_HEARTBEAT_STORAGE_KEY = 'orderrobot.kiosk.heartbeat';
     const CHAT_HISTORY_STORAGE_KEY = 'orderrobot.kiosk.chat-history.v1';
     const AUTO_GREETING_COOLDOWN_MS = 25000;
+    const AUTO_GREETING_RETRY_BASE_MS = 900;
+    const AUTO_GREETING_MAX_RETRIES = 5;
     const ORDER_POPUP_COUNTDOWN_SEC = 6;
     const ORDER_RATING_COUNTDOWN_SEC = 6;
     const PRESENCE_CHECK_INTERVAL_MS = 700;
@@ -2282,6 +2284,8 @@
     let currentMenuItems = [];
     let lastAutoGreetingAt = 0;
     let autoGreetingInFlight = false;
+    let autoGreetingRetryCount = 0;
+    let autoGreetingRetryTimer = null;
     let presenceDetectionTimer = null;
     let presenceDetected = false;
     let absenceFrames = 0;
@@ -2295,6 +2299,7 @@
     let activeGreetingAudio = null;
     let miniCameraStream = null;
     let currentSessionId = null;
+    let voiceWarmupStarted = false;
     let voiceListening = false;
     let voiceRecognition = null;
     let voiceInputMode = 'idle';
@@ -3396,7 +3401,11 @@
         const response = await fetch(`${aiApiUrl}/sessions/${encodeURIComponent(sessionId)}/turn/stream`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ transcript, turn_id: turnId || undefined }),
+            body: JSON.stringify({
+                transcript,
+                turn_id: turnId || undefined,
+                include_audio: false,
+            }),
             signal,
         });
         if (!response.ok) {
@@ -3409,30 +3418,46 @@
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
+        let shouldContinue = true;
 
-        while (true) {
+        while (shouldContinue) {
             const { done, value } = await reader.read();
             if (done) break;
             buffer += decoder.decode(value, { stream: true });
             const lines = buffer.split('\n');
             buffer = lines.pop() || '';
 
-            lines.forEach((line) => {
+            lines.some((line) => {
                 const trimmed = line.trim();
-                if (!trimmed) return;
+                if (!trimmed) return false;
                 try {
                     const payload = JSON.parse(trimmed);
-                    onChunk(payload);
+                    if (typeof onChunk === 'function') {
+                        const next = onChunk(payload);
+                        if (next === false) {
+                            shouldContinue = false;
+                            return true;
+                        }
+                    }
                 } catch {
                     // ignore malformed line
                 }
+                return false;
             });
+            if (!shouldContinue) {
+                try {
+                    await reader.cancel();
+                } catch {}
+                break;
+            }
         }
 
         const trailing = buffer.trim();
-        if (trailing) {
+        if (shouldContinue && trailing) {
             try {
-                onChunk(JSON.parse(trailing));
+                if (typeof onChunk === 'function') {
+                    onChunk(JSON.parse(trailing));
+                }
             } catch {
                 // ignore malformed trailing payload
             }
@@ -3461,6 +3486,14 @@
             && bytes[11] === 0x45; // E
     }
 
+    function normalizeTextForTtsPlayback(text) {
+        return String(text || '')
+            .replace(/\r?\n+/g, '. ')
+            .replace(/\s*[•\-]\s+/g, ', ')
+            .replace(/\s{2,}/g, ' ')
+            .trim();
+    }
+
     function isAbortError(error) {
         if (!error) return false;
         const name = String(error?.name || '').toLowerCase();
@@ -3468,10 +3501,198 @@
         return name === 'aborterror' || message.includes('aborted') || message.includes('interrupt');
     }
 
+    function isRecognitionAlreadyStartedError(error) {
+        const name = String(error?.name || '').toLowerCase();
+        const message = String(error?.message || '').toLowerCase();
+        return name.includes('invalidstate') || message.includes('already started');
+    }
+
+    function isAutoplayBlockedError(error) {
+        const name = String(error?.name || '').toLowerCase();
+        const message = String(error?.message || '').toLowerCase();
+        return name === 'notallowederror'
+            || message.includes('notallowed')
+            || message.includes('user didn\'t interact')
+            || message.includes('play() failed');
+    }
+
+    function prewarmVoiceRuntime() {
+        if (voiceWarmupStarted) return;
+        voiceWarmupStarted = true;
+        void ensureAiApiUrlReady().catch(() => {});
+        void prewarmVieneuStream().catch(() => {});
+
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextClass) return;
+        try {
+            const warmupAudioContext = new AudioContextClass({ sampleRate: 24000 });
+            const closeWarmupContext = () => {
+                try {
+                    void warmupAudioContext.close();
+                } catch {}
+            };
+
+            const unlockAudio = () => {
+                window.removeEventListener('pointerdown', unlockAudio, true);
+                window.removeEventListener('keydown', unlockAudio, true);
+                void warmupAudioContext.resume().catch(() => {}).finally(closeWarmupContext);
+            };
+
+            if (warmupAudioContext.state === 'suspended') {
+                window.addEventListener('pointerdown', unlockAudio, true);
+                window.addEventListener('keydown', unlockAudio, true);
+                window.setTimeout(() => {
+                    window.removeEventListener('pointerdown', unlockAudio, true);
+                    window.removeEventListener('keydown', unlockAudio, true);
+                    closeWarmupContext();
+                }, 15000);
+            } else {
+                closeWarmupContext();
+            }
+        } catch {}
+    }
+
+    async function prewarmVieneuStream() {
+        try {
+            const aiApiUrl = await ensureAiApiUrlReady();
+            const runtimeTtsEngine = String(resolvedAiApiHealth?.tts_engine || '').trim().toLowerCase();
+            if (runtimeTtsEngine !== 'vieneu') return;
+
+            const warmupPayload = buildSpeechSynthesisPayload('Xin chao');
+            warmupPayload.tts_engine = 'vieneu';
+            const response = await fetch(`${aiApiUrl}/speech/synthesize/stream`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(warmupPayload),
+            });
+            if (!response.ok || !response.body) return;
+            const reader = response.body.getReader();
+            try {
+                await reader.read();
+            } finally {
+                try {
+                    await reader.cancel();
+                } catch {}
+            }
+            console.info('[voice-warmup] vieneu stream ready');
+        } catch (error) {
+            console.warn('[voice-warmup] vieneu stream failed:', error);
+        }
+    }
+
+    function readWavSampleRateFromChunk(chunk) {
+        if (!(chunk instanceof Uint8Array) || chunk.length < 44 || !looksLikeWavBytes(chunk)) {
+            return 24000;
+        }
+        try {
+            const view = new DataView(chunk.buffer, chunk.byteOffset, chunk.byteLength);
+            const sampleRate = view.getUint32(24, true);
+            return Number.isFinite(sampleRate) && sampleRate > 0 ? sampleRate : 24000;
+        } catch {
+            return 24000;
+        }
+    }
+
+    async function playVieneuWavStream(aiApiUrl, speechPayload, speechAbortController) {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextClass) {
+            throw new Error('AudioContext is not supported for VieNeu realtime stream playback.');
+        }
+
+        const response = await fetch(`${aiApiUrl}/speech/synthesize/stream`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(speechPayload),
+            signal: speechAbortController.signal,
+        });
+        if (!response.ok || !response.body) {
+            throw new Error(`synthesize stream failed: HTTP ${response.status}`);
+        }
+
+        const reader = response.body.getReader();
+        const audioCtx = new AudioContextClass({ sampleRate: 24000 });
+        if (audioCtx.state === 'suspended') {
+            await audioCtx.resume();
+        }
+        if (audioCtx.state !== 'running') {
+            throw new Error(`AudioContext is not running (${audioCtx.state})`);
+        }
+        let nextPlayTime = audioCtx.currentTime + 0.08;
+        let streamSampleRate = 24000;
+        let streamHeaderParsed = false;
+
+        try {
+            while (true) {
+                if (speechAbortController.signal.aborted) {
+                    throw new Error('bot speech interrupted');
+                }
+
+                const { done, value } = await reader.read();
+                if (done) break;
+                if (!value || value.length === 0) continue;
+
+                let pcmChunk = value;
+                if (!streamHeaderParsed) {
+                    if (pcmChunk.length < 44) {
+                        continue;
+                    }
+                    if (looksLikeWavBytes(pcmChunk)) {
+                        streamSampleRate = readWavSampleRateFromChunk(pcmChunk);
+                        pcmChunk = pcmChunk.slice(44);
+                    }
+                    streamHeaderParsed = true;
+                } else if (looksLikeWavBytes(pcmChunk) && pcmChunk.length > 44) {
+                    // Some backends emit repeated WAV headers per chunk.
+                    // Strip the header and schedule only PCM samples.
+                    pcmChunk = pcmChunk.slice(44);
+                }
+
+                if (!pcmChunk || pcmChunk.length < 2) continue;
+                const sampleCount = Math.floor(pcmChunk.byteLength / 2);
+                if (sampleCount <= 0) continue;
+
+                const int16 = new Int16Array(pcmChunk.buffer, pcmChunk.byteOffset, sampleCount);
+                const float32 = new Float32Array(sampleCount);
+                for (let index = 0; index < sampleCount; index += 1) {
+                    float32[index] = int16[index] / 32768;
+                }
+
+                const buffer = audioCtx.createBuffer(1, float32.length, streamSampleRate);
+                buffer.getChannelData(0).set(float32);
+                const source = audioCtx.createBufferSource();
+                source.buffer = buffer;
+                source.connect(audioCtx.destination);
+
+                if (nextPlayTime < audioCtx.currentTime) {
+                    nextPlayTime = audioCtx.currentTime;
+                }
+                source.start(nextPlayTime);
+                nextPlayTime += buffer.duration;
+            }
+
+            const remainingSec = Math.max(0, nextPlayTime - audioCtx.currentTime);
+            if (remainingSec > 0.01) {
+                await new Promise((resolve) => window.setTimeout(resolve, remainingSec * 1000 + 40));
+            }
+        } finally {
+            try {
+                await reader.cancel();
+            } catch {}
+            try {
+                await audioCtx.close();
+            } catch {}
+        }
+    }
+
     function interruptBotSpeech() {
         if (activeBotSpeechAbortController) {
             activeBotSpeechAbortController.abort();
             activeBotSpeechAbortController = null;
+        }
+        if ('speechSynthesis' in window) {
+            try {
+                window.speechSynthesis.cancel();
+            } catch {}
         }
         if (activeGreetingAudio) {
             try {
@@ -3693,50 +3914,56 @@
         interruptBotSpeech();
         const speechAbortController = new AbortController();
         activeBotSpeechAbortController = speechAbortController;
-        const speechPayload = buildSpeechSynthesisPayload(safeText);
+        const ttsText = normalizeTextForTtsPlayback(safeText);
+        const speechPayload = buildSpeechSynthesisPayload(ttsText);
+        const requestedTtsEngine = String(speechPayload?.tts_engine || '').trim().toLowerCase();
+        const runtimeTtsEngine = String(resolvedAiApiHealth?.tts_engine || '').trim().toLowerCase();
+        const shouldUseVieneuRealtime = requestedTtsEngine === 'vieneu'
+            || (requestedTtsEngine === 'auto' && runtimeTtsEngine === 'vieneu');
+        if (shouldUseVieneuRealtime) {
+            speechPayload.tts_engine = 'vieneu';
+        } else if (requestedTtsEngine !== 'local') {
+            speechPayload.tts_engine = 'edge';
+            if (!Number.isFinite(Number(speechPayload.rate)) || Number(speechPayload.rate) < 165) {
+                speechPayload.rate = 165;
+            }
+            delete speechPayload.tts_vieneu_voice_id;
+            delete speechPayload.tts_vieneu_ref_audio;
+            delete speechPayload.tts_vieneu_ref_text;
+            delete speechPayload.tts_vieneu_temperature;
+            delete speechPayload.tts_vieneu_top_k;
+            delete speechPayload.tts_vieneu_max_chars;
+        }
         const forcedVieneu = isVieneuForced(speechPayload);
-        // VieNeu streaming may emit many small WAV fragments and sound choppy.
-        // Prefer single-response synthesis for forced VieNeu playback.
-        const allowStreamPlayback = !forcedVieneu;
-
-        const streamPlayer = allowStreamPlayback ? createStreamingAudioPlayer() : null;
-        if (streamPlayer) {
+        if (forcedVieneu) {
+            setFaceState('happy');
+            botSpeechActive = true;
             try {
-                const response = await fetch(`${aiApiUrl}/speech/synthesize/stream`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(speechPayload),
-                    signal: speechAbortController.signal,
-                });
-                if (!response.ok || !response.body) {
-                    throw new Error(`synthesize stream failed: HTTP ${response.status}`);
-                }
-
-                const reader = response.body.getReader();
-                while (true) {
-                    if (speechAbortController.signal.aborted) {
-                        throw new Error('bot speech interrupted');
-                    }
-                    const { done, value } = await reader.read();
-                    if (done) break;
-                    if (value) {
-                        streamPlayer.appendChunk(value);
-                    }
-                }
-                await streamPlayer.finalize();
+                await playVieneuWavStream(aiApiUrl, speechPayload, speechAbortController);
                 if (activeBotSpeechAbortController === speechAbortController) {
                     activeBotSpeechAbortController = null;
+                }
+                botSpeechActive = false;
+                if (!isMenuOpen && !robotController.isCinematicRunning) {
+                    setFaceState('normal');
                 }
                 return;
             } catch (error) {
                 if (isAbortError(error)) {
-                    streamPlayer.cancel();
                     if (activeBotSpeechAbortController === speechAbortController) {
                         activeBotSpeechAbortController = null;
                     }
+                    botSpeechActive = false;
+                    if (!isMenuOpen && !robotController.isCinematicRunning) {
+                        setFaceState('normal');
+                    }
                     return;
                 }
-                console.warn('[voice-tts-stream] fallback to blob playback:', error);
+                console.warn('[voice-vieneu-stream] fallback to blob playback:', error);
+                botSpeechActive = false;
+                if (!isMenuOpen && !robotController.isCinematicRunning) {
+                    setFaceState('normal');
+                }
             }
         }
 
@@ -3764,24 +3991,11 @@
             botSpeechActive = true;
             try {
                 await audio.play();
-            } catch {
+            } catch (playbackError) {
                 if (speechAbortController.signal.aborted) {
                     return;
                 }
-                if (forcedVieneu) {
-                    throw new Error('VieNeu playback failed and browser fallback is disabled while forcing VieNeu.');
-                }
-                if ('speechSynthesis' in window) {
-                    const utterance = new SpeechSynthesisUtterance(safeText);
-                    utterance.lang = 'vi-VN';
-                    window.speechSynthesis.cancel();
-                    window.speechSynthesis.speak(utterance);
-                    await new Promise((resolve) => {
-                        utterance.onend = () => resolve();
-                        utterance.onerror = () => resolve();
-                    });
-                }
-                return;
+                throw new Error(`Audio playback failed: ${String(playbackError?.message || playbackError || 'unknown error')}`);
             }
             await new Promise((resolve) => {
                 audio.onended = () => resolve();
@@ -3895,6 +4109,9 @@
                     }
                     ensureLatestTurn(turnId);
                 };
+                const turnStartedAt = performance.now();
+                let turnFirstTextAt = 0;
+                let turnSpeechStartAt = 0;
 
                 try {
                     ensureNotStale();
@@ -3926,10 +4143,14 @@
                             if (chunk?.type === 'text') {
                                 replyPayload = chunk;
                                 replyText = String(chunk.content || '').trim();
+                                if (!turnFirstTextAt) {
+                                    turnFirstTextAt = performance.now();
+                                }
                                 if (Array.isArray(chunk.cart)) {
                                     updateMiniCart(chunk.cart);
                                 }
-                                return;
+                                // Stop stream as soon as text is available, then synthesize once from full sentence.
+                                return false;
                             }
                             if (chunk?.type === 'error') {
                                 streamChunkErrorMessage = String(chunk.message || '').trim() || 'Streaming turn failed.';
@@ -4016,6 +4237,7 @@
                         appendChat('assistant', replyText);
                         if (streamedAudioChunks === 0 && !turnAbortController.signal.aborted) {
                             setVoiceStatus('Robot dang tra loi...');
+                            turnSpeechStartAt = performance.now();
                             await playBotSpeech(replyText);
                         }
                         robotController.reactToConversation({
@@ -4038,6 +4260,17 @@
                             toggleMenu();
                         }
                     }
+                    const turnTotalMs = Math.round(performance.now() - turnStartedAt);
+                    const firstTextMs = turnFirstTextAt ? Math.round(turnFirstTextAt - turnStartedAt) : null;
+                    const speechStartMs = turnSpeechStartAt ? Math.round(turnSpeechStartAt - turnStartedAt) : null;
+                    console.info('[voice-latency]', {
+                        sessionId: currentSessionId,
+                        turnId,
+                        firstTextMs,
+                        speechStartMs,
+                        turnTotalMs,
+                        mode: voiceInputMode,
+                    });
                     setVoiceStatus(voiceListening ? 'Dang nghe ban noi...' : 'Da tra loi xong.');
                 } catch (error) {
                     if (isAbortError(error)) {
@@ -4329,8 +4562,27 @@
             }
         } catch (error) {
             console.warn('[backend-stt] fallback failed:', error);
+            if (voiceListening && voiceRecognition) {
+                try {
+                    voiceRecognition.start();
+                    voiceInputMode = 'browser';
+                    setVoiceStatus('Dang nghe ban noi...');
+                    return;
+                } catch (browserRestartError) {
+                    if (isRecognitionAlreadyStartedError(browserRestartError)) {
+                        voiceInputMode = 'browser';
+                        setVoiceStatus('Dang nghe ban noi...');
+                        return;
+                    }
+                }
+            }
             const detail = error instanceof Error ? error.message : String(error || '');
-            setVoiceStatus(`Khong bat duoc STT. Hay cap quyen microphone roi thu lai. ${detail}`.trim());
+            const permissionDenied = /not-allowed|service-not-allowed|permission|denied/i.test(detail);
+            setVoiceStatus(
+                permissionDenied
+                    ? 'Khong bat duoc STT, hay cap quyen microphone roi thu lai.'
+                    : 'STT tam ngat. Bam Bat nghe de thu lai.',
+            );
         }
     }
 
@@ -4392,7 +4644,11 @@
                 return;
             }
             if (fallbackErrors.includes(errCode)) {
-                void fallbackToBackendStt('STT browser khong on dinh, da chuyen sang backend STT.');
+                if (resolvedAiHasRealtimeStack) {
+                    void fallbackToBackendStt('STT browser tam ngat, dang chuyen sang backend STT...');
+                } else {
+                    setVoiceStatus('Dang nghe ban noi...');
+                }
                 return;
             }
             setVoiceStatus('STT tam ngat, dang thu ket noi lai...');
@@ -4449,6 +4705,22 @@
                 setupSpeechRecognition();
             }
 
+            if (voiceRecognition) {
+                try {
+                    voiceRecognition.start();
+                    voiceInputMode = 'browser';
+                    setVoiceStatus('Dang nghe ban noi...');
+                    return;
+                } catch (browserError) {
+                    if (isRecognitionAlreadyStartedError(browserError)) {
+                        voiceInputMode = 'browser';
+                        setVoiceStatus('Dang nghe ban noi...');
+                        return;
+                    }
+                    console.warn('[stt] browser speech start failed:', browserError);
+                }
+            }
+
             try {
                 await ensureAiApiUrlReady();
                 if (resolvedAiHasRealtimeStack) {
@@ -4460,18 +4732,11 @@
                 console.warn('[stt] backend streaming unavailable:', backendError);
             }
 
-            if (voiceRecognition) {
-                try {
-                    voiceRecognition.start();
-                    voiceInputMode = 'browser';
-                    setVoiceStatus('Dang nghe ban noi...');
-                    return;
-                } catch (browserError) {
-                    console.warn('[stt] browser speech start failed:', browserError);
-                }
-            }
-
-            setVoiceStatus('Khong bat duoc STT, hay cap quyen microphone roi thu lai.');
+            setVoiceStatus(
+                source === 'manual'
+                    ? 'Khong bat duoc STT, hay cap quyen microphone roi thu lai.'
+                    : 'STT tam ngat. Bam Bat nghe de thu lai.',
+            );
             voiceListening = false;
             if (source === 'manual') {
                 voicePinnedByUser = false;
@@ -4487,24 +4752,56 @@
         void startPipeline();
     }
 
+    function clearAutoGreetingRetry() {
+        if (autoGreetingRetryTimer) {
+            window.clearTimeout(autoGreetingRetryTimer);
+            autoGreetingRetryTimer = null;
+        }
+        autoGreetingRetryCount = 0;
+    }
+
+    function scheduleAutoGreetingRetry() {
+        if (!presenceDetected || autoGreetingRetryTimer || autoGreetingRetryCount >= AUTO_GREETING_MAX_RETRIES) {
+            return;
+        }
+        autoGreetingRetryCount += 1;
+        const delayMs = AUTO_GREETING_RETRY_BASE_MS * autoGreetingRetryCount;
+        autoGreetingRetryTimer = window.setTimeout(() => {
+            autoGreetingRetryTimer = null;
+            if (!presenceDetected) return;
+            void runAutoGreeting();
+        }, delayMs);
+    }
+
     async function runAutoGreeting() {
         if (autoGreetingInFlight) return;
         const now = Date.now();
         if (now - lastAutoGreetingAt < AUTO_GREETING_COOLDOWN_MS) return;
-        lastAutoGreetingAt = now;
         autoGreetingInFlight = true;
         try {
             const payload = await startConversationSession('camera');
             const greetingText = String(payload?.reply_text || '').trim();
-            if (greetingText) {
-                appendChat('assistant', greetingText);
-                setVoiceStatus('Robot dang chao khach...');
-                await playBotSpeech(greetingText);
-                setVoiceStatus(voiceListening ? 'Dang nghe ban noi...' : 'San sang giao tiep.');
+            if (!greetingText) {
+                throw new Error('empty greeting text');
             }
+
+            appendChat('assistant', greetingText);
+            setVoiceStatus('Robot dang chao khach...');
+            await playBotSpeech(greetingText);
+
+            lastAutoGreetingAt = Date.now();
+            clearAutoGreetingRetry();
+            setVoiceStatus(voiceListening ? 'Dang nghe ban noi...' : 'San sang giao tiep.');
         } catch (error) {
             console.warn('[auto-greeting] failed:', error);
-            setVoiceStatus('Khong tao duoc loi chao tu dong.');
+            if (isAutoplayBlockedError(error)) {
+                setVoiceStatus('Am thanh dang bi chan. Cham vao man hinh 1 lan de mo tieng robot.');
+            } else if (autoGreetingRetryCount >= AUTO_GREETING_MAX_RETRIES) {
+                setVoiceStatus('Chua tao duoc loi chao. Dang doi backend san sang...');
+            } else {
+                setVoiceStatus('Dang khoi dong loi chao...');
+            }
+            scheduleAutoGreetingRetry();
         } finally {
             autoGreetingInFlight = false;
         }
@@ -4568,6 +4865,7 @@
                     presenceEnteredAt = now;
                     presenceLeftAt = 0;
                     chatClearedAfterAbsence = false;
+                    clearAutoGreetingRetry();
                     setVoiceStatus('Da thay khach, robot bat dau chao va nghe.');
                     void robotController.dispatchTrigger('presence.enter', {
                         presence: 'enter',
@@ -4607,6 +4905,7 @@
                 }
                 presenceDetected = false;
                 presenceEnteredAt = 0;
+                clearAutoGreetingRetry();
                 if (!presenceLeftAt) {
                     presenceLeftAt = now;
                 }
@@ -4875,7 +5174,7 @@
         updateMenuPanelHeight(0);
     } else {
         setupSpeechRecognition();
-        void ensureAiApiUrlReady().catch(() => {});
+        prewarmVoiceRuntime();
         setVoiceStatus('Dang cho khach vao vung camera...');
         updateMenuPanelHeight(3);
         void initializeMiniCamera();

@@ -12,7 +12,9 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unicodedata
+import warnings
 import wave
 from dataclasses import dataclass
 from difflib import SequenceMatcher
@@ -30,7 +32,35 @@ from app.config import Settings
 from app.models import MenuItem
 from app.services.core_backend_client import CoreBackendClient
 
-logger = logging.getLogger(__name__)
+os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+os.environ.setdefault("HF_HUB_ETAG_TIMEOUT", "8")
+os.environ.setdefault("HF_HUB_DOWNLOAD_TIMEOUT", "30")
+
+logger = logging.getLogger("uvicorn.error")
+logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
+logging.getLogger("torch.distributed.elastic.multiprocessing.redirects").setLevel(logging.ERROR)
+
+warnings.filterwarnings(
+    "ignore",
+    message=r"The `local_dir_use_symlinks` argument is deprecated.*",
+    category=UserWarning,
+)
+warnings.filterwarnings(
+    "ignore",
+    message=r"The `resume_download` argument is deprecated.*",
+    category=UserWarning,
+)
+warnings.filterwarnings(
+    "ignore",
+    message=r"Redirects are currently not supported in Windows or MacOs\.",
+    category=UserWarning,
+)
+warnings.filterwarnings(
+    "ignore",
+    message=r".*unauthenticated requests to the HF Hub.*",
+    category=UserWarning,
+)
 
 SpeechMode = Literal["order", "caption"]
 
@@ -139,6 +169,10 @@ class SpeechService:
         self._stt_hotwords_cache: str | None = None
         self._lexicon_cache: list[tuple[str, str]] | None = None
         self._menu_items_cache: list[MenuItem] | None = None
+        self._vieneu_last_error: str = ""
+        self._vieneu_last_init_ms: int = 0
+        self._vieneu_prewarmed_at: float = 0.0
+        self._vieneu_prewarm_ms: int = 0
 
     async def synthesize(
         self,
@@ -236,6 +270,44 @@ class SpeechService:
         await self._ensure_menu_items_loaded()
         await anyio.to_thread.run_sync(self._preload_stt_assets)
 
+    async def preload_tts(self) -> None:
+        if not self.settings.tts_preload:
+            return
+        resolved_engine = self._resolve_tts_engine()
+        if resolved_engine not in {"auto", "vieneu"}:
+            return
+        if not self._is_vieneu_available():
+            logger.warning("tts_prewarm_skip reason=vieneu_not_installed")
+            return
+        started_at = time.perf_counter()
+        try:
+            await anyio.to_thread.run_sync(self._preload_vieneu_sync)
+            self._vieneu_prewarm_ms = int((time.perf_counter() - started_at) * 1000)
+            self._vieneu_prewarmed_at = time.time()
+            logger.info(
+                "tts_prewarm_ms=%s engine=vieneu model=%s",
+                self._vieneu_prewarm_ms,
+                self.settings.tts_vieneu_model_path.strip() or DEFAULT_VIENEU_CPU_MODEL,
+            )
+        except Exception as exc:
+            self._vieneu_last_error = f"{type(exc).__name__}: {exc}"
+            logger.exception("tts_prewarm_failed engine=vieneu")
+
+    def get_vieneu_diagnostics(self) -> dict[str, object]:
+        return {
+            "available": self._is_vieneu_available(),
+            "engine": self.settings.tts_engine,
+            "model_path": self.settings.tts_vieneu_model_path.strip() or DEFAULT_VIENEU_CPU_MODEL,
+            "instance_ready": self._vieneu_instance is not None,
+            "last_init_ms": self._vieneu_last_init_ms,
+            "prewarm_ms": self._vieneu_prewarm_ms,
+            "prewarmed_at_unix": self._vieneu_prewarmed_at or 0,
+            "last_error": self._vieneu_last_error,
+        }
+
+    def _preload_vieneu_sync(self) -> None:
+        self._get_vieneu_instance()
+
     async def _ensure_menu_items_loaded(self) -> None:
         if self._menu_items_cache is not None or self.core_client is None:
             return
@@ -291,33 +363,89 @@ class SpeechService:
 
             configured_model_path = self.settings.tts_vieneu_model_path.strip()
             model_path = configured_model_path or DEFAULT_VIENEU_CPU_MODEL
+            init_attempts: list[dict[str, object]]
             if model_path:
-                init_attempts = (
-                    {"backbone_repo": model_path},
-                    {"model_path": model_path},
-                    {},
-                )
+                init_attempts = []
+                try:
+                    signature = inspect.signature(Vieneu)
+                    accepted_params = set(signature.parameters.keys())
+                    has_var_keyword = any(
+                        parameter.kind == inspect.Parameter.VAR_KEYWORD
+                        for parameter in signature.parameters.values()
+                    )
+                except (TypeError, ValueError):
+                    accepted_params = set()
+                    has_var_keyword = False
+
+                if has_var_keyword or not accepted_params or "backbone_repo" in accepted_params:
+                    init_attempts.append({"backbone_repo": model_path})
+                if (not has_var_keyword) and "model_path" in accepted_params:
+                    init_attempts.append({"model_path": model_path})
+                init_attempts.append({})
             else:
-                init_attempts = ({},)
+                init_attempts = [{}]
+
+            is_local_model_path = False
+            try:
+                is_local_model_path = Path(model_path).exists()
+            except Exception:
+                is_local_model_path = False
+            prefers_offline_cache = bool(model_path) and ("/" in model_path) and not is_local_model_path
 
             last_error: Exception | None = None
             for kwargs in init_attempts:
-                try:
-                    self._vieneu_instance = Vieneu(**kwargs)
-                    if kwargs:
-                        logger.info("VieNeu initialized with kwargs=%s", kwargs)
+                offline_modes = [False]
+                if prefers_offline_cache:
+                    offline_modes = [True, False]
+
+                for offline_mode in offline_modes:
+                    init_started_at = time.perf_counter()
+                    previous_offline_env = os.getenv("HF_HUB_OFFLINE")
+                    if offline_mode:
+                        os.environ["HF_HUB_OFFLINE"] = "1"
+                    else:
+                        if previous_offline_env is None:
+                            os.environ.pop("HF_HUB_OFFLINE", None)
+                        else:
+                            os.environ["HF_HUB_OFFLINE"] = previous_offline_env
+
+                    try:
+                        self._vieneu_instance = Vieneu(**kwargs)
+                        self._vieneu_last_init_ms = int((time.perf_counter() - init_started_at) * 1000)
+                        logger.info(
+                            "vieneu_init_ok ms=%s kwargs=%s offline=%s",
+                            self._vieneu_last_init_ms,
+                            kwargs,
+                            offline_mode,
+                        )
+                        self._vieneu_last_error = ""
+                        break
+                    except Exception as exc:
+                        last_error = exc
+                        self._vieneu_last_error = f"{type(exc).__name__}: {exc}"
+                        logger.warning(
+                            "vieneu_init_failed kwargs=%s offline=%s err=%s",
+                            kwargs,
+                            offline_mode,
+                            self._vieneu_last_error,
+                        )
+                    finally:
+                        if previous_offline_env is None:
+                            os.environ.pop("HF_HUB_OFFLINE", None)
+                        else:
+                            os.environ["HF_HUB_OFFLINE"] = previous_offline_env
+
+                if self._vieneu_instance is not None:
                     break
-                except Exception as exc:
-                    last_error = exc
-                    logger.warning("VieNeu init failed with kwargs=%s: %s", kwargs, exc)
 
             if self._vieneu_instance is None and last_error is not None:
                 raise last_error
 
             logger.info(
-                "VieNeu-TTS initialized (requested=%s, effective=%s)",
+                "vieneu_ready requested=%s effective=%s init_ms=%s",
                 configured_model_path or "default",
                 model_path or "default",
+                self._vieneu_last_init_ms,
             )
             return self._vieneu_instance
 
@@ -404,6 +532,7 @@ class SpeechService:
         text: str,
         vieneu_overrides: dict[str, object] | None = None,
     ):
+        request_started_at = time.perf_counter()
         loop = asyncio.get_running_loop()
         queue: asyncio.Queue[object] = asyncio.Queue()
         done_sentinel = object()
@@ -426,6 +555,9 @@ class SpeechService:
 
         threading.Thread(target=worker, daemon=True, name="vieneu-stream").start()
 
+        first_chunk_at = 0.0
+        chunk_count = 0
+        chunk_bytes = 0
         while True:
             item = await queue.get()
             if item is done_sentinel:
@@ -435,7 +567,19 @@ class SpeechService:
             if isinstance(item, (bytes, bytearray)):
                 chunk = bytes(item)
                 if chunk:
+                    if not first_chunk_at:
+                        first_chunk_at = time.perf_counter()
+                    chunk_count += 1
+                    chunk_bytes += len(chunk)
                     yield chunk
+        logger.info(
+            "tts_stream_ms=%s tts_first_chunk_ms=%s chunks=%s bytes=%s engine=vieneu text_chars=%s",
+            int((time.perf_counter() - request_started_at) * 1000),
+            int((first_chunk_at - request_started_at) * 1000) if first_chunk_at else -1,
+            chunk_count,
+            chunk_bytes,
+            len(text),
+        )
 
     def _synthesize_with_vieneu_stream_sync(
         self,
@@ -499,6 +643,7 @@ class SpeechService:
         if not safe_text:
             return SynthesizedAudio(content=b"", media_type="audio/wav")
 
+        started_at = time.perf_counter()
         engine = self._get_vieneu_instance()
         with self._vieneu_lock:
             infer_kwargs = self._build_vieneu_infer_kwargs(
@@ -511,6 +656,12 @@ class SpeechService:
             if isinstance(synthesized, (bytes, bytearray)):
                 raw = bytes(synthesized)
                 if raw:
+                    logger.info(
+                        "tts_sync_ms=%s bytes=%s engine=vieneu text_chars=%s",
+                        int((time.perf_counter() - started_at) * 1000),
+                        len(raw),
+                        len(safe_text),
+                    )
                     return SynthesizedAudio(content=raw, media_type="audio/wav")
 
             save_fn = getattr(engine, "save", None)
@@ -524,6 +675,12 @@ class SpeechService:
                         os.unlink(temp_path)
 
                 if audio_bytes:
+                    logger.info(
+                        "tts_sync_ms=%s bytes=%s engine=vieneu text_chars=%s",
+                        int((time.perf_counter() - started_at) * 1000),
+                        len(audio_bytes),
+                        len(safe_text),
+                    )
                     return SynthesizedAudio(content=audio_bytes, media_type="audio/wav")
 
         raise RuntimeError("VieNeu khong tao duoc audio.")

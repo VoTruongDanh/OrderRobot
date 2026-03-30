@@ -37,6 +37,7 @@ class Settings:
     tts_vieneu_temperature: float = 1.0
     tts_vieneu_top_k: int = 50
     tts_vieneu_max_chars: int = 256
+    tts_preload: bool = True
     tts_voice: str = "vietnam"
     tts_rate: str = "165"
     stt_model: str = "small"
@@ -98,6 +99,7 @@ def get_settings() -> Settings:
         tts_vieneu_temperature=max(0.1, min(2.0, float(os.getenv("TTS_VIENEU_TEMPERATURE", "1.0")))),
         tts_vieneu_top_k=max(1, min(200, int(os.getenv("TTS_VIENEU_TOP_K", "50")))),
         tts_vieneu_max_chars=max(32, min(512, int(os.getenv("TTS_VIENEU_MAX_CHARS", "256")))),
+        tts_preload=os.getenv("TTS_PRELOAD", "true").strip().lower() not in {"0", "false", "no"},
         tts_voice=os.getenv("TTS_VOICE", "vietnam").strip(),
         tts_rate=os.getenv("TTS_RATE", "165").strip(),
         stt_model=os.getenv("STT_MODEL", "small").strip(),

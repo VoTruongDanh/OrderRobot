@@ -146,7 +146,7 @@ try {
     --reload-dir $coreBackendDir `
     --reload-dir $dataDir `
     --port $corePort `
-    --app-dir $coreBackendDir 2>&1 | ForEach-Object { Write-Host $_ }
+    --app-dir $coreBackendDir
 } finally {
   if ($null -ne $previousNativeErrorPreference) {
     $PSNativeCommandUseErrorActionPreference = $previousNativeErrorPreference

@@ -157,8 +157,10 @@ _AUTO_ADD_THRESHOLD = 0.85
 SIMPLE_SCENES = {"reset", "cart_updated", "remove_item",
                  "order_created", "cart_follow_up",
                  "ask_confirmation", "clarify_item", "greeting_intro"}
-# Scenes that benefit from LLM context and creativity
-COMPLEX_SCENES = {"recommendation", "greeting", "fallback"}
+# Scenes that benefit from LLM context and creativity.
+# Keep this narrow to avoid voice turns blocking on slow bridge responses.
+COMPLEX_SCENES = {"recommendation"}
+BRIDGE_RESPONSE_BUDGET_SECONDS = 10.0
 
 MENU_CACHE_TTL = 60.0  # seconds
 
@@ -225,7 +227,9 @@ class ConversationEngine:
             scene="greeting_intro",
             reply_seed="Chào mừng bạn. Hôm nay bạn muốn thử món nào để mình tư vấn ngay?",
         )
-        return await self._build_response(session_id, decision)
+        # Greeting must not block on core menu availability.
+        # Cart is empty on session start, so menu lookup is unnecessary.
+        return await self._build_response(session_id, decision, menu=[])
 
     async def reset_session(self, session_id: str) -> ConversationResponse:
         async with self.lock:
@@ -610,6 +614,7 @@ class ConversationEngine:
         session_id: str,
         transcript: str,
         turn_id: str | None = None,
+        include_audio: bool = True,
     ):
         """Stream conversation response with interleaved text and audio for lower latency.
         
@@ -632,7 +637,7 @@ class ConversationEngine:
         }
 
         # Stream audio with the shared service so we keep runtime caches warm.
-        if self.speech_service is None:
+        if not include_audio or self.speech_service is None:
             return
 
         try:
@@ -852,7 +857,8 @@ class ConversationEngine:
         turn_id: str | None = None,
     ) -> ConversationResponse:
         state = self.sessions[session_id]
-        menu = menu or await self._get_menu()
+        if menu is None:
+            menu = await self._get_menu()
         cart = build_cart_items(state.cart, menu)
         seed_text = ensure_frontend_safe_reply(decision.scene, decision.reply_seed)
         prompt_payload = {
@@ -884,12 +890,17 @@ class ConversationEngine:
         if self.provider_client is not None and decision.scene in COMPLEX_SCENES:
             try:
                 bridge_started_at = time.perf_counter()
-                provider_reply = await self.provider_client.compose_reply(
-                    prompt_payload,
-                    session_id=session_id,
-                    turn_id=turn_id,
-                    latest_wins=True,
+                bridge_budget = max(
+                    3.0,
+                    min(self.settings.bridge_timeout_seconds, BRIDGE_RESPONSE_BUDGET_SECONDS),
                 )
+                async with asyncio.timeout(bridge_budget):
+                    provider_reply = await self.provider_client.compose_reply(
+                        prompt_payload,
+                        session_id=session_id,
+                        turn_id=turn_id,
+                        latest_wins=True,
+                    )
                 reply_text = provider_reply["reply_text"]
                 voice_style = provider_reply.get("voice_style", self.settings.voice_style)
                 reply_source = "bridge"
@@ -900,6 +911,17 @@ class ConversationEngine:
                     turn_id or "",
                     decision.scene,
                 )
+            except TimeoutError:
+                logger.warning(
+                    "Bridge call timeout after %ss for scene '%s' session_id=%s turn_id=%s; using local fallback",
+                    bridge_budget,
+                    decision.scene,
+                    session_id,
+                    turn_id or "",
+                )
+                reply_text = render_fallback_reply(prompt_payload)
+                voice_style = self.settings.voice_style
+                reply_source = "fallback"
             except Exception as exc:
                 logger.warning("Bridge call failed for scene '%s': %s - using local fallback", decision.scene, exc)
                 reply_text = render_fallback_reply(prompt_payload)

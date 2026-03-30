@@ -220,7 +220,7 @@ try {
     --reload-dir $aiBackendDir `
     --reload-dir $dataDir `
     --port $aiPort `
-    --app-dir $aiBackendDir 2>&1 | ForEach-Object { Write-Host $_ }
+    --app-dir $aiBackendDir
 } finally {
   if ($null -ne $previousNativeErrorPreference) {
     $PSNativeCommandUseErrorActionPreference = $previousNativeErrorPreference

@@ -7,6 +7,7 @@ import logging
 import subprocess
 import sys
 import time
+from typing import Awaitable
 
 import httpx
 from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
@@ -37,7 +38,7 @@ settings = get_settings()
 core_client = CoreBackendClient(settings.core_backend_url, settings.request_timeout_seconds)
 speech_service = SpeechService(settings, core_client)
 conversation_engine = ConversationEngine(settings, core_client, speech_service)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("uvicorn.error")
 SUPPORTED_TTS_ENGINES = {"auto", "vieneu", "edge", "local", "pyttsx3"}
 VIENEU_INSTALL_TIMEOUT_SECONDS = 900
 
@@ -54,20 +55,29 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def preload_speech_model() -> None:
-    if not settings.stt_preload:
+    preload_jobs: list[Awaitable[None]] = []
+    if settings.stt_preload:
+        preload_jobs.append(speech_service.preload_stt())
+    if settings.tts_preload:
+        preload_jobs.append(speech_service.preload_tts())
+
+    if not preload_jobs:
         return
 
-    task = asyncio.create_task(speech_service.preload_stt())
-
-    def report_preload_failure(background_task: asyncio.Task[None]) -> None:
-        try:
-            background_task.result()
-        except asyncio.CancelledError:
-            logger.debug("STT preload task cancelled during shutdown.")
-        except Exception:
-            logger.exception("STT preload failed")
-
-    task.add_done_callback(report_preload_failure)
+    preload_started_at = time.perf_counter()
+    try:
+        await asyncio.wait_for(asyncio.gather(*preload_jobs), timeout=180.0)
+        logger.info("speech_preload_ms=%s status=ok", int((time.perf_counter() - preload_started_at) * 1000))
+    except asyncio.TimeoutError:
+        logger.warning(
+            "speech_preload_ms=%s status=timeout budget_s=180",
+            int((time.perf_counter() - preload_started_at) * 1000),
+        )
+    except Exception:
+        logger.exception(
+            "speech_preload_ms=%s status=error",
+            int((time.perf_counter() - preload_started_at) * 1000),
+        )
 
 
 @app.on_event("shutdown")
@@ -214,6 +224,15 @@ async def list_vieneu_voices() -> dict[str, object]:
     }
 
 
+@app.get("/speech/vieneu/diag")
+async def vieneu_diag() -> dict[str, object]:
+    diagnostics = speech_service.get_vieneu_diagnostics()
+    return {
+        "status": "ok",
+        "diag": diagnostics,
+    }
+
+
 def _run_vieneu_install() -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, "-m", "pip", "install", "vieneu"],
@@ -317,6 +336,7 @@ async def handle_turn_stream(session_id: str, payload: TurnRequest) -> Streaming
                 session_id,
                 payload.transcript,
                 turn_id=payload.turn_id,
+                include_audio=payload.include_audio,
             ):
                 # Yield JSON-encoded chunks: {"type": "text", "content": "..."} or {"type": "audio", "content": base64}
                 yield json.dumps(chunk, ensure_ascii=False).encode("utf-8") + b"\n"
@@ -405,6 +425,7 @@ async def save_session_feedback(session_id: str, payload: FeedbackRequest) -> di
 
 @app.post("/speech/synthesize")
 async def synthesize_speech(payload: SpeechSynthesisRequest) -> Response:
+    started_at = time.perf_counter()
     vieneu_overrides = build_vieneu_overrides(payload)
     try:
         audio = await speech_service.synthesize(
@@ -413,7 +434,19 @@ async def synthesize_speech(payload: SpeechSynthesisRequest) -> Response:
             payload.rate,
             vieneu_overrides=vieneu_overrides,
         )
+        logger.info(
+            "tts_total_ms=%s endpoint=synthesize chars=%s engine=%s",
+            int((time.perf_counter() - started_at) * 1000),
+            len((payload.text or "").strip()),
+            str((vieneu_overrides or {}).get("engine") or settings.tts_engine),
+        )
     except Exception as exc:
+        logger.exception(
+            "tts_total_ms=%s endpoint=synthesize status=error chars=%s engine=%s",
+            int((time.perf_counter() - started_at) * 1000),
+            len((payload.text or "").strip()),
+            str((vieneu_overrides or {}).get("engine") or settings.tts_engine),
+        )
         raise HTTPException(status_code=502, detail=f"Khong the tao giong noi: {exc}") from exc
 
     return Response(content=audio.content, media_type=audio.media_type)
@@ -421,19 +454,38 @@ async def synthesize_speech(payload: SpeechSynthesisRequest) -> Response:
 
 @app.post("/speech/synthesize/stream")
 async def synthesize_speech_stream(payload: SpeechSynthesisRequest) -> StreamingResponse:
+    started_at = time.perf_counter()
     vieneu_overrides = build_vieneu_overrides(payload)
     try:
         async def audio_stream():
+            stream_bytes = 0
+            stream_chunks = 0
             async for chunk in speech_service.synthesize_stream(
                 payload.text,
                 payload.voice,
                 payload.rate,
                 vieneu_overrides=vieneu_overrides,
             ):
+                stream_chunks += 1
+                stream_bytes += len(chunk)
                 yield chunk
+            logger.info(
+                "tts_total_ms=%s endpoint=synthesize_stream chars=%s engine=%s chunks=%s bytes=%s",
+                int((time.perf_counter() - started_at) * 1000),
+                len((payload.text or "").strip()),
+                str((vieneu_overrides or {}).get("engine") or settings.tts_engine),
+                stream_chunks,
+                stream_bytes,
+            )
 
         return StreamingResponse(audio_stream(), media_type="audio/mpeg")
     except Exception as exc:
+        logger.exception(
+            "tts_total_ms=%s endpoint=synthesize_stream status=error chars=%s engine=%s",
+            int((time.perf_counter() - started_at) * 1000),
+            len((payload.text or "").strip()),
+            str((vieneu_overrides or {}).get("engine") or settings.tts_engine),
+        )
         raise HTTPException(status_code=502, detail=f"Khong the tao giong noi: {exc}") from exc
 
 

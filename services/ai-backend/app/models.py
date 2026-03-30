@@ -40,6 +40,7 @@ class SessionStartRequest(BaseModel):
 class TurnRequest(BaseModel):
     transcript: str = Field(min_length=1, max_length=500)
     turn_id: str | None = Field(default=None, min_length=1, max_length=120)
+    include_audio: bool = True
 
 
 class BridgeDebugChatRequest(BaseModel):

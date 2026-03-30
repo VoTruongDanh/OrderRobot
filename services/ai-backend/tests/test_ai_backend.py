@@ -56,6 +56,11 @@ class FakeSpeechService:
         yield b"audio-chunk"
 
 
+class FailingMenuCoreBackendClient(FakeCoreBackendClient):
+    async def list_menu(self) -> list[MenuItem]:
+        raise RuntimeError("list_menu should not be called for session greeting start")
+
+
 def test_get_settings_migrates_legacy_bridge_url_in_bridge_only(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LLM_MODE", "bridge_only")
     monkeypatch.setenv("BRIDGE_BASE_URL", "http://127.0.0.1:1111")
@@ -175,6 +180,30 @@ async def test_conversation_engine_checkout_keywords_support_voice_only_flow() -
     created = await engine.handle_turn(start.session_id, "xac nhan")
     assert created.order_created is True
     assert created.order_id == "ORD-TEST"
+
+
+@pytest.mark.anyio
+async def test_start_session_does_not_require_core_menu() -> None:
+    settings = Settings(
+        ai_base_url="",
+        ai_api_key="",
+        ai_model="",
+        core_backend_url="http://127.0.0.1:8001",
+        voice_lang="vi-VN",
+        voice_style="cute_friendly",
+        tts_voice="vietnam",
+        tts_rate="165",
+        stt_model="small",
+        stt_device="cpu",
+        stt_compute_type="int8",
+    )
+    core_client = FailingMenuCoreBackendClient()
+    engine = ConversationEngine(settings, core_client)
+
+    start = await engine.start_session()
+    assert start.session_id.startswith("SES-")
+    assert start.scene == "greeting_intro"
+    assert start.reply_text
 
 
 @pytest.mark.anyio
