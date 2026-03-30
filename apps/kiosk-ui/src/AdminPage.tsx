@@ -139,6 +139,9 @@ const ENV_TEMPLATE: EnvField[] = [
   { key: 'AI_API_KEY', label: 'AI API Key', value: '' },
   { key: 'AI_MODEL', label: 'AI Model', value: 'gpt-4o-mini' },
   { key: 'CORE_BACKEND_URL', label: 'Core Backend URL', value: getCoreApiUrl() },
+  { key: 'LLM_MODE', label: 'LLM Mode', value: 'bridge_only' },
+  { key: 'BRIDGE_BASE_URL', label: 'Bridge Base URL', value: 'http://127.0.0.1:1122' },
+  { key: 'BRIDGE_TIMEOUT_SECONDS', label: 'Bridge Timeout Seconds', value: '8' },
   { key: 'VOICE_LANG', label: 'Voice Lang', value: 'vi-VN' },
   { key: 'VOICE_STYLE', label: 'Voice Style', value: 'cute_friendly' },
   { key: 'TTS_ENGINE', label: 'TTS Engine', value: 'vieneu' },
@@ -171,6 +174,10 @@ const ENV_TEMPLATE: EnvField[] = [
   { key: 'BACKEND_STT_CHUNK_MS', label: 'Kiosk STT Chunk Ms', value: '120' },
   { key: 'BACKEND_STT_FINALIZE_SILENCE_MS', label: 'Kiosk STT Finalize Silence Ms', value: '420' },
   { key: 'BACKEND_STT_FORCE_FINALIZE_MS', label: 'Kiosk STT Force Finalize Ms', value: '1400' },
+  { key: 'VOICE_ALWAYS_LISTEN', label: 'Voice Always Listen', value: 'true' },
+  { key: 'VOICE_TTS_WS_REALTIME', label: 'Voice TTS WS Realtime', value: 'false' },
+  { key: 'CHAT_CLEAR_AFTER_ABSENCE_MS', label: 'Chat Clear After Absence Ms', value: '0' },
+  { key: 'CHAT_CLEAR_ON_ORDER_COMPLETE', label: 'Chat Clear On Order Complete', value: 'false' },
   { key: 'TTS_STREAM_PLAYBACK_RATE', label: 'TTS Stream Playback Rate', value: '1.0' },
   { key: 'STT_VAD_MIN_SILENCE_MS', label: 'STT VAD Min Silence', value: '450' },
   { key: 'STT_PRELOAD', label: 'STT Preload', value: 'true' },
@@ -463,6 +470,8 @@ export default function AdminPage() {
   )
   const [ttsTestStatus, setTtsTestStatus] = useState<'idle' | 'playing' | 'error'>('idle')
   const [ttsApplyStatus, setTtsApplyStatus] = useState<TtsApplyStatus>('idle')
+  const hasHydratedEnvRef = useRef(false)
+  const envAutoSaveTimerRef = useRef<number | null>(null)
   const speechLang = uiLanguage === 'vi' ? 'vi-VN' : 'en-US'
   const t = useCallback(
     (vi: string, en: string) => (uiLanguage === 'vi' ? vi : en),
@@ -577,6 +586,28 @@ export default function AdminPage() {
   }, [])
 
   useEffect(() => {
+    if (!hasHydratedEnvRef.current) {
+      hasHydratedEnvRef.current = true
+      return
+    }
+    if (envAutoSaveTimerRef.current) {
+      window.clearTimeout(envAutoSaveTimerRef.current)
+    }
+    envAutoSaveTimerRef.current = window.setTimeout(() => {
+      saveAdminEnvConfig(toEnvPayload(envFields))
+      setLastSyncAt(getAdminConfigUpdatedAt())
+      envAutoSaveTimerRef.current = null
+    }, 260)
+
+    return () => {
+      if (envAutoSaveTimerRef.current) {
+        window.clearTimeout(envAutoSaveTimerRef.current)
+        envAutoSaveTimerRef.current = null
+      }
+    }
+  }, [envFields])
+
+  useEffect(() => {
     setServices((current) =>
       serviceTargets.map((target) => {
         const existing = current.find((item) => item.name === target.name)
@@ -641,6 +672,10 @@ export default function AdminPage() {
       setFieldValue('BACKEND_STT_CHUNK_MS', '120')
       setFieldValue('BACKEND_STT_FINALIZE_SILENCE_MS', '420')
       setFieldValue('BACKEND_STT_FORCE_FINALIZE_MS', '1400')
+      setFieldValue('VOICE_ALWAYS_LISTEN', 'true')
+      setFieldValue('VOICE_TTS_WS_REALTIME', 'true')
+      setFieldValue('CHAT_CLEAR_AFTER_ABSENCE_MS', '0')
+      setFieldValue('CHAT_CLEAR_ON_ORDER_COMPLETE', 'false')
       setFieldValue('TTS_STREAM_PLAYBACK_RATE', '1.0')
       setNotice({
         tone: 'info',

@@ -56,6 +56,21 @@ class FakeSpeechService:
         yield b"audio-chunk"
 
 
+class FakeProviderClient:
+    def __init__(self) -> None:
+        self.compose_calls = 0
+        self.stream_calls = 0
+
+    async def compose_reply(self, _payload, **_kwargs):
+        self.compose_calls += 1
+        return {"reply_text": "Tra dao cam sa la mon de uong.", "voice_style": "cute_friendly"}
+
+    async def compose_reply_stream(self, _payload, **_kwargs):
+        self.stream_calls += 1
+        for part in ["Tra dao cam sa", " la mon de uong."]:
+            yield part
+
+
 class FailingMenuCoreBackendClient(FakeCoreBackendClient):
     async def list_menu(self) -> list[MenuItem]:
         raise RuntimeError("list_menu should not be called for session greeting start")
@@ -487,6 +502,49 @@ async def test_handle_turn_stream_uses_injected_speech_service() -> None:
     assert any(chunk["type"] == "audio" for chunk in chunks)
     assert all(chunk.get("turn_id") == "turn-test-1" for chunk in chunks)
     assert speech_service.calls
+
+
+@pytest.mark.anyio
+async def test_handle_turn_stream_emits_text_final_and_bridge_source_for_complex_scene() -> None:
+    settings = Settings(
+        ai_base_url="",
+        ai_api_key="",
+        ai_model="",
+        core_backend_url="http://127.0.0.1:8001",
+        bridge_base_url="http://127.0.0.1:1122",
+        llm_mode="bridge_only",
+        voice_lang="vi-VN",
+        voice_style="cute_friendly",
+        tts_voice="vietnam",
+        tts_rate="165",
+        stt_model="small",
+        stt_device="cpu",
+        stt_compute_type="int8",
+    )
+    core_client = FakeCoreBackendClient()
+    speech_service = FakeSpeechService()
+    provider_client = FakeProviderClient()
+    engine = ConversationEngine(settings, core_client, speech_service)
+    engine.provider_client = provider_client
+
+    start = await engine.start_session()
+    chunks = [
+        chunk
+        async for chunk in engine.handle_turn_stream(
+            start.session_id,
+            "Mon nao de uong va it ngot vay?",
+            turn_id="turn-test-stream-final",
+            include_audio=False,
+        )
+    ]
+
+    text_chunks = [chunk for chunk in chunks if chunk.get("type") == "text"]
+    final_chunks = [chunk for chunk in chunks if chunk.get("type") == "text_final"]
+    assert text_chunks
+    assert final_chunks
+    assert final_chunks[-1].get("bridge_source") in {"bridge_stream", "fallback", "local_rule"}
+    assert final_chunks[-1].get("turn_id") == "turn-test-stream-final"
+    assert provider_client.stream_calls >= 1
 
 
 @pytest.mark.anyio

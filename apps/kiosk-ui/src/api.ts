@@ -64,9 +64,22 @@ export async function sendTurn(
 }
 
 export type StreamChunk =
-  | { type: 'text'; content: string; cart?: Array<{ item_id: string; name: string; quantity: number; unit_price: string; line_total: string }> }
+  | { type: 'text'; content: string; turn_id?: string; session_id?: string }
+  | {
+      type: 'text_final'
+      content: string
+      cart?: Array<{ item_id: string; name: string; quantity: number; unit_price: string; line_total: string }>
+      scene?: string
+      emotion_hint?: string
+      action_hints?: string[]
+      order_created?: boolean
+      order_id?: string
+      turn_id?: string
+      session_id?: string
+      bridge_source?: string
+    }
   | { type: 'audio'; content: string; turn_id?: string }
-  | { type: 'error'; message: string; turn_id?: string }
+  | { type: 'error'; message: string; code?: string; turn_id?: string; session_id?: string }
 
 export async function* sendTurnStream(
   sessionId: string,

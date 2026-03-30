@@ -2283,6 +2283,16 @@
     const CHAT_HISTORY_STORAGE_KEY = 'orderrobot.kiosk.chat-history.v1';
     const CHAT_ARCHIVE_STORAGE_KEY = 'orderrobot.kiosk.chat-archive.v1';
     const CHAT_ARCHIVE_LIMIT = 40;
+    const DEFAULT_CHAT_CLEAR_AFTER_ABSENCE_MS = 0;
+    const DEFAULT_CHAT_CLEAR_ON_ORDER_COMPLETE = false;
+    const DEFAULT_VOICE_ALWAYS_LISTEN = true;
+    const DEFAULT_VOICE_TTS_WS_REALTIME = false;
+    const AUTO_GREETING_VARIANTS = [
+        'Chào mừng bạn. Hôm nay bạn muốn thử món nào để mình tư vấn ngay?',
+        'Xin chào bạn. Mình sẵn sàng tư vấn món ngon cho bạn đây.',
+        'Hello bạn ơi. Bạn muốn uống gì để mình gợi ý nhanh nha?',
+        'Chào bạn. Cần mình gợi ý món dễ uống hay ít ngọt không?',
+    ];
     const AUTO_GREETING_COOLDOWN_MS = 25000;
     const AUTO_GREETING_RETRY_BASE_MS = 900;
     const AUTO_GREETING_MAX_RETRIES = 5;
@@ -2291,7 +2301,6 @@
     const PRESENCE_CHECK_INTERVAL_MS = 700;
     const PRESENCE_MOTION_THRESHOLD = 16;
     const PRESENCE_ABSENCE_FRAMES = 4;
-    const CHAT_CLEAR_AFTER_ABSENCE_MS = 30000;
     const DEFAULT_BACKEND_STT_FINALIZE_SILENCE_MS = 420;
     const DEFAULT_BACKEND_STT_FORCE_FINALIZE_MS = 1400;
     const DEFAULT_BACKEND_STT_CHUNK_MS = 120;
@@ -2350,6 +2359,10 @@
     let backendSttForceFinalizeMs = DEFAULT_BACKEND_STT_FORCE_FINALIZE_MS;
     let backendSttChunkMs = DEFAULT_BACKEND_STT_CHUNK_MS;
     let ttsStreamPlaybackRate = DEFAULT_TTS_STREAM_PLAYBACK_RATE;
+    let chatClearAfterAbsenceMs = DEFAULT_CHAT_CLEAR_AFTER_ABSENCE_MS;
+    let chatClearOnOrderComplete = DEFAULT_CHAT_CLEAR_ON_ORDER_COMPLETE;
+    let voiceAlwaysListenMode = DEFAULT_VOICE_ALWAYS_LISTEN;
+    let voiceTtsWsRealtimeEnabled = DEFAULT_VOICE_TTS_WS_REALTIME;
     let lastSpeechActivityAt = 0;
     let kioskHeartbeatTimer = null;
     let orderPopupTimer = null;
@@ -2365,6 +2378,13 @@
     let lastRobotSpokenNorm = '';
     let lastRobotSpokenAt = 0;
     let voiceLatencyStatusTimer = null;
+    let voiceAutoRetryTimer = null;
+    let greetingWarmupTask = null;
+    let lastGreetingVariantIndex = -1;
+    let suppressNextSessionOpening = false;
+    const greetingAudioCache = new Map();
+    let wsTtsWorkletModuleUrl = '';
+    let wsTtsWorkletLoaded = false;
     let thinkingTurnId = '';
     let thinkingMotionTimer = null;
     let thinkingMotionTurnId = '';
@@ -2582,22 +2602,27 @@
                 echoCancellation: false,
                 noiseSuppression: false,
                 autoGainControl: false,
+                latency: 0,
             };
         }
         if (micNoiseFilterStrength >= 75) {
             return {
                 channelCount: 1,
                 sampleRate: 16000,
+                sampleSize: 16,
                 echoCancellation: true,
                 noiseSuppression: true,
                 autoGainControl: true,
+                latency: 0,
             };
         }
         return {
             channelCount: 1,
+            sampleRate: 16000,
             echoCancellation: true,
             noiseSuppression: true,
-            autoGainControl: true,
+            autoGainControl: micNoiseFilterStrength >= 55,
+            latency: 0,
         };
     }
 
@@ -2706,6 +2731,14 @@
         return Number(numeric.toFixed(2));
     }
 
+    function toSafeBool(value, fallback) {
+        const raw = String(value ?? '').trim().toLowerCase();
+        if (!raw) return fallback;
+        if (['1', 'true', 'yes', 'on'].includes(raw)) return true;
+        if (['0', 'false', 'no', 'off'].includes(raw)) return false;
+        return fallback;
+    }
+
     function refreshVoiceRuntimeConfigFromAdmin() {
         const env = readAdminEnvFields();
         const configuredFinalizeSilenceMs = toSafeInt(
@@ -2728,6 +2761,11 @@
             0.9,
             1.35,
         );
+        const configuredChatClearAfterAbsenceMs = toSafeInt(
+            env.CHAT_CLEAR_AFTER_ABSENCE_MS,
+            0,
+            3600000,
+        );
 
         backendSttFinalizeSilenceMs = configuredFinalizeSilenceMs ?? DEFAULT_BACKEND_STT_FINALIZE_SILENCE_MS;
         backendSttForceFinalizeMs = Math.max(
@@ -2736,11 +2774,19 @@
         );
         backendSttChunkMs = configuredChunkMs ?? DEFAULT_BACKEND_STT_CHUNK_MS;
         ttsStreamPlaybackRate = configuredPlaybackRate ?? DEFAULT_TTS_STREAM_PLAYBACK_RATE;
+        chatClearAfterAbsenceMs = configuredChatClearAfterAbsenceMs ?? DEFAULT_CHAT_CLEAR_AFTER_ABSENCE_MS;
+        chatClearOnOrderComplete = toSafeBool(env.CHAT_CLEAR_ON_ORDER_COMPLETE, DEFAULT_CHAT_CLEAR_ON_ORDER_COMPLETE);
+        voiceAlwaysListenMode = toSafeBool(env.VOICE_ALWAYS_LISTEN, DEFAULT_VOICE_ALWAYS_LISTEN);
+        voiceTtsWsRealtimeEnabled = toSafeBool(env.VOICE_TTS_WS_REALTIME, DEFAULT_VOICE_TTS_WS_REALTIME);
         console.info('[voice-runtime-config]', {
             backendSttChunkMs,
             backendSttFinalizeSilenceMs,
             backendSttForceFinalizeMs,
             ttsStreamPlaybackRate,
+            chatClearAfterAbsenceMs,
+            chatClearOnOrderComplete,
+            voiceAlwaysListenMode,
+            voiceTtsWsRealtimeEnabled,
         });
     }
 
@@ -3505,7 +3551,9 @@
         } finally {
             if (flowToken === activeOrderFlowToken) {
                 archiveChatHistorySnapshot(finalizedOrderData);
-                clearChatHistory();
+                if (chatClearOnOrderComplete) {
+                    clearChatHistory();
+                }
                 hideOrderFlow();
             }
         }
@@ -3703,6 +3751,7 @@
         voiceWarmupStarted = true;
         void ensureAiApiUrlReady().catch(() => {});
         void prewarmVieneuStream().catch(() => {});
+        void preloadGreetingAudioCache().catch(() => {});
 
         const AudioContextClass = window.AudioContext || window.webkitAudioContext;
         if (!AudioContextClass) return;
@@ -3732,6 +3781,97 @@
                 closeWarmupContext();
             }
         } catch {}
+    }
+
+    function pickGreetingVariantText() {
+        if (!AUTO_GREETING_VARIANTS.length) {
+            return 'Chào mừng bạn. Hôm nay bạn muốn thử món nào để mình tư vấn ngay?';
+        }
+        if (AUTO_GREETING_VARIANTS.length === 1) {
+            lastGreetingVariantIndex = 0;
+            return AUTO_GREETING_VARIANTS[0];
+        }
+        let nextIndex = lastGreetingVariantIndex;
+        for (let attempts = 0; attempts < 5 && nextIndex === lastGreetingVariantIndex; attempts += 1) {
+            nextIndex = Math.floor(Math.random() * AUTO_GREETING_VARIANTS.length);
+        }
+        if (nextIndex === lastGreetingVariantIndex) {
+            nextIndex = (lastGreetingVariantIndex + 1) % AUTO_GREETING_VARIANTS.length;
+        }
+        lastGreetingVariantIndex = nextIndex;
+        return AUTO_GREETING_VARIANTS[nextIndex];
+    }
+
+    async function preloadGreetingAudioCache() {
+        if (greetingWarmupTask) return greetingWarmupTask;
+        greetingWarmupTask = (async () => {
+            try {
+                const aiApiUrl = await ensureAiApiUrlReady();
+                const runtimeTtsEngine = String(resolvedAiApiHealth?.tts_engine || '').trim().toLowerCase();
+                if (!runtimeTtsEngine) return;
+
+                for (const greetingText of AUTO_GREETING_VARIANTS) {
+                    if (greetingAudioCache.has(greetingText)) continue;
+                    const payload = buildSpeechSynthesisPayload(greetingText);
+                    const response = await fetch(`${aiApiUrl}/speech/synthesize`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload),
+                    });
+                    if (!response.ok) continue;
+                    const blob = await response.blob();
+                    if (!blob || blob.size <= 0) continue;
+                    const objectUrl = URL.createObjectURL(blob);
+                    greetingAudioCache.set(greetingText, objectUrl);
+                }
+                if (greetingAudioCache.size > 0) {
+                    console.info('[voice-greeting-cache] ready', { entries: greetingAudioCache.size });
+                }
+            } catch (error) {
+                console.warn('[voice-greeting-cache] preload failed:', error);
+            } finally {
+                greetingWarmupTask = null;
+            }
+        })();
+        return greetingWarmupTask;
+    }
+
+    async function playCachedGreetingAudio(greetingText, speechAbortController) {
+        const cachedUrl = greetingAudioCache.get(greetingText);
+        if (!cachedUrl) return false;
+        try {
+            if (activeGreetingAudio) {
+                activeGreetingAudio.pause();
+                activeGreetingAudio = null;
+            }
+            const audio = new Audio(cachedUrl);
+            activeGreetingAudio = audio;
+            audio.preload = 'auto';
+            setFaceState('happy');
+            botSpeechActive = true;
+            await audio.play();
+            await new Promise((resolve) => {
+                audio.onended = () => resolve();
+                audio.onerror = () => resolve();
+            });
+            return !speechAbortController?.signal?.aborted;
+        } catch (error) {
+            if (!isAbortError(error)) {
+                console.warn('[voice-greeting-cache] playback failed:', error);
+            }
+            return false;
+        } finally {
+            if (activeGreetingAudio) {
+                try {
+                    activeGreetingAudio.pause();
+                } catch {}
+            }
+            activeGreetingAudio = null;
+            botSpeechActive = false;
+            if (!isMenuOpen && !robotController.isCinematicRunning) {
+                setFaceState('normal');
+            }
+        }
     }
 
     async function prewarmVieneuStream() {
@@ -3774,6 +3914,206 @@
             return Number.isFinite(sampleRate) && sampleRate > 0 ? sampleRate : 24000;
         } catch {
             return 24000;
+        }
+    }
+
+    function buildWsUrlFromHttpBase(baseUrl, pathName) {
+        const safeBase = String(baseUrl || '').trim().replace(/\/$/, '');
+        if (!safeBase) return '';
+        if (safeBase.startsWith('https://')) {
+            return `wss://${safeBase.slice('https://'.length)}${pathName}`;
+        }
+        if (safeBase.startsWith('http://')) {
+            return `ws://${safeBase.slice('http://'.length)}${pathName}`;
+        }
+        return '';
+    }
+
+    async function ensureWsTtsAudioWorklet(audioCtx) {
+        if (!audioCtx?.audioWorklet) {
+            throw new Error('AudioWorklet is not supported in this browser.');
+        }
+        if (wsTtsWorkletLoaded) return;
+        const moduleCode = `
+            class OrderRobotPcmPlayerProcessor extends AudioWorkletProcessor {
+                constructor() {
+                    super();
+                    this.queue = [];
+                    this.offset = 0;
+                    this.port.onmessage = (event) => {
+                        const data = event.data || {};
+                        if (data.type === 'chunk' && data.samples) {
+                            this.queue.push(new Float32Array(data.samples));
+                        } else if (data.type === 'reset') {
+                            this.queue = [];
+                            this.offset = 0;
+                        }
+                    };
+                }
+
+                process(inputs, outputs) {
+                    const output = outputs[0];
+                    if (!output || output.length === 0) return true;
+                    const channel = output[0];
+                    channel.fill(0);
+                    let writeIndex = 0;
+                    while (writeIndex < channel.length && this.queue.length > 0) {
+                        const current = this.queue[0];
+                        const available = current.length - this.offset;
+                        const needed = channel.length - writeIndex;
+                        const copySize = Math.min(available, needed);
+                        channel.set(current.subarray(this.offset, this.offset + copySize), writeIndex);
+                        writeIndex += copySize;
+                        this.offset += copySize;
+                        if (this.offset >= current.length) {
+                            this.queue.shift();
+                            this.offset = 0;
+                        }
+                    }
+                    return true;
+                }
+            }
+            registerProcessor('orderrobot-pcm-player', OrderRobotPcmPlayerProcessor);
+        `;
+        const blob = new Blob([moduleCode], { type: 'application/javascript' });
+        if (wsTtsWorkletModuleUrl) {
+            URL.revokeObjectURL(wsTtsWorkletModuleUrl);
+        }
+        wsTtsWorkletModuleUrl = URL.createObjectURL(blob);
+        await audioCtx.audioWorklet.addModule(wsTtsWorkletModuleUrl);
+        wsTtsWorkletLoaded = true;
+    }
+
+    function pcm16ToFloat32Samples(bytes) {
+        if (!(bytes instanceof Uint8Array) || bytes.length < 2) {
+            return null;
+        }
+        const sampleCount = Math.floor(bytes.byteLength / 2);
+        if (sampleCount <= 0) return null;
+        const int16 = new Int16Array(bytes.buffer, bytes.byteOffset, sampleCount);
+        const float32 = new Float32Array(sampleCount);
+        for (let i = 0; i < sampleCount; i += 1) {
+            float32[i] = int16[i] / 32768;
+        }
+        return float32;
+    }
+
+    async function playVieneuWsRealtime(aiApiUrl, speechPayload, speechAbortController) {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextClass) {
+            throw new Error('AudioContext is not supported for realtime WS playback.');
+        }
+        const wsUrl = buildWsUrlFromHttpBase(aiApiUrl, '/speech/synthesize/ws');
+        if (!wsUrl) {
+            throw new Error('Cannot resolve TTS websocket URL.');
+        }
+
+        const audioCtx = new AudioContextClass({ sampleRate: 24000, latencyHint: 'interactive' });
+        await ensureWsTtsAudioWorklet(audioCtx);
+        if (audioCtx.state === 'suspended') {
+            await audioCtx.resume();
+        }
+        const node = new AudioWorkletNode(audioCtx, 'orderrobot-pcm-player', {
+            numberOfInputs: 0,
+            numberOfOutputs: 1,
+            outputChannelCount: [1],
+        });
+        node.connect(audioCtx.destination);
+
+        let ws = null;
+        let doneReceived = false;
+        let totalSamples = 0;
+        const waitDone = new Promise((resolve, reject) => {
+            const safeReject = (err) => {
+                if (doneReceived) return;
+                doneReceived = true;
+                reject(err);
+            };
+            const safeResolve = () => {
+                if (doneReceived) return;
+                doneReceived = true;
+                resolve();
+            };
+
+            ws = new WebSocket(wsUrl);
+            ws.binaryType = 'arraybuffer';
+            ws.onopen = () => {
+                const payload = {
+                    ...speechPayload,
+                    tts_engine: 'vieneu',
+                    turn_id: activeProcessingTurnId || '',
+                    session_id: currentSessionId || '',
+                };
+                ws.send(JSON.stringify(payload));
+            };
+            ws.onmessage = (event) => {
+                if (typeof event.data === 'string') {
+                    let message = null;
+                    try {
+                        message = JSON.parse(event.data);
+                    } catch {
+                        return;
+                    }
+                    if (message?.type === 'error') {
+                        safeReject(new Error(String(message.message || 'TTS WS error')));
+                        return;
+                    }
+                    if (message?.type === 'done') {
+                        safeResolve();
+                    }
+                    return;
+                }
+                if (event.data instanceof ArrayBuffer) {
+                    const bytes = new Uint8Array(event.data);
+                    const floatSamples = pcm16ToFloat32Samples(bytes);
+                    if (!floatSamples || floatSamples.length === 0) return;
+                    totalSamples += floatSamples.length;
+                    node.port.postMessage({ type: 'chunk', samples: floatSamples }, [floatSamples.buffer]);
+                }
+            };
+            ws.onerror = () => {
+                safeReject(new Error('TTS WS connection error'));
+            };
+            ws.onclose = () => {
+                if (!doneReceived) {
+                    safeReject(new Error('TTS WS closed before done'));
+                }
+            };
+        });
+
+        const cleanup = async () => {
+            if (ws) {
+                try {
+                    ws.close();
+                } catch {}
+            }
+            try {
+                node.port.postMessage({ type: 'reset' });
+            } catch {}
+            try {
+                node.disconnect();
+            } catch {}
+            try {
+                await audioCtx.close();
+            } catch {}
+        };
+
+        try {
+            if (speechAbortController.signal.aborted) {
+                throw new Error('bot speech interrupted');
+            }
+            const abortPromise = new Promise((_, reject) => {
+                speechAbortController.signal.addEventListener(
+                    'abort',
+                    () => reject(new Error('bot speech interrupted')),
+                    { once: true },
+                );
+            });
+            await Promise.race([waitDone, abortPromise]);
+            const tailMs = totalSamples > 0 ? Math.min(900, Math.max(80, Math.round((totalSamples / 24000) * 1000 * 0.08))) : 120;
+            await new Promise((resolve) => window.setTimeout(resolve, tailMs));
+        } finally {
+            await cleanup();
         }
     }
 
@@ -4180,7 +4520,11 @@
             setFaceState('happy');
             botSpeechActive = true;
             try {
-                await playVieneuWavStream(aiApiUrl, speechPayload, speechAbortController);
+                if (voiceTtsWsRealtimeEnabled) {
+                    await playVieneuWsRealtime(aiApiUrl, speechPayload, speechAbortController);
+                } else {
+                    await playVieneuWavStream(aiApiUrl, speechPayload, speechAbortController);
+                }
                 if (activeBotSpeechAbortController === speechAbortController) {
                     activeBotSpeechAbortController = null;
                 }
@@ -4200,7 +4544,10 @@
                     }
                     return;
                 }
-                console.warn('[voice-vieneu-stream] fallback to blob playback:', error);
+                console.warn('[voice-vieneu-stream] fallback to blob playback:', {
+                    error: String(error?.message || error || 'unknown'),
+                    wsRealtimeEnabled: voiceTtsWsRealtimeEnabled,
+                });
                 botSpeechActive = false;
                 if (!isMenuOpen && !robotController.isCinematicRunning) {
                     setFaceState('normal');
@@ -4389,7 +4736,9 @@
                         const sessionPayload = await startConversationSession('manual', turnAbortController.signal);
                         ensureNotStale();
                         const opening = String(sessionPayload?.reply_text || '').trim();
-                        if (opening && chatHistory.length < 3) {
+                        const skipOpening = suppressNextSessionOpening;
+                        suppressNextSessionOpening = false;
+                        if (!skipOpening && opening && chatHistory.length < 3) {
                             appendChat('assistant', opening);
                         }
                     }
@@ -4404,6 +4753,8 @@
                     let streamPlayer = null;
                     let streamAudioMode = 'unknown';
                     let streamChunkErrorMessage = '';
+                    let streamChunkErrorCode = '';
+                    let streamReplyBuffer = '';
 
                     try {
                         await streamConversationTurn(currentSessionId, userText, turnId, (chunk) => {
@@ -4411,18 +4762,43 @@
                                 return;
                             }
                             if (chunk?.type === 'text') {
-                                replyPayload = chunk;
-                                replyText = String(chunk.content || '').trim();
+                                const textDelta = String(chunk.content || '');
+                                if (!textDelta) {
+                                    return;
+                                }
+                                streamReplyBuffer = `${streamReplyBuffer}${textDelta}`;
+                                replyText = String(streamReplyBuffer || '').trim();
                                 if (!turnFirstTextAt) {
+                                    turnFirstTextAt = performance.now();
+                                }
+                                return;
+                            }
+                            if (chunk?.type === 'text_final') {
+                                replyPayload = chunk;
+                                const finalText = String(chunk.content || '').trim();
+                                if (finalText) {
+                                    replyText = finalText;
+                                } else if (streamReplyBuffer) {
+                                    replyText = String(streamReplyBuffer || '').trim();
+                                }
+                                if (!turnFirstTextAt && replyText) {
                                     turnFirstTextAt = performance.now();
                                 }
                                 if (Array.isArray(chunk.cart)) {
                                     updateMiniCart(chunk.cart);
                                 }
-                                // Stop stream as soon as text is available, then synthesize once from full sentence.
-                                return false;
+                                const bridgeSource = String(chunk.bridge_source || '').trim();
+                                if (bridgeSource) {
+                                    console.info('[voice-turn-stream] bridge_source', {
+                                        bridgeSource,
+                                        turnId,
+                                        sessionId: currentSessionId,
+                                    });
+                                }
+                                return;
                             }
                             if (chunk?.type === 'error') {
+                                streamChunkErrorCode = String(chunk.code || '').trim();
                                 streamChunkErrorMessage = String(chunk.message || '').trim() || 'Streaming turn failed.';
                                 return;
                             }
@@ -4449,7 +4825,9 @@
                             }
                         }, turnAbortController.signal);
                         if (streamChunkErrorMessage) {
-                            throw new Error(`stream chunk error: ${streamChunkErrorMessage}`);
+                            throw new Error(
+                                `stream chunk error${streamChunkErrorCode ? ` (${streamChunkErrorCode})` : ''}: ${streamChunkErrorMessage}`,
+                            );
                         }
                     } catch (streamError) {
                         if (isAbortError(streamError)) {
@@ -4551,7 +4929,12 @@
                         setVoiceStatus('Dang uu tien loi noi moi...');
                     } else {
                         console.warn('[voice-turn] failed:', error);
-                        setVoiceStatus('Gap loi khi xu ly hoi thoai.');
+                        const errorText = String(error?.message || '').trim();
+                        setVoiceStatus(
+                            errorText
+                                ? `Gap loi hoi thoai: ${errorText.slice(0, 120)}`
+                                : 'Gap loi khi xu ly hoi thoai.',
+                        );
                     }
                 } finally {
                     hideThinkingIndicator(turnId);
@@ -4723,6 +5106,7 @@
         voiceBackendSocket.onerror = () => {
             if (!voiceListening || voiceInputMode !== 'backend') return;
             setVoiceStatus('Backend STT tam ngat, dang ket noi lai...');
+            scheduleVoiceAutoRetry('backend-error');
         };
 
         voiceBackendSocket.onclose = () => {
@@ -4733,6 +5117,7 @@
                     if (!voiceListening || voiceInputMode !== 'backend') return;
                     void startBackendSpeechListening().catch(() => {});
                 }, 280);
+                scheduleVoiceAutoRetry('backend-close');
             }
         };
 
@@ -4941,10 +5326,32 @@
         };
     }
 
+    function clearVoiceAutoRetryTimer() {
+        if (voiceAutoRetryTimer) {
+            window.clearTimeout(voiceAutoRetryTimer);
+            voiceAutoRetryTimer = null;
+        }
+    }
+
+    function scheduleVoiceAutoRetry(reason = 'stt') {
+        if (!voiceListening || !voiceAlwaysListenMode || voiceAutoRetryTimer) {
+            return;
+        }
+        voiceAutoRetryTimer = window.setTimeout(() => {
+            voiceAutoRetryTimer = null;
+            if (!voiceListening || !voiceAlwaysListenMode) return;
+            setVoiceStatus(`Dang tu dong khoi dong lai nghe (${reason})...`);
+            setVoiceListening(true, 'system-retry');
+        }, 650);
+    }
+
     function setVoiceListening(enabled, source = 'system') {
         const nextEnabled = Boolean(enabled);
         if (!nextEnabled && source !== 'manual' && voicePinnedByUser) {
             setVoiceStatus('Dang nghe thu cong, bo qua auto-stop.');
+            return;
+        }
+        if (nextEnabled && voiceListening && voiceInputMode !== 'idle' && source !== 'manual') {
             return;
         }
 
@@ -4959,6 +5366,7 @@
         }
 
         if (!voiceListening) {
+            clearVoiceAutoRetryTimer();
             interruptTurnProcessingForUser();
             interruptBotSpeech();
             pendingUserTurns.length = 0;
@@ -4985,11 +5393,13 @@
                 try {
                     voiceRecognition.start();
                     voiceInputMode = 'browser';
+                    clearVoiceAutoRetryTimer();
                     setVoiceStatus('Dang nghe ban noi...');
                     return;
                 } catch (browserError) {
                     if (isRecognitionAlreadyStartedError(browserError)) {
                         voiceInputMode = 'browser';
+                        clearVoiceAutoRetryTimer();
                         setVoiceStatus('Dang nghe ban noi...');
                         return;
                     }
@@ -5001,11 +5411,19 @@
                 await ensureAiApiUrlReady();
                 if (resolvedAiHasRealtimeStack) {
                     await startBackendSpeechListening();
+                    clearVoiceAutoRetryTimer();
                     setVoiceStatus('Dang nghe ban noi...');
                     return;
                 }
             } catch (backendError) {
                 console.warn('[stt] backend streaming unavailable:', backendError);
+            }
+
+            if (voiceAlwaysListenMode && source !== 'manual') {
+                setVoiceStatus('STT tam ngat, robot dang tu dong ket noi lai...');
+                voiceInputMode = 'idle';
+                scheduleVoiceAutoRetry('pipeline');
+                return;
             }
 
             setVoiceStatus(
@@ -5055,18 +5473,37 @@
         if (now - lastAutoGreetingAt < AUTO_GREETING_COOLDOWN_MS) return;
         autoGreetingInFlight = true;
         try {
-            const payload = await startConversationSession('camera');
-            const greetingText = String(payload?.reply_text || '').trim();
-            if (!greetingText) {
-                throw new Error('empty greeting text');
-            }
+            suppressNextSessionOpening = true;
+            const sessionInitTask = currentSessionId
+                ? Promise.resolve(null)
+                : startConversationSession('camera').catch((error) => {
+                    console.warn('[auto-greeting] session bootstrap failed:', error);
+                    return null;
+                });
 
+            const greetingText = pickGreetingVariantText();
             appendChat('assistant', greetingText);
             setVoiceStatus('Robot dang chao khach...');
-            await playBotSpeech(greetingText);
+            const greetingAbortController = new AbortController();
+            activeBotSpeechAbortController = greetingAbortController;
+
+            const cachedPlayed = await playCachedGreetingAudio(greetingText, greetingAbortController);
+            if (!cachedPlayed && !greetingAbortController.signal.aborted) {
+                await playBotSpeech(greetingText);
+            }
+            if (activeBotSpeechAbortController === greetingAbortController) {
+                activeBotSpeechAbortController = null;
+            }
+
+            const sessionPayload = await sessionInitTask;
+            if (sessionPayload?.session_id) {
+                currentSessionId = sessionPayload.session_id;
+            }
+            suppressNextSessionOpening = false;
 
             lastAutoGreetingAt = Date.now();
             clearAutoGreetingRetry();
+            void preloadGreetingAudioCache().catch(() => {});
             setVoiceStatus(voiceListening ? 'Dang nghe ban noi...' : 'San sang giao tiep.');
         } catch (error) {
             console.warn('[auto-greeting] failed:', error);
@@ -5079,6 +5516,7 @@
             }
             scheduleAutoGreetingRetry();
         } finally {
+            suppressNextSessionOpening = false;
             autoGreetingInFlight = false;
         }
     }
@@ -5177,7 +5615,13 @@
                         scene: 'idle',
                         emotion: 'neutral',
                     });
-                    setVoiceListening(false, 'presence');
+                    if (!voiceAlwaysListenMode && !voicePinnedByUser) {
+                        setVoiceListening(false, 'presence');
+                    } else if (!voiceListening) {
+                        setVoiceListening(true, 'presence');
+                    } else {
+                        setVoiceStatus('Dang cho khach moi, robot van tiep tuc nghe.');
+                    }
                 }
                 presenceDetected = false;
                 presenceEnteredAt = 0;
@@ -5191,7 +5635,8 @@
                 !presenceDetected
                 && presenceLeftAt > 0
                 && !chatClearedAfterAbsence
-                && (now - presenceLeftAt) >= CHAT_CLEAR_AFTER_ABSENCE_MS
+                && chatClearAfterAbsenceMs > 0
+                && (now - presenceLeftAt) >= chatClearAfterAbsenceMs
             ) {
                 clearChatHistory();
                 chatClearedAfterAbsence = true;
@@ -5452,7 +5897,12 @@
     } else {
         setupSpeechRecognition();
         prewarmVoiceRuntime();
-        setVoiceStatus('Dang cho khach vao vung camera...');
+        if (voiceAlwaysListenMode) {
+            setVoiceStatus('Dang khoi dong nghe lien tuc...');
+            setVoiceListening(true, 'system');
+        } else {
+            setVoiceStatus('Dang cho khach vao vung camera...');
+        }
         updateMenuPanelHeight(3);
         void initializeMiniCamera();
         if (voiceMiniToggle) {
@@ -5478,6 +5928,7 @@
     window.addEventListener('storage', (event) => {
         if (event.key === ADMIN_ENV_STORAGE_KEY) {
             refreshVoiceRuntimeConfigFromAdmin();
+            void preloadGreetingAudioCache().catch(() => {});
             if (voiceListening && voiceInputMode === 'backend') {
                 void startBackendSpeechListening().catch(() => {});
             }
@@ -5531,6 +5982,7 @@
         }
         if (event.data.type === 'orderrobot:admin-env-config') {
             refreshVoiceRuntimeConfigFromAdmin();
+            void preloadGreetingAudioCache().catch(() => {});
             if (voiceListening && voiceInputMode === 'backend') {
                 void startBackendSpeechListening().catch(() => {});
             }
@@ -5563,6 +6015,22 @@
         if (voiceLatencyStatusTimer) {
             window.clearTimeout(voiceLatencyStatusTimer);
             voiceLatencyStatusTimer = null;
+        }
+        clearVoiceAutoRetryTimer();
+        if (greetingAudioCache.size > 0) {
+            for (const url of greetingAudioCache.values()) {
+                try {
+                    URL.revokeObjectURL(url);
+                } catch {}
+            }
+            greetingAudioCache.clear();
+        }
+        if (wsTtsWorkletModuleUrl) {
+            try {
+                URL.revokeObjectURL(wsTtsWorkletModuleUrl);
+            } catch {}
+            wsTtsWorkletModuleUrl = '';
+            wsTtsWorkletLoaded = false;
         }
         stopThinkingMotion();
         hideThinkingIndicator();

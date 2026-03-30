@@ -26,6 +26,8 @@ let browser = null;
 let chatPage = null;
 let isShuttingDown = false;
 let activeRequest = null;
+let activeSessionId = '';
+const resetPendingSessions = new Set();
 
 function isTruthyEnv(value, defaultValue = false) {
   if (value === undefined || value === null || String(value).trim() === '') {
@@ -177,6 +179,8 @@ async function closeBrowser() {
     try { await browser.close(); } catch {}
     browser = null;
     chatPage = null;
+    activeSessionId = '';
+    resetPendingSessions.clear();
   }
 }
 
@@ -184,6 +188,76 @@ function createBridgeAbortError(code, message = code) {
   const error = new Error(message);
   error.code = code;
   return error;
+}
+
+function normalizeMessageContent(content) {
+  if (typeof content === 'string') {
+    return content.trim();
+  }
+  if (Array.isArray(content)) {
+    return content
+      .map((item) => {
+        if (!item || typeof item !== 'object') return '';
+        if (typeof item.text === 'string') return item.text.trim();
+        if (typeof item.content === 'string') return item.content.trim();
+        return '';
+      })
+      .filter(Boolean)
+      .join('\n')
+      .trim();
+  }
+  if (content && typeof content === 'object' && typeof content.text === 'string') {
+    return content.text.trim();
+  }
+  return '';
+}
+
+function buildPromptFromMessages(messages) {
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return '';
+  }
+  const normalized = messages
+    .map((msg) => {
+      if (!msg || typeof msg !== 'object') {
+        return null;
+      }
+      const role = String(msg.role || 'user').trim().toUpperCase();
+      const content = normalizeMessageContent(msg.content);
+      if (!content) return null;
+      if (role === 'SYSTEM' || role === 'USER' || role === 'ASSISTANT') {
+        return { role, content };
+      }
+      return { role: 'USER', content };
+    })
+    .filter(Boolean);
+
+  if (normalized.length === 0) {
+    return '';
+  }
+
+  const lines = [
+    'Follow SYSTEM instructions strictly.',
+    'Conversation transcript:',
+    ...normalized.map((entry) => `${entry.role}: ${entry.content}`),
+    'Answer naturally in Vietnamese for an ordering robot assistant.',
+  ];
+  return lines.join('\n\n').trim();
+}
+
+function computeDeltaText(previousText, currentText) {
+  const prev = String(previousText || '');
+  const curr = String(currentText || '');
+  if (!curr) return '';
+  if (!prev) return curr;
+  if (curr.startsWith(prev)) {
+    return curr.slice(prev.length);
+  }
+  let index = 0;
+  const limit = Math.min(prev.length, curr.length);
+  while (index < limit && prev[index] === curr[index]) {
+    index += 1;
+  }
+  return curr.slice(index);
 }
 
 async function stopActiveGeneration(page) {
@@ -250,6 +324,17 @@ async function waitForGenerationDone(page, timeoutMs = 10000, requestControl = n
   return false;
 }
 
+async function startNewTemporaryChat(page, reason = 'session') {
+  if (!page) return;
+  const startedAt = Date.now();
+  await page.goto(CHAT_URL, { waitUntil: 'networkidle2', timeout: 60000 });
+  await forceHideBrowserWindow(page);
+  const baselineCount = await page.evaluate(() =>
+    document.querySelectorAll('[data-message-author-role="assistant"]').length
+  );
+  console.log(`[Bridge] temporary-chat-reset reason=${reason} assistant_count=${baselineCount} ms=${Date.now() - startedAt}`);
+}
+
 async function readLatestAssistant(page) {
   return page.evaluate(() => {
     const nodes = document.querySelectorAll('[data-message-author-role="assistant"]');
@@ -268,7 +353,7 @@ async function isGenerating(page) {
   });
 }
 
-async function sendPromptAndWaitResponse(prompt, requestControl, maxTimeoutMs = 120000) {
+async function sendPromptAndWaitResponse(prompt, requestControl, maxTimeoutMs = 120000, onDelta = null) {
   if (!chatPage || !browser) throw new Error('Browser not ready');
 
   const throwIfAborted = () => {
@@ -350,6 +435,7 @@ async function sendPromptAndWaitResponse(prompt, requestControl, maxTimeoutMs = 
   let lastText = '';
   let stableCount = 0;
   let hasNewMessage = false;
+  let emittedText = '';
 
   while (Date.now() - startTime < maxTimeoutMs) {
     throwIfAborted();
@@ -367,6 +453,13 @@ async function sendPromptAndWaitResponse(prompt, requestControl, maxTimeoutMs = 
 
     const generating = await isGenerating(chatPage);
     const textValue = await readLatestAssistant(chatPage);
+    const delta = computeDeltaText(emittedText, textValue);
+    if (delta && typeof onDelta === 'function') {
+      onDelta(delta);
+      emittedText = textValue;
+    } else if (!emittedText && textValue) {
+      emittedText = textValue;
+    }
 
     if (!generating && textValue && textValue.length > 0) {
       if (textValue === lastText) {
@@ -442,23 +535,18 @@ const httpServer = http.createServer(async (req, res) => {
     )
   ) {
     let requestControl = null;
+    const isStreamPath = url.pathname === '/internal/bridge/chat/stream';
+    const requestStartedAt = Date.now();
+    let preempted = false;
     try {
       const body = await readJsonBody(req);
       const messages = Array.isArray(body?.messages) ? body.messages : [];
       const sessionId = String(body?.session_id || '').trim();
       const turnId = String(body?.turn_id || '').trim();
       const latestWins = body?.latest_wins !== false;
-      
-      // Build prompt from messages
-      let prompt = '';
-      if (messages.length > 0) {
-        const last = messages[messages.length - 1];
-        prompt = typeof last === 'string' ? last : (last?.content || JSON.stringify(messages));
-      } else {
-        prompt = JSON.stringify(body);
-      }
+      const prompt = buildPromptFromMessages(messages) || JSON.stringify(body);
 
-      console.log(`[Bridge] Received chat request (${prompt.length} chars) session=${sessionId || '-'} turn=${turnId || '-'}`);
+      console.log(`[Bridge] request_received chars=${prompt.length} session_id=${sessionId || '-'} turn_id=${turnId || '-'} stream=${isStreamPath}`);
 
       if (activeRequest) {
         const canPreempt =
@@ -476,6 +564,7 @@ const httpServer = http.createServer(async (req, res) => {
           });
         }
 
+        preempted = true;
         activeRequest.cancelled = true;
         activeRequest.reason = 'aborted_by_newer_turn';
         await stopActiveGeneration(chatPage);
@@ -488,6 +577,13 @@ const httpServer = http.createServer(async (req, res) => {
         }
       }
 
+      if (sessionId && (sessionId !== activeSessionId || resetPendingSessions.has(sessionId))) {
+        const resetReason = sessionId !== activeSessionId ? 'session_switch' : 'manual_reset';
+        await startNewTemporaryChat(chatPage, `${resetReason}:${sessionId}`);
+        activeSessionId = sessionId;
+        resetPendingSessions.delete(sessionId);
+      }
+
       requestControl = {
         sessionId,
         turnId,
@@ -495,12 +591,60 @@ const httpServer = http.createServer(async (req, res) => {
         reason: '',
       };
       activeRequest = requestControl;
+      console.log(`[Bridge] bridge_request_ms=${Date.now() - requestStartedAt} session_id=${sessionId || '-'} turn_id=${turnId || '-'} preempted=${preempted}`);
 
-      const startTime = Date.now();
+      if (isStreamPath) {
+        res.writeHead(200, {
+          'Content-Type': 'application/x-ndjson; charset=utf-8',
+          'Transfer-Encoding': 'chunked',
+          'Access-Control-Allow-Origin': '*',
+        });
+        let streamedAny = false;
+        const content = await sendPromptAndWaitResponse(
+          prompt,
+          requestControl,
+          120000,
+          (delta) => {
+            const safeDelta = String(delta || '');
+            if (!safeDelta) return;
+            streamedAny = true;
+            res.write(`${JSON.stringify({
+              type: 'text',
+              content: safeDelta,
+              source: 'bridge',
+              session_id: sessionId || null,
+              turn_id: turnId || null,
+            })}\n`);
+          },
+        );
+        const replyMs = Date.now() - requestStartedAt;
+        if (!streamedAny && content) {
+          res.write(`${JSON.stringify({
+            type: 'text',
+            content,
+            source: 'bridge',
+            session_id: sessionId || null,
+            turn_id: turnId || null,
+          })}\n`);
+        }
+        res.write(`${JSON.stringify({
+          type: 'text_final',
+          content: String(content || ''),
+          source: 'bridge',
+          code: 'ok',
+          reason: preempted ? 'preempted_older_turn' : null,
+          latency_ms: replyMs,
+          session_id: sessionId || null,
+          turn_id: turnId || null,
+        })}\n`);
+        res.write(`${JSON.stringify({ type: 'done' })}\n`);
+        console.log(`[Bridge] bridge_reply_ms=${replyMs} bridge_source=bridge session_id=${sessionId || '-'} turn_id=${turnId || '-'} preempted=${preempted}`);
+        return res.end();
+      }
+
       const content = await sendPromptAndWaitResponse(prompt, requestControl);
-      const latencyMs = Date.now() - startTime;
-
-      console.log(`[Bridge] Chat fulfilled in ${latencyMs}ms session=${sessionId || '-'} turn=${turnId || '-'}`);
+      const latencyMs = Date.now() - requestStartedAt;
+      console.log(`[Bridge] bridge_reply_ms=${latencyMs} bridge_source=bridge session_id=${sessionId || '-'} turn_id=${turnId || '-'} preempted=${preempted}`);
 
       if (url.pathname === '/v1/chat/completions') {
         return json(200, {
@@ -511,28 +655,40 @@ const httpServer = http.createServer(async (req, res) => {
           choices: [{ index: 0, message: { role: 'assistant', content }, finish_reason: 'stop' }]
         });
       }
-      if (url.pathname === '/internal/bridge/chat/stream') {
-        res.writeHead(200, {
-          'Content-Type': 'application/x-ndjson; charset=utf-8',
-          'Transfer-Encoding': 'chunked',
-          'Access-Control-Allow-Origin': '*',
-        });
-        for (const segment of splitResponseSegments(content)) {
-          res.write(`${JSON.stringify({ type: 'content', content: segment })}\n`);
+      return json(200, {
+        reply_text: content,
+        source: 'bridge',
+        code: 'ok',
+        reason: preempted ? 'preempted_older_turn' : null,
+        latency_ms: latencyMs,
+      });
+    } catch (err) {
+      if (isStreamPath) {
+        if (!res.headersSent) {
+          res.writeHead(200, {
+            'Content-Type': 'application/x-ndjson; charset=utf-8',
+            'Transfer-Encoding': 'chunked',
+            'Access-Control-Allow-Origin': '*',
+          });
         }
+        res.write(`${JSON.stringify({
+          type: 'error',
+          code: err?.code || 'bridge_error',
+          message: String(err?.message || 'Bridge stream failed'),
+        })}\n`);
         res.write(`${JSON.stringify({ type: 'done' })}\n`);
         return res.end();
       }
-      return json(200, { reply_text: content, source: 'puppeteer-direct', latency_ms: latencyMs });
-    } catch (err) {
       if (err?.code === 'aborted_by_newer_turn') {
         return json(409, {
           error: 'aborted_by_newer_turn',
           code: 'aborted_by_newer_turn',
+          source: 'bridge',
+          reason: 'aborted_by_newer_turn',
         });
       }
       console.error('[Bridge] API Error:', err.message);
-      return json(500, { error: err.message });
+      return json(500, { error: err.message, source: 'fallback', code: 'bridge_error' });
     } finally {
       if (requestControl && activeRequest === requestControl) {
         activeRequest = null;
@@ -541,7 +697,24 @@ const httpServer = http.createServer(async (req, res) => {
   }
 
   if (req.method === 'POST' && url.pathname === '/internal/bridge/reset-temp-chat') {
-    return json(200, { ok: true });
+    try {
+      const body = await readJsonBody(req);
+      const sessionId = String(body?.session_id || '').trim();
+      if (sessionId) {
+        resetPendingSessions.add(sessionId);
+      }
+      if (sessionId && activeSessionId === sessionId) {
+        await startNewTemporaryChat(chatPage, `api_reset:${sessionId}`);
+        resetPendingSessions.delete(sessionId);
+      }
+      return json(200, { ok: true, source: 'bridge', detail: 'temporary chat reset queued' });
+    } catch (err) {
+      return json(500, {
+        ok: false,
+        source: 'fallback',
+        detail: String(err?.message || 'reset failed'),
+      });
+    }
   }
 
   return json(404, { error: 'Not Found' });

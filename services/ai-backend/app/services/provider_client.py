@@ -101,7 +101,13 @@ class ProviderClient:
             reply_text = self._extract_reply_text(payload)
             if not reply_text:
                 raise ValueError("Bridge provider returned empty reply.")
-            return {"reply_text": reply_text, "voice_style": "cute_friendly"}
+            return {
+                "reply_text": reply_text,
+                "voice_style": "cute_friendly",
+                "source": str(payload.get("source") or "bridge"),
+                "code": str(payload.get("code") or "ok"),
+                "reason": str(payload.get("reason") or ""),
+            }
         except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
             detail = self._error_detail(response, f"{type(exc).__name__}: {exc}")
             raise ProviderError(f"Bridge provider request failed: internal={detail}") from exc
@@ -167,10 +173,20 @@ class ProviderClient:
                     except json.JSONDecodeError:
                         continue
 
+                    chunk_type = str(chunk.get("type", "")).strip().lower()
+                    if chunk_type == "error":
+                        error_code = str(chunk.get("code", "")).strip() or "bridge_stream_error"
+                        error_message = str(chunk.get("message", "")).strip() or "Bridge stream returned error."
+                        raise ProviderError(f"Bridge provider stream failed: code={error_code} message={error_message}")
+                    if chunk_type in {"done", "", "text_final"}:
+                        continue
+
+                    if chunk_type not in {"text", "content"}:
+                        continue
+
                     content = str(chunk.get("content", "")).strip()
                     if not content:
                         continue
-
                     emitted = True
                     yield content
 

@@ -157,10 +157,16 @@ _AUTO_ADD_THRESHOLD = 0.85
 SIMPLE_SCENES = {"reset", "cart_updated", "remove_item",
                  "order_created", "cart_follow_up",
                  "ask_confirmation", "clarify_item", "greeting_intro"}
-# Scenes that benefit from LLM context and creativity.
-# Keep this narrow to avoid voice turns blocking on slow bridge responses.
-COMPLEX_SCENES = {"recommendation"}
-BRIDGE_RESPONSE_BUDGET_SECONDS = 10.0
+# Scenes that benefit from bridge context and natural conversational style.
+# Keep ordering-critical scenes local for deterministic behavior.
+COMPLEX_SCENES = {"recommendation", "fallback", "greeting", "cart_follow_up"}
+BRIDGE_RESPONSE_BUDGET_SECONDS = 8.0
+BRIDGE_SCENE_BUDGET_SECONDS = {
+    "recommendation": 6.0,
+    "fallback": 3.5,
+    "greeting": 3.0,
+    "cart_follow_up": 3.0,
+}
 
 MENU_CACHE_TTL = 60.0  # seconds
 
@@ -616,18 +622,69 @@ class ConversationEngine:
         turn_id: str | None = None,
         include_audio: bool = True,
     ):
-        """Stream conversation response with interleaved text and audio for lower latency.
-        
-        Simple scenes are handled locally (instant). Complex scenes use LLM streaming.
-        """
-        # Use handle_turn which already has smart LLM bypass
+        """Stream conversation response with incremental text and optional audio chunks."""
         response = await self.handle_turn(session_id, transcript, turn_id=turn_id)
+        final_reply_text = ensure_frontend_safe_reply(response.scene or "fallback", response.reply_text)
+        bridge_source = "local_rule"
+        streamed_any = False
 
-        # Send text + cart as first chunk
+        if self.provider_client is not None and (response.scene or "") in COMPLEX_SCENES:
+            try:
+                prompt_payload = await self._build_stream_prompt_payload(response, transcript)
+                streamed_parts: list[str] = []
+                async for part in self.provider_client.compose_reply_stream(
+                    prompt_payload,
+                    session_id=session_id,
+                    turn_id=turn_id,
+                    latest_wins=True,
+                ):
+                    clean_part = ensure_frontend_safe_reply(response.scene or "fallback", part).strip()
+                    if not clean_part:
+                        continue
+                    streamed_parts.append(clean_part)
+                    streamed_any = True
+                    yield {
+                        "type": "text",
+                        "content": clean_part,
+                        "session_id": session_id,
+                        "turn_id": turn_id,
+                    }
+                if streamed_parts:
+                    final_reply_text = merge_stream_parts(streamed_parts)
+                    bridge_source = "bridge_stream"
+            except Exception as exc:
+                bridge_source = "fallback"
+                logger.warning(
+                    "bridge_stream_failed session_id=%s turn_id=%s scene=%s error=%s",
+                    session_id,
+                    turn_id or "",
+                    response.scene or "",
+                    exc,
+                )
+                yield {
+                    "type": "error",
+                    "code": "bridge_stream_error",
+                    "message": str(exc),
+                    "session_id": session_id,
+                    "turn_id": turn_id,
+                }
+
+        if not streamed_any:
+            for segment in chunk_text_for_stream(final_reply_text):
+                yield {
+                    "type": "text",
+                    "content": segment,
+                    "session_id": session_id,
+                    "turn_id": turn_id,
+                }
+
+        response.reply_text = final_reply_text
         yield {
-            "type": "text",
-            "content": response.reply_text,
+            "type": "text_final",
+            "content": final_reply_text,
+            "session_id": session_id,
             "turn_id": turn_id,
+            "bridge_source": bridge_source,
             "cart": [item.model_dump() for item in response.cart],
             "scene": response.scene,
             "emotion_hint": response.emotion_hint,
@@ -643,7 +700,7 @@ class ConversationEngine:
         try:
             tts_started_at = time.perf_counter()
             first_chunk_logged = False
-            async for audio_chunk in self.speech_service.synthesize_stream(response.reply_text):
+            async for audio_chunk in self.speech_service.synthesize_stream(final_reply_text):
                 if not first_chunk_logged:
                     first_chunk_logged = True
                     logger.info(
@@ -655,10 +712,40 @@ class ConversationEngine:
                 yield {
                     "type": "audio",
                     "content": base64.b64encode(audio_chunk).decode("ascii"),
+                    "session_id": session_id,
                     "turn_id": turn_id,
                 }
         except Exception:
             pass
+
+    async def _build_stream_prompt_payload(
+        self,
+        response: ConversationResponse,
+        transcript: str,
+    ) -> dict[str, object]:
+        menu = await self._get_menu()
+        recommended_ids = set(response.recommended_item_ids or [])
+        return {
+            "scene": response.scene,
+            "seed": ensure_frontend_safe_reply(response.scene or "fallback", response.reply_text),
+            "cart_summary": [
+                {
+                    "name": item.name,
+                    "quantity": item.quantity,
+                    "line_total": str(item.line_total),
+                }
+                for item in response.cart
+            ],
+            "recommended_items": [
+                item.model_dump(mode="json")
+                for item in menu
+                if item.item_id in recommended_ids
+            ],
+            "needs_confirmation": response.needs_confirmation,
+            "order_created": response.order_created,
+            "voice_style": response.voice_style or self.settings.voice_style,
+            "user_text": transcript,
+        }
 
     async def save_feedback(
         self,
@@ -890,9 +977,10 @@ class ConversationEngine:
         if self.provider_client is not None and decision.scene in COMPLEX_SCENES:
             try:
                 bridge_started_at = time.perf_counter()
+                scene_budget = BRIDGE_SCENE_BUDGET_SECONDS.get(decision.scene, 3.5)
                 bridge_budget = max(
-                    3.0,
-                    min(self.settings.bridge_timeout_seconds, BRIDGE_RESPONSE_BUDGET_SECONDS),
+                    2.2,
+                    min(scene_budget, self.settings.bridge_timeout_seconds, BRIDGE_RESPONSE_BUDGET_SECONDS),
                 )
                 async with asyncio.timeout(bridge_budget):
                     provider_reply = await self.provider_client.compose_reply(
@@ -903,10 +991,14 @@ class ConversationEngine:
                     )
                 reply_text = provider_reply["reply_text"]
                 voice_style = provider_reply.get("voice_style", self.settings.voice_style)
-                reply_source = "bridge"
+                reply_source = str(provider_reply.get("source") or "bridge")
+                reply_reason = str(provider_reply.get("reason") or "")
                 logger.info(
-                    "bridge_ms=%s session_id=%s turn_id=%s scene=%s",
+                    "bridge_ms=%s bridge_budget_ms=%s bridge_source=%s bridge_reason=%s session_id=%s turn_id=%s scene=%s",
                     int((time.perf_counter() - bridge_started_at) * 1000),
+                    int(bridge_budget * 1000),
+                    reply_source,
+                    reply_reason,
                     session_id,
                     turn_id or "",
                     decision.scene,
@@ -1149,6 +1241,36 @@ def _fuzzy_match_ratio(transcript: str, item_name: str) -> float:
 def _fuzzy_match(transcript: str, item_name: str) -> bool:
     """Legacy wrapper: returns True if fuzzy ratio >= threshold."""
     return _fuzzy_match_ratio(transcript, item_name) >= _FUZZY_THRESHOLD
+
+
+def merge_stream_parts(parts: list[str]) -> str:
+    merged = ""
+    for raw_part in parts:
+        part = str(raw_part or "").strip()
+        if not part:
+            continue
+        if not merged:
+            merged = part
+            continue
+        if part[0] in ".,!?;:)":
+            merged += part
+        else:
+            merged += f" {part}"
+    return merged.strip()
+
+
+def chunk_text_for_stream(text: str) -> list[str]:
+    normalized = str(text or "").strip()
+    if not normalized:
+        return []
+    segments = [
+        segment.strip()
+        for segment in re.split(r"(?<=[\.\!\?])\s+", normalized)
+        if segment and segment.strip()
+    ]
+    if segments:
+        return segments
+    return [normalized]
 
 
 _GREETING_REPLIES = [

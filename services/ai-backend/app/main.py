@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import io
 import json
 import logging
 import subprocess
 import sys
 import time
 from typing import Awaitable
+import wave
 
 import httpx
 from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
@@ -384,7 +386,7 @@ async def handle_turn(session_id: str, payload: TurnRequest) -> ConversationResp
 
 @app.post("/sessions/{session_id}/turn/stream")
 async def handle_turn_stream(session_id: str, payload: TurnRequest) -> StreamingResponse:
-    """Stream conversation response with interleaved text and audio chunks for lower latency."""
+    """Stream conversation response with incremental text and optional audio chunks."""
     async def response_stream():
         started_at = time.perf_counter()
         first_text_at = 0.0
@@ -397,7 +399,7 @@ async def handle_turn_stream(session_id: str, payload: TurnRequest) -> Streaming
                 include_audio=payload.include_audio,
             ):
                 chunk_type = str(chunk.get("type") or "").lower() if isinstance(chunk, dict) else ""
-                if chunk_type == "text" and not first_text_at:
+                if chunk_type in {"text", "text_final"} and not first_text_at:
                     first_text_at = time.perf_counter()
                     logger.info(
                         "turn_first_text_ms=%s session_id=%s turn_id=%s endpoint=turn_stream",
@@ -413,7 +415,6 @@ async def handle_turn_stream(session_id: str, payload: TurnRequest) -> Streaming
                         session_id,
                         payload.turn_id or "",
                     )
-                # Yield JSON-encoded chunks: {"type": "text", "content": "..."} or {"type": "audio", "content": base64}
                 yield json.dumps(chunk, ensure_ascii=False).encode("utf-8") + b"\n"
             logger.info(
                 "turn_total_ms=%s turn_first_text_ms=%s turn_first_audio_ms=%s session_id=%s turn_id=%s endpoint=turn_stream",
@@ -426,13 +427,14 @@ async def handle_turn_stream(session_id: str, payload: TurnRequest) -> Streaming
         except httpx.HTTPStatusError as exc:
             detail = exc.response.text or "Khong the tao don tu core backend."
             yield json.dumps(
-                {"type": "error", "message": detail, "turn_id": payload.turn_id},
+                {"type": "error", "code": "core_http_error", "message": detail, "turn_id": payload.turn_id},
                 ensure_ascii=False,
             ).encode("utf-8") + b"\n"
         except httpx.HTTPError:
             yield json.dumps(
                 {
                     "type": "error",
+                    "code": "core_connect_error",
                     "message": "Khong the ket noi toi core backend.",
                     "turn_id": payload.turn_id,
                 },
@@ -440,13 +442,13 @@ async def handle_turn_stream(session_id: str, payload: TurnRequest) -> Streaming
             ).encode("utf-8") + b"\n"
         except ProviderError as exc:
             yield json.dumps(
-                {"type": "error", "message": str(exc), "turn_id": payload.turn_id},
+                {"type": "error", "code": "bridge_provider_error", "message": str(exc), "turn_id": payload.turn_id},
                 ensure_ascii=False,
             ).encode("utf-8") + b"\n"
         except Exception as exc:
             logger.exception("turn stream unexpected error session_id=%s turn_id=%s", session_id, payload.turn_id)
             yield json.dumps(
-                {"type": "error", "message": str(exc), "turn_id": payload.turn_id},
+                {"type": "error", "code": "turn_stream_unexpected_error", "message": str(exc), "turn_id": payload.turn_id},
                 ensure_ascii=False,
             ).encode("utf-8") + b"\n"
 
@@ -566,6 +568,137 @@ async def synthesize_speech_stream(payload: SpeechSynthesisRequest) -> Streaming
             str((vieneu_overrides or {}).get("engine") or settings.tts_engine),
         )
         raise HTTPException(status_code=502, detail=f"Khong the tao giong noi: {exc}") from exc
+
+
+@app.websocket("/speech/synthesize/ws")
+async def synthesize_speech_ws(websocket: WebSocket) -> None:
+    await websocket.accept()
+    websocket_open = True
+
+    async def send_ws_json(payload: dict[str, object]) -> bool:
+        nonlocal websocket_open
+        if not websocket_open:
+            return False
+        try:
+            await websocket.send_json(payload)
+            return True
+        except WebSocketDisconnect:
+            websocket_open = False
+            return False
+        except RuntimeError as exc:
+            if "close message has been sent" in str(exc).lower():
+                websocket_open = False
+                return False
+            raise
+
+    try:
+        message = await websocket.receive()
+        if message.get("type") == "websocket.disconnect":
+            return
+
+        raw_text = message.get("text")
+        if raw_text is None and message.get("bytes") is not None:
+            raw_text = bytes(message["bytes"]).decode("utf-8", errors="ignore")
+        if not raw_text:
+            await send_ws_json({"type": "error", "code": "invalid_payload", "message": "Missing JSON payload."})
+            return
+
+        payload_dict = json.loads(raw_text)
+        payload = SpeechSynthesisRequest.model_validate(payload_dict)
+        turn_id = str(payload_dict.get("turn_id") or "").strip() or None
+        session_id = str(payload_dict.get("session_id") or "").strip() or None
+
+        overrides = build_vieneu_overrides(payload) or {}
+        # Realtime WS playback currently targets VieNeu PCM output.
+        overrides["engine"] = "vieneu"
+
+        sample_rate = 24000
+        started_at = time.perf_counter()
+        chunk_count = 0
+        bytes_sent = 0
+        first_chunk_at = 0.0
+
+        if not await send_ws_json(
+            {
+                "type": "meta",
+                "format": "pcm_s16le",
+                "channels": 1,
+                "sample_rate": sample_rate,
+                "turn_id": turn_id,
+                "session_id": session_id,
+                "engine": "vieneu",
+            },
+        ):
+            return
+
+        async for chunk in speech_service.synthesize_stream(
+            payload.text,
+            payload.voice,
+            payload.rate,
+            vieneu_overrides=overrides,
+        ):
+            pcm_chunk, detected_sample_rate = decode_pcm16_chunk(chunk)
+            if detected_sample_rate and detected_sample_rate != sample_rate:
+                sample_rate = detected_sample_rate
+                if not await send_ws_json(
+                    {
+                        "type": "meta",
+                        "format": "pcm_s16le",
+                        "channels": 1,
+                        "sample_rate": sample_rate,
+                        "turn_id": turn_id,
+                        "session_id": session_id,
+                        "engine": "vieneu",
+                    },
+                ):
+                    return
+            if not pcm_chunk:
+                continue
+
+            if not first_chunk_at:
+                first_chunk_at = time.perf_counter()
+                logger.info(
+                    "tts_ws_first_chunk_ms=%s session_id=%s turn_id=%s",
+                    int((first_chunk_at - started_at) * 1000),
+                    session_id or "",
+                    turn_id or "",
+                )
+
+            try:
+                await websocket.send_bytes(pcm_chunk)
+            except WebSocketDisconnect:
+                websocket_open = False
+                return
+            except RuntimeError as exc:
+                if "close message has been sent" in str(exc).lower():
+                    websocket_open = False
+                    return
+                raise
+
+            chunk_count += 1
+            bytes_sent += len(pcm_chunk)
+
+        await send_ws_json(
+            {
+                "type": "done",
+                "turn_id": turn_id,
+                "session_id": session_id,
+                "chunks": chunk_count,
+                "bytes": bytes_sent,
+                "total_ms": int((time.perf_counter() - started_at) * 1000),
+            },
+        )
+    except WebSocketDisconnect:
+        return
+    except Exception as exc:
+        logger.exception("tts_ws_failed")
+        await send_ws_json(
+            {
+                "type": "error",
+                "code": "tts_ws_failed",
+                "message": str(exc),
+            },
+        )
 
 
 @app.post("/speech/transcribe", response_model=SpeechTranscriptionResponse)
@@ -770,3 +903,28 @@ def build_vieneu_overrides(payload: SpeechSynthesisRequest) -> dict[str, object]
         overrides["vieneu_max_chars"] = payload.vieneu_max_chars
 
     return overrides or None
+
+
+def decode_pcm16_chunk(chunk: bytes) -> tuple[bytes, int | None]:
+    payload = bytes(chunk or b"")
+    if not payload:
+        return b"", None
+
+    is_wav = (
+        len(payload) >= 12
+        and payload[0:4] == b"RIFF"
+        and payload[8:12] == b"WAVE"
+    )
+    if not is_wav:
+        return payload, None
+
+    try:
+        with wave.open(io.BytesIO(payload), "rb") as wav_reader:
+            frames = wav_reader.readframes(wav_reader.getnframes())
+            sample_rate = int(wav_reader.getframerate() or 0) or None
+            return frames, sample_rate
+    except Exception:
+        # Fallback for chunks that contain repeated WAV headers plus PCM payload.
+        if len(payload) > 44:
+            return payload[44:], None
+        return b"", None
