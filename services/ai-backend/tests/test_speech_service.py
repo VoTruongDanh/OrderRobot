@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+import app.services.speech_service as speech_service_module
 from app.config import Settings
 from app.models import MenuItem
 from app.services.speech_service import (
@@ -76,6 +77,40 @@ def test_transcribe_raises_soft_retry_error_when_both_passes_are_empty(monkeypat
 
     with pytest.raises(SpeechNotHeardError):
         service._transcribe_sync(b"fake-audio", "sample.webm")
+
+
+def test_partial_decode_error_handles_pyav_tuple_index_error(monkeypatch) -> None:
+    service = SpeechService(build_settings())
+
+    def raise_index_error() -> None:
+        raise IndexError("tuple index out of range")
+
+    try:
+        raise_index_error()
+    except Exception as exc:
+        monkeypatch.setattr(
+            speech_service_module.traceback,
+            "format_tb",
+            lambda _tb: ["  File \"av/container/streams.py\", line 146, in process\n"],
+        )
+        assert service._is_partial_decode_error(exc) is True
+
+
+def test_partial_decode_error_keeps_non_decode_index_error_visible(monkeypatch) -> None:
+    service = SpeechService(build_settings())
+
+    def raise_index_error() -> None:
+        raise IndexError("list index out of range")
+
+    try:
+        raise_index_error()
+    except Exception as exc:
+        monkeypatch.setattr(
+            speech_service_module.traceback,
+            "format_tb",
+            lambda _tb: ["  File \"app/services/logic.py\", line 10, in helper\n"],
+        )
+        assert service._is_partial_decode_error(exc) is False
 
 
 def test_run_transcription_pass_uses_stream_and_disables_timestamps() -> None:

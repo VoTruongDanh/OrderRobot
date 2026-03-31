@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import SpeechRecognition, { useSpeechRecognition } from 'react-speech-recognition'
 import { synthesizeSpeech, synthesizeSpeechStream } from '../api'
+import { getEnvConfig, subscribeAdminConfigChanges } from '../config'
 
 // onPartialTranscript removed — caller reads interimTranscript directly from return value
 type UseSpeechOptions = {
@@ -23,7 +24,7 @@ const AMBIENT_WATERMARK_PATTERNS = [
 
 // How long speech must be silent before we fire onTranscript.
 // Shorter = more responsive but may cut off slow speakers.
-const SUBMIT_SILENCE_MS = 1200
+const DEFAULT_SUBMIT_SILENCE_MS = 1200
 
 // How long to keep the echo gate closed after bot audio ends.
 // This catches residual mic echo from speaker output.
@@ -34,6 +35,14 @@ const BARGE_IN_MIN_CHARS = 3
 const LISTENING_STALL_RECOVERY_MS = 12000
 const LISTENING_STALL_POLL_MS = 1500
 
+function parseSubmitSilenceMs(rawValue: string): number {
+  const parsed = Number.parseInt(String(rawValue ?? '').trim(), 10)
+  if (!Number.isFinite(parsed)) {
+    return DEFAULT_SUBMIT_SILENCE_MS
+  }
+  return Math.max(200, Math.min(6000, parsed))
+}
+
 export function useSpeech({ lang, onTranscript, onNotice, onBargeIn }: UseSpeechOptions) {
   const transcriptHandlerRef = useRef(onTranscript)
   const noticeHandlerRef = useRef(onNotice)
@@ -42,6 +51,9 @@ export function useSpeech({ lang, onTranscript, onNotice, onBargeIn }: UseSpeech
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const audioCleanupRef = useRef<(() => void) | null>(null)
   const lastAcceptedTranscriptRef = useRef<{ text: string; at: number } | null>(null)
+  const submitSilenceMsRef = useRef<number>(
+    parseSubmitSilenceMs(getEnvConfig('SUBMIT_SILENCE_MS', String(DEFAULT_SUBMIT_SILENCE_MS))),
+  )
 
   // === Echo cancellation state ===
   // When bot is speaking, we gate all incoming transcripts to avoid
@@ -81,6 +93,16 @@ export function useSpeech({ lang, onTranscript, onNotice, onBargeIn }: UseSpeech
     noticeHandlerRef.current = onNotice
     bargeInHandlerRef.current = onBargeIn
   }, [onNotice, onTranscript, onBargeIn])
+
+  useEffect(() => {
+    const syncSubmitSilenceMs = () => {
+      submitSilenceMsRef.current = parseSubmitSilenceMs(
+        getEnvConfig('SUBMIT_SILENCE_MS', String(DEFAULT_SUBMIT_SILENCE_MS)),
+      )
+    }
+    syncSubmitSilenceMs()
+    return subscribeAdminConfigChanges(syncSubmitSilenceMs)
+  }, [])
 
   useEffect(() => {
     return () => {
@@ -144,7 +166,7 @@ export function useSpeech({ lang, onTranscript, onNotice, onBargeIn }: UseSpeech
 
       lastAcceptedTranscriptRef.current = { text, at: Date.now() }
       transcriptHandlerRef.current(text)
-    }, SUBMIT_SILENCE_MS)
+    }, submitSilenceMsRef.current)
   }, [finalTranscript])
 
   // Part 2 — user is still speaking → cancel the pending submit
@@ -200,7 +222,7 @@ export function useSpeech({ lang, onTranscript, onNotice, onBargeIn }: UseSpeech
         lastAcceptedTranscriptRef.current = { text: textToSubmit, at: Date.now() }
         lastInterimTextRef.current = ''
         transcriptHandlerRef.current(textToSubmit)
-      }, SUBMIT_SILENCE_MS)
+      }, submitSilenceMsRef.current)
     }
   }, [interimTranscript, listening])
 

@@ -2311,6 +2311,7 @@
     const DEFAULT_BACKEND_STT_FINALIZE_SILENCE_MS = 420;
     const DEFAULT_BACKEND_STT_FORCE_FINALIZE_MS = 1400;
     const DEFAULT_BACKEND_STT_CHUNK_MS = 120;
+    const DEFAULT_SUBMIT_SILENCE_MS = 1200;
     const DEFAULT_TTS_STREAM_PLAYBACK_RATE = 1.0;
     const AI_RUNTIME_FALLBACK_URL = 'http://127.0.0.1:8012';
     const AI_RUNTIME_PROBE_TIMEOUT_MS = 1600;
@@ -2365,6 +2366,7 @@
     let backendSttFinalizeSilenceMs = DEFAULT_BACKEND_STT_FINALIZE_SILENCE_MS;
     let backendSttForceFinalizeMs = DEFAULT_BACKEND_STT_FORCE_FINALIZE_MS;
     let backendSttChunkMs = DEFAULT_BACKEND_STT_CHUNK_MS;
+    let submitSilenceMs = DEFAULT_SUBMIT_SILENCE_MS;
     let ttsStreamPlaybackRate = DEFAULT_TTS_STREAM_PLAYBACK_RATE;
     let chatClearAfterAbsenceMs = DEFAULT_CHAT_CLEAR_AFTER_ABSENCE_MS;
     let chatClearOnOrderComplete = DEFAULT_CHAT_CLEAR_ON_ORDER_COMPLETE;
@@ -2386,6 +2388,8 @@
     let lastRobotSpokenAt = 0;
     let voiceLatencyStatusTimer = null;
     let voiceAutoRetryTimer = null;
+    let voiceBrowserSubmitTimer = null;
+    let voiceBrowserPendingInterim = '';
     let greetingWarmupTask = null;
     let lastGreetingVariantIndex = -1;
     let lastFillerVariantIndex = -1;
@@ -2765,6 +2769,11 @@
             80,
             500,
         );
+        const configuredSubmitSilenceMs = toSafeInt(
+            env.SUBMIT_SILENCE_MS,
+            200,
+            6000,
+        );
         const configuredPlaybackRate = toSafeFloat(
             env.TTS_STREAM_PLAYBACK_RATE,
             0.9,
@@ -2782,6 +2791,7 @@
             configuredForceFinalizeMs ?? DEFAULT_BACKEND_STT_FORCE_FINALIZE_MS,
         );
         backendSttChunkMs = configuredChunkMs ?? DEFAULT_BACKEND_STT_CHUNK_MS;
+        submitSilenceMs = configuredSubmitSilenceMs ?? DEFAULT_SUBMIT_SILENCE_MS;
         ttsStreamPlaybackRate = configuredPlaybackRate ?? DEFAULT_TTS_STREAM_PLAYBACK_RATE;
         chatClearAfterAbsenceMs = configuredChatClearAfterAbsenceMs ?? DEFAULT_CHAT_CLEAR_AFTER_ABSENCE_MS;
         chatClearOnOrderComplete = toSafeBool(env.CHAT_CLEAR_ON_ORDER_COMPLETE, DEFAULT_CHAT_CLEAR_ON_ORDER_COMPLETE);
@@ -2791,6 +2801,7 @@
             backendSttChunkMs,
             backendSttFinalizeSilenceMs,
             backendSttForceFinalizeMs,
+            submitSilenceMs,
             ttsStreamPlaybackRate,
             chatClearAfterAbsenceMs,
             chatClearOnOrderComplete,
@@ -5241,6 +5252,31 @@
         }
     }
 
+    function clearBrowserSubmitTimer() {
+        if (voiceBrowserSubmitTimer) {
+            window.clearTimeout(voiceBrowserSubmitTimer);
+            voiceBrowserSubmitTimer = null;
+        }
+    }
+
+    function scheduleBrowserInterimSubmit(interimText) {
+        clearBrowserSubmitTimer();
+        const stableInterim = String(interimText || '').trim();
+        if (!stableInterim) {
+            voiceBrowserPendingInterim = '';
+            return;
+        }
+        voiceBrowserPendingInterim = stableInterim;
+        voiceBrowserSubmitTimer = window.setTimeout(() => {
+            voiceBrowserSubmitTimer = null;
+            if (!voiceListening || voiceInputMode !== 'browser') return;
+            const textToSubmit = String(voiceBrowserPendingInterim || '').trim();
+            if (!textToSubmit) return;
+            voiceBrowserPendingInterim = '';
+            enqueueUserTurn(textToSubmit);
+        }, submitSilenceMs);
+    }
+
     function scheduleBackendFinalize() {
         clearBackendFinalizeTimer();
         voiceBackendFinalizeTimer = window.setTimeout(() => {
@@ -5534,12 +5570,17 @@
                     prioritizeUserSpeech();
                 }
                 setVoiceStatus(`Dang nghe: ${interim.trim()}`);
+                scheduleBrowserInterimSubmit(interim.trim());
                 if (activeGreetingAudio) {
                     activeGreetingAudio.pause();
                     activeGreetingAudio = null;
                 }
+            } else {
+                scheduleBrowserInterimSubmit('');
             }
             finals.forEach((text) => {
+                clearBrowserSubmitTimer();
+                voiceBrowserPendingInterim = '';
                 if (botSpeechActive) {
                     prioritizeUserSpeech();
                 }
@@ -5620,6 +5661,8 @@
 
         if (!voiceListening) {
             clearVoiceAutoRetryTimer();
+            clearBrowserSubmitTimer();
+            voiceBrowserPendingInterim = '';
             interruptTurnProcessingForUser();
             interruptBotSpeech();
             pendingUserTurns.length = 0;
@@ -5646,12 +5689,16 @@
                 try {
                     voiceRecognition.start();
                     voiceInputMode = 'browser';
+                    clearBrowserSubmitTimer();
+                    voiceBrowserPendingInterim = '';
                     clearVoiceAutoRetryTimer();
                     setVoiceStatus('Dang nghe ban noi...');
                     return;
                 } catch (browserError) {
                     if (isRecognitionAlreadyStartedError(browserError)) {
                         voiceInputMode = 'browser';
+                        clearBrowserSubmitTimer();
+                        voiceBrowserPendingInterim = '';
                         clearVoiceAutoRetryTimer();
                         setVoiceStatus('Dang nghe ban noi...');
                         return;

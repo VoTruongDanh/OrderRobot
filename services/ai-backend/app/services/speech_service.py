@@ -13,6 +13,7 @@ import sys
 import tempfile
 import threading
 import time
+import traceback
 import unicodedata
 import warnings
 import wave
@@ -1131,22 +1132,59 @@ $synth.Dispose()
     ) -> str:
         model = self._get_stt_model()
         language = self.settings.voice_lang.split("-", 1)[0].lower()
-        transcript = self._finalize_transcript(
-            self._run_transcription_pass(
-                model,
-                content,
-                filename,
-                language,
-                vad_filter=True,
-                decode_mode="partial",
+        try:
+            transcript = self._finalize_transcript(
+                self._run_transcription_pass(
+                    model,
+                    content,
+                    filename,
+                    language,
+                    vad_filter=True,
+                    decode_mode="partial",
+                    mode=mode,
+                ),
                 mode=mode,
-            ),
-            mode=mode,
-        )
+            )
+        except Exception as exc:
+            if self._is_partial_decode_error(exc):
+                logger.debug(
+                    "stt_partial_skip reason=incomplete_audio filename=%s bytes=%s error=%s",
+                    filename,
+                    len(content),
+                    exc,
+                )
+                return ""
+            raise
         normalized = normalize_vietnamese_text(transcript)
         if len(normalized) < 3:
             return ""
         return transcript
+
+    def _is_partial_decode_error(self, exc: Exception) -> bool:
+        name = exc.__class__.__name__.lower()
+        message = str(exc).lower()
+        if any(marker in name for marker in ("invaliddataerror", "ffmperror", "eoferror")):
+            return True
+        if any(
+            marker in message
+            for marker in (
+                "invalid data found when processing input",
+                "end of file",
+                "could not find codec parameters",
+                "moov atom not found",
+                "error number -1094995529",
+                "tuple index out of range",
+            )
+        ):
+            return True
+        if isinstance(exc, IndexError):
+            stack_text = "".join(traceback.format_tb(exc.__traceback__)).lower()
+            return (
+                "faster_whisper\\audio.py" in stack_text
+                or "av/container/streams.py" in stack_text
+                or "av/container/input.py" in stack_text
+            )
+        return False
 
     def _run_transcription_pass(
         self,

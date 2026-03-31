@@ -174,6 +174,7 @@ const ENV_TEMPLATE: EnvField[] = [
   { key: 'BACKEND_STT_CHUNK_MS', label: 'Kiosk STT Chunk Ms', value: '120' },
   { key: 'BACKEND_STT_FINALIZE_SILENCE_MS', label: 'Kiosk STT Finalize Silence Ms', value: '420' },
   { key: 'BACKEND_STT_FORCE_FINALIZE_MS', label: 'Kiosk STT Force Finalize Ms', value: '1400' },
+  { key: 'SUBMIT_SILENCE_MS', label: 'Submit Silence Ms', value: '1200' },
   { key: 'VOICE_ALWAYS_LISTEN', label: 'Voice Always Listen', value: 'true' },
   { key: 'VOICE_TTS_WS_REALTIME', label: 'Voice TTS WS Realtime', value: 'true' },
   { key: 'CHAT_CLEAR_AFTER_ABSENCE_MS', label: 'Chat Clear After Absence Ms', value: '0' },
@@ -672,6 +673,7 @@ export default function AdminPage() {
       setFieldValue('BACKEND_STT_CHUNK_MS', '120')
       setFieldValue('BACKEND_STT_FINALIZE_SILENCE_MS', '420')
       setFieldValue('BACKEND_STT_FORCE_FINALIZE_MS', '1400')
+      setFieldValue('SUBMIT_SILENCE_MS', '1200')
       setFieldValue('VOICE_ALWAYS_LISTEN', 'true')
       setFieldValue('VOICE_TTS_WS_REALTIME', 'true')
       setFieldValue('CHAT_CLEAR_AFTER_ABSENCE_MS', '0')
