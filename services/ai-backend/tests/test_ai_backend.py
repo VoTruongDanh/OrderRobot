@@ -8,7 +8,12 @@ import pytest
 
 from app.config import Settings, get_settings
 from app.models import CreateOrderResponse, MenuItem, TTSConfigRequest, TurnRequest
-from app.services.conversation_engine import ConversationEngine, normalize_text, render_fallback_reply
+from app.services.conversation_engine import (
+    ConversationEngine,
+    ensure_frontend_safe_reply,
+    normalize_text,
+    render_fallback_reply,
+)
 from app.services.provider_client import append_stream_content, split_completed_sentences
 
 
@@ -126,6 +131,18 @@ def test_stream_buffer_keeps_incomplete_tail_until_punctuation() -> None:
     emitted, buffer = split_completed_sentences(buffer)
     assert emitted == ["Tra dao cam sa la mon de uong."]
     assert buffer.strip() == ""
+
+
+def test_ensure_frontend_safe_reply_normalizes_no_tone_bridge_text_for_recommendation() -> None:
+    raw = "Menu hom nay co Tra sua tran chau, Tra dao cam sa. Ban muon goi mon nao?"
+    safe = ensure_frontend_safe_reply("recommendation", raw)
+    assert safe == "Mình có vài gợi ý để uống. Bạn muốn thử món nào?"
+
+
+def test_ensure_frontend_safe_reply_keeps_properly_accented_text() -> None:
+    raw = "Mình có vài gợi ý để uống, bạn muốn thử món nào?"
+    safe = ensure_frontend_safe_reply("recommendation", raw)
+    assert safe == raw
 
 
 def test_stream_buffer_heals_split_words_for_broken_chunks() -> None:

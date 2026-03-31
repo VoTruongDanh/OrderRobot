@@ -5,6 +5,7 @@
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <title>Aetheris | Advanced CGI Robot</title>
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&amp;family=Manrope:wght@300;400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
 <script id="tailwind-config">
@@ -1028,8 +1029,9 @@
         }
         .voice-mini-panel {
             position: fixed;
-            top: 226px;
-            right: 16px;
+            top: 16px;
+            left: 16px;
+            right: auto;
             z-index: 56;
             width: 320px;
             border-radius: 16px;
@@ -1283,8 +1285,10 @@
 
         .cart-mini-panel {
             position: fixed;
-            left: 16px;
-            bottom: 96px;
+            right: 16px;
+            left: auto;
+            top: 226px;
+            bottom: auto;
             z-index: 55;
             width: 280px;
             border-radius: 14px;
@@ -1587,8 +1591,9 @@
         }
 
         .voice-mini-panel {
-            top: 238px;
-            right: 18px;
+            top: 18px;
+            left: 18px;
+            right: auto;
             width: 342px;
             border-radius: var(--ui-radius-xl);
             border: 1px solid var(--ui-border);
@@ -1678,8 +1683,10 @@
         }
 
         .cart-mini-panel {
-            left: 18px;
-            bottom: 94px;
+            right: 18px;
+            left: auto;
+            top: 238px;
+            bottom: auto;
             width: 295px;
             border-radius: var(--ui-radius-xl);
             border: 1px solid var(--ui-border);
@@ -1835,6 +1842,53 @@
         #robot-container.sketchfab-mode .sketchfab-credit a {
             color: inherit;
             font-weight: inherit;
+        }
+
+        #robot-container.local-glb-mode {
+            width: 100vw !important;
+            height: 100vh !important;
+            max-width: none !important;
+            max-height: none !important;
+            transform: translateY(0) scale(1) !important;
+            filter: none;
+            overflow: visible !important;
+        }
+
+        #robot-container.local-glb-mode .robot-float {
+            position: absolute !important;
+            width: 1px !important;
+            height: 1px !important;
+            opacity: 0 !important;
+            pointer-events: none !important;
+            overflow: hidden !important;
+        }
+
+        #robot-container.local-glb-mode .robot-localglb-wrapper {
+            position: absolute;
+            inset: 0;
+            display: block;
+            pointer-events: auto;
+            z-index: 5;
+            background: transparent;
+            border: 0;
+            border-radius: 0;
+            overflow: visible;
+        }
+
+        #robot-container .robot-localglb-wrapper {
+            display: none;
+        }
+
+        #robot-container .sketchfab-embed-wrapper {
+            display: none !important;
+        }
+
+        #robot-container.local-glb-mode .robot-localglb-wrapper model-viewer {
+            width: 100%;
+            height: 100%;
+            background: transparent !important;
+            background-color: transparent !important;
+            --poster-color: transparent;
         }
 
         #head {
@@ -2052,6 +2106,11 @@
                 height: min(76vh, 640px) !important;
                 transform: translateY(10px) scale(1) !important;
             }
+            #robot-container.local-glb-mode {
+                width: 100vw !important;
+                height: 100vh !important;
+                transform: translateY(0) scale(1) !important;
+            }
             .camera-mini-panel,
             .voice-mini-panel {
                 width: 310px;
@@ -2062,32 +2121,25 @@
         }
 
         @media (max-width: 860px) {
-            aside {
-                top: auto !important;
-                bottom: 16px !important;
-                left: 14px !important;
-                flex-direction: row !important;
-                padding: 8px;
-                border-radius: 16px;
-                border: 1px solid rgba(171, 148, 223, 0.34);
-                background: rgba(255, 255, 255, 0.72);
-                backdrop-filter: blur(10px);
-            }
-
             .camera-mini-panel {
                 top: 12px;
                 width: min(46vw, 320px);
             }
 
             .voice-mini-panel {
-                top: auto;
-                bottom: 152px;
+                top: 12px;
+                left: 14px;
+                right: auto;
+                bottom: auto;
                 width: min(46vw, 320px);
                 max-height: 42vh;
             }
 
             .cart-mini-panel {
-                bottom: 152px;
+                top: 224px;
+                bottom: auto;
+                right: 14px;
+                left: auto;
                 width: min(40vw, 280px);
             }
 
@@ -2109,6 +2161,11 @@
                 height: min(70vh, 620px) !important;
                 transform: translateY(10px) scale(1) !important;
             }
+            #robot-container.local-glb-mode {
+                width: 100vw !important;
+                height: 100vh !important;
+                transform: translateY(0) scale(1) !important;
+            }
             #robot-container.sketchfab-mode .sketchfab-embed-wrapper iframe {
                 border-radius: 0;
             }
@@ -2124,14 +2181,16 @@
                 width: calc(100vw - 20px);
                 left: 10px;
                 right: 10px;
-                bottom: 202px;
+                top: 118px;
+                bottom: auto;
             }
 
             .cart-mini-panel {
                 width: calc(100vw - 20px);
                 left: 10px;
                 right: 10px;
-                bottom: 102px;
+                top: 318px;
+                bottom: auto;
             }
 
             .chat-mini-list {
@@ -2181,7 +2240,7 @@
 </div>
 </section>
 <section class="cart-mini-panel" id="cart-mini-panel" aria-label="Gio hang mini">
-<p class="cart-mini-title">Gio hang hien tai</p>
+<p class="cart-mini-title">Gio hang tam</p>
 <div class="cart-mini-list" id="cart-mini-list">
 <p class="cart-mini-empty">Chua co mon nao trong gio.</p>
 </div>
@@ -2221,35 +2280,16 @@
 <div class="absolute inset-0 bg-gradient-to-br from-white/40 to-transparent"></div>
 </div>
 </div>
-<!-- Sidebar Nav -->
-<aside class="fixed left-8 top-8 z-50 flex flex-col gap-5">
-<button class="w-12 h-12 rounded-full bg-white/80 backdrop-blur-md border border-slate-200 flex items-center justify-center text-slate-500 hover:text-primary hover:scale-110 transition-all shadow-lg active:scale-95 group" onclick="triggerCinematic('heroLanding')">
-<span class="material-symbols-outlined text-xl">rocket_launch</span>
-</button>
-<button class="w-12 h-12 rounded-full bg-white/80 backdrop-blur-md border border-slate-200 flex items-center justify-center text-slate-500 hover:text-primary hover:scale-110 transition-all shadow-lg active:scale-95 group" onclick="triggerCinematic('dance')">
-<span class="material-symbols-outlined text-xl">music_note</span>
-</button>
-<button class="w-12 h-12 rounded-full bg-white/80 backdrop-blur-md border border-slate-200 flex items-center justify-center text-slate-500 hover:text-primary hover:scale-110 transition-all shadow-lg active:scale-95 group" onclick="triggerCinematic('plasmaSurge')">
-<span class="material-symbols-outlined text-xl">bolt</span>
-</button>
-<button class="w-12 h-12 rounded-full bg-white/80 backdrop-blur-md border border-slate-200 flex items-center justify-center text-slate-500 hover:text-primary hover:scale-110 transition-all shadow-lg active:scale-95 group" onclick="triggerCinematic('zeroG')">
-<span class="material-symbols-outlined text-xl">auto_awesome</span>
-</button>
-<button class="w-12 h-12 rounded-full bg-white/80 backdrop-blur-md border border-slate-200 flex items-center justify-center text-slate-500 hover:text-error hover:scale-110 transition-all shadow-lg active:scale-95" onclick="resetRobot()">
-<span class="material-symbols-outlined text-xl">restart_alt</span>
-</button>
-</aside>
 <!-- Stage -->
 <main class="w-full h-full flex flex-col items-center justify-center relative" id="stage-container">
 <div id="shockwave-holder"></div>
 <div class="absolute bottom-10 w-48 h-12 bg-on-background/5 rounded-[100%] blur-3xl scale-x-150 transition-opacity duration-700" id="robot-shadow"></div>
 <!-- Robot Group -->
-<div class="relative w-56 h-72 flex flex-col items-center sketchfab-mode" id="robot-container">
-<div class="sketchfab-embed-wrapper">
-<iframe title="sexy oufit girl 2" frameborder="0" allowfullscreen mozallowfullscreen="true" webkitallowfullscreen="true" allow="autoplay; fullscreen; xr-spatial-tracking" xr-spatial-tracking execution-while-out-of-viewport execution-while-not-rendered web-share src="https://sketchfab.com/models/35c321d7919744a39ef5f7986d68efd5/embed?autostart=1&transparent=1&ui_infos=0&ui_controls=0&ui_hint=0&ui_help=0&ui_stop=0&ui_watermark=0&ui_watermark_link=0&dnt=1"></iframe>
-<p class="sketchfab-credit"><a href="https://sketchfab.com/3d-models/sexy-oufit-girl-2-35c321d7919744a39ef5f7986d68efd5?utm_medium=embed&utm_campaign=share-popup&utm_content=35c321d7919744a39ef5f7986d68efd5" target="_blank" rel="nofollow">sexy oufit girl 2</a> by <a href="https://sketchfab.com/golden4445?utm_medium=embed&utm_campaign=share-popup&utm_content=35c321d7919744a39ef5f7986d68efd5" target="_blank" rel="nofollow">golden4445etetet@gmail.com</a> on <a href="https://sketchfab.com?utm_medium=embed&utm_campaign=share-popup&utm_content=35c321d7919744a39ef5f7986d68efd5" target="_blank" rel="nofollow">Sketchfab</a></p>
+<div class="relative w-56 h-72 flex flex-col items-center" id="robot-container">
+<div class="robot-localglb-wrapper" id="robot-localglb-wrapper">
+<model-viewer id="robot-localglb-viewer" autoplay animation-crossfade-duration="120" shadow-intensity="0" interaction-prompt="none" loading="eager" reveal="auto" camera-orbit="0deg 80deg auto" min-camera-orbit="auto 60deg auto" max-camera-orbit="auto 95deg auto" exposure="1.0"></model-viewer>
 </div>
-<div class="robot-float flex flex-col items-center w-full h-full">
+<div class="robot-float flex flex-col items-center w-full h-full" id="robot-vector-wrapper">
 <!-- Head -->
 <div class="robot-head w-36 h-28 bg-white rounded-[2.5rem] shadow-xl relative border-t border-slate-100 flex flex-col items-center justify-center z-30 transition-transform duration-500" id="head">
 <div class="face-screen-panel absolute inset-0 flex flex-col items-center justify-center gap-3 transition-all duration-300 relative" id="face-screen">
@@ -2305,6 +2345,9 @@
 <script src="/robot/robot-controller.js"></script>
 <script>
     const robot = document.getElementById('robot-container');
+    const robotLocalGlbWrapper = document.getElementById('robot-localglb-wrapper');
+    const robotLocalGlbViewer = document.getElementById('robot-localglb-viewer');
+    const robotVectorWrapper = document.getElementById('robot-vector-wrapper');
     const head = document.getElementById('head');
     const body = document.getElementById('body');
     const neck = document.getElementById('neck');
@@ -2351,7 +2394,7 @@
     const CHAT_ARCHIVE_STORAGE_KEY = 'orderrobot.kiosk.chat-archive.v1';
     const CHAT_ARCHIVE_LIMIT = 40;
     const DEFAULT_CHAT_CLEAR_AFTER_ABSENCE_MS = 0;
-    const DEFAULT_CHAT_CLEAR_ON_ORDER_COMPLETE = false;
+    const DEFAULT_CHAT_CLEAR_ON_ORDER_COMPLETE = true;
     const DEFAULT_VOICE_ALWAYS_LISTEN = true;
     const DEFAULT_VOICE_TTS_WS_REALTIME = true;
     const AUTO_GREETING_VARIANTS = [
@@ -2378,9 +2421,10 @@
     const DEFAULT_BACKEND_STT_FINALIZE_SILENCE_MS = 420;
     const DEFAULT_BACKEND_STT_FORCE_FINALIZE_MS = 1400;
     const DEFAULT_BACKEND_STT_CHUNK_MS = 120;
+    const DEFAULT_ROBOT_VISUAL_MODE = 'local_glb';
     const DEFAULT_SUBMIT_SILENCE_MS = 1200;
     const BUSY_AUTO_SUBMIT_SUPPRESS_MS = 2400;
-    const DEFAULT_TTS_STREAM_PLAYBACK_RATE = 1.0;
+    const DEFAULT_TTS_STREAM_PLAYBACK_RATE = 1.06;
     const AI_RUNTIME_FALLBACK_URL = 'http://127.0.0.1:8012';
     const AI_RUNTIME_PROBE_TIMEOUT_MS = 1600;
     const isAdminPreviewMode = new URLSearchParams(window.location.search).get('adminPreview') === '1';
@@ -2425,6 +2469,7 @@
     let resolvedAiApiHealth = null;
     let resolvedAiHasRealtimeStack = false;
     let aiApiProbeTask = null;
+    let localModelFaceMaterialFixEnabled = true;
     let botSpeechActive = false;
     let voiceQueueRunning = false;
     let activeBotSpeechAbortController = null;
@@ -2510,6 +2555,17 @@
         },
     });
 
+    if (robotLocalGlbViewer) {
+        robotLocalGlbViewer.addEventListener('load', () => {
+            const modelPath = String(robotLocalGlbViewer.getAttribute('src') || '').trim();
+            applyLocalModelFaceMaterialFixes();
+            publishLocalModelAnimations(modelPath);
+        });
+        robotLocalGlbViewer.addEventListener('error', () => {
+            publishLocalModelAnimations('');
+        });
+    }
+
     function readRobotStudioConfigFromStorage() {
         const fallback = window.OrderRobot?.createDefaultRobotStudioConfig
             ? window.OrderRobot.createDefaultRobotStudioConfig()
@@ -2524,11 +2580,216 @@
         }
     }
 
+    function sanitizeLocalModelPath(input) {
+        const raw = String(input || '').trim();
+        if (!raw) return '';
+        if (!raw.startsWith('/')) return '';
+        const pathOnly = raw.split('?')[0].toLowerCase();
+        if (!(pathOnly.endsWith('.glb') || pathOnly.endsWith('.gltf'))) {
+            return '';
+        }
+        return raw;
+    }
+
+    function setRobotVisualVisibility(mode) {
+        const safeMode = String(mode || DEFAULT_ROBOT_VISUAL_MODE).trim();
+        robot.classList.remove('sketchfab-mode', 'local-glb-mode');
+        const showSketchfab = false;
+        const showLocalGlb = safeMode === 'local_glb';
+        const showVector = false;
+
+        if (showSketchfab) {
+            robot.classList.add('sketchfab-mode');
+        } else if (showLocalGlb) {
+            robot.classList.add('local-glb-mode');
+        }
+
+        if (robotLocalGlbWrapper) robotLocalGlbWrapper.style.display = showLocalGlb ? 'block' : 'none';
+        if (robotVectorWrapper) robotVectorWrapper.style.display = showVector ? 'flex' : 'none';
+    }
+
+    function publishLocalModelAnimations(modelPath = '') {
+        if (!robotLocalGlbViewer) return;
+        const safePath = String(modelPath || '').trim();
+        const list = Array.isArray(robotLocalGlbViewer.availableAnimations)
+            ? robotLocalGlbViewer.availableAnimations.map((item) => String(item || '').trim()).filter(Boolean)
+            : [];
+        const payload = {
+            type: 'orderrobot:local-model-animations',
+            modelPath: safePath,
+            animations: list,
+            activeAnimation: String(robotLocalGlbViewer.getAttribute('animation-name') || '').trim(),
+        };
+        window.postMessage(payload, window.location.origin);
+        if (window.parent && window.parent !== window) {
+            window.parent.postMessage(payload, window.location.origin);
+        }
+    }
+
+    function applyLocalModelFaceMaterialFixes() {
+        if (!robotLocalGlbViewer || localModelFaceMaterialFixEnabled === false) return;
+        const model = robotLocalGlbViewer.model;
+        const materials = Array.isArray(model?.materials) ? model.materials : [];
+        if (materials.length === 0) return;
+
+        for (const material of materials) {
+            const name = String(material?.name || '').toLowerCase();
+            const isFaceLike =
+                name.includes('face') ||
+                name.includes('head') ||
+                name.includes('skin') ||
+                name.includes('eye') ||
+                name.includes('brow') ||
+                name.includes('lash');
+            if (!isFaceLike) continue;
+
+            try {
+                if (typeof material.setDoubleSided === 'function') {
+                    material.setDoubleSided(true);
+                }
+                if (typeof material.setAlphaCutoff === 'function') {
+                    material.setAlphaCutoff(0.01);
+                }
+                if (typeof material.setAlphaMode === 'function') {
+                    if (name.includes('eye') || name.includes('lash') || name.includes('brow')) {
+                        material.setAlphaMode('BLEND');
+                    } else {
+                        material.setAlphaMode('OPAQUE');
+                    }
+                }
+            } catch {}
+        }
+    }
+
+    function applyRobotVisualSource(config) {
+        const rawVisual = config?.robotVisual && typeof config.robotVisual === 'object' ? config.robotVisual : {};
+        const mode = String(rawVisual.mode || DEFAULT_ROBOT_VISUAL_MODE).trim();
+        setRobotVisualVisibility(mode);
+        localModelFaceMaterialFixEnabled = rawVisual.localModelFaceMaterialFix !== false;
+
+        if (mode === 'local_glb' && robotLocalGlbViewer) {
+            const localModelPath = sanitizeLocalModelPath(rawVisual.localModelPath);
+            if (localModelPath) {
+                robotLocalGlbViewer.setAttribute('src', localModelPath);
+            } else {
+                robotLocalGlbViewer.removeAttribute('src');
+                publishLocalModelAnimations('');
+            }
+            const animationName = String(rawVisual.localModelAnimationName || '').trim();
+            const applyAnimationState = () => {
+                const available = Array.isArray(robotLocalGlbViewer.availableAnimations)
+                    ? robotLocalGlbViewer.availableAnimations.map((item) => String(item || '').trim()).filter(Boolean)
+                    : [];
+                const hasRequested = animationName && (available.length === 0 || available.includes(animationName));
+                if (hasRequested) {
+                    robotLocalGlbViewer.setAttribute('animation-name', animationName);
+                    robotLocalGlbViewer.setAttribute('autoplay', '');
+                    if (typeof robotLocalGlbViewer.play === 'function') {
+                        try { robotLocalGlbViewer.play(); } catch {}
+                    }
+                    return;
+                }
+                robotLocalGlbViewer.removeAttribute('animation-name');
+                robotLocalGlbViewer.removeAttribute('autoplay');
+                if (typeof robotLocalGlbViewer.pause === 'function') {
+                    try { robotLocalGlbViewer.pause(); } catch {}
+                }
+                if ('currentTime' in robotLocalGlbViewer) {
+                    try { robotLocalGlbViewer.currentTime = 0; } catch {}
+                }
+            };
+            applyAnimationState();
+            if (localModelPath) {
+                robotLocalGlbViewer.addEventListener('load', applyAnimationState, { once: true });
+            }
+            if (rawVisual.localModelAutoRotate === false) {
+                robotLocalGlbViewer.removeAttribute('auto-rotate');
+                robotLocalGlbViewer.setAttribute('camera-orbit', '0deg 80deg auto');
+            } else {
+                robotLocalGlbViewer.setAttribute('auto-rotate', '');
+            }
+            if (rawVisual.localModelCameraControls === true) {
+                robotLocalGlbViewer.setAttribute('camera-controls', '');
+            } else {
+                robotLocalGlbViewer.removeAttribute('camera-controls');
+            }
+            const yawDegRaw = Number(rawVisual.localModelYawDeg);
+            const yawDeg = Number.isFinite(yawDegRaw) ? Math.max(-180, Math.min(180, Math.round(yawDegRaw))) : 0;
+            // Use camera azimuth for deterministic left/right facing in this kiosk flow.
+            robotLocalGlbViewer.setAttribute('camera-orbit', `${yawDeg}deg 80deg auto`);
+            if (rawVisual.localModelCameraControls === true) {
+                robotLocalGlbViewer.setAttribute('min-camera-orbit', 'auto 60deg auto');
+                robotLocalGlbViewer.setAttribute('max-camera-orbit', 'auto 95deg auto');
+            } else {
+                robotLocalGlbViewer.setAttribute('min-camera-orbit', `${yawDeg}deg 80deg auto`);
+                robotLocalGlbViewer.setAttribute('max-camera-orbit', `${yawDeg}deg 80deg auto`);
+            }
+            // Keep model orientation neutral to avoid axis mismatch across different assets.
+            robotLocalGlbViewer.setAttribute('orientation', '0deg 0deg 0deg');
+            window.requestAnimationFrame(() => {
+                applyLocalModelFaceMaterialFixes();
+                publishLocalModelAnimations(localModelPath);
+            });
+            return;
+        }
+        if (robotLocalGlbViewer) {
+            robotLocalGlbViewer.removeAttribute('src');
+            publishLocalModelAnimations('');
+        }
+    }
+
+    function resolveActiveOutfitProfile(config) {
+        const manager = config?.outfitManager && typeof config.outfitManager === 'object' ? config.outfitManager : null;
+        const profiles = Array.isArray(manager?.profiles) ? manager.profiles : [];
+        if (profiles.length === 0) return null;
+        const activeId = String(manager?.activeProfileId || '').trim();
+        const active = profiles.find((profile) => String(profile?.id || '').trim() === activeId) || profiles[0];
+        if (!active || active.enabled === false) return null;
+        return active;
+    }
+
+    function applyActiveOutfitProfileOverrides(configInput) {
+        const base = configInput && typeof configInput === 'object' ? configInput : {};
+        const profile = resolveActiveOutfitProfile(base);
+        if (!profile) return base;
+
+        const merged = {
+            ...base,
+            avatarParts: {
+                ...(base.avatarParts || {}),
+            },
+            robotVisual: {
+                ...(base.robotVisual || {}),
+            },
+            skinAssetBindings: {
+                ...(base.skinAssetBindings || {}),
+            },
+        };
+
+        const skinId = String(profile.skinId || '').trim();
+        if (skinId) {
+            merged.activeSkinId = skinId;
+        }
+        const textureAssetId = String(profile.textureAssetId || '').trim();
+        if (skinId && textureAssetId) {
+            merged.skinAssetBindings[skinId] = textureAssetId;
+        } else if (skinId && !textureAssetId && merged.skinAssetBindings[skinId]) {
+            delete merged.skinAssetBindings[skinId];
+        }
+        const outfitStyle = String(profile.outfitStyle || '').trim();
+        if (outfitStyle) {
+            merged.avatarParts.outfitStyle = outfitStyle;
+        }
+        return merged;
+    }
+
     function applyRobotStudioConfig(config) {
         const safeConfig = config && typeof config === 'object'
-            ? { ...readRobotStudioConfigFromStorage(), ...config }
+            ? config
             : readRobotStudioConfigFromStorage();
-        robotController.applyStudioConfig(safeConfig);
+        const resolvedConfig = applyActiveOutfitProfileOverrides(safeConfig);
+        robotController.applyStudioConfig(resolvedConfig);
+        applyRobotVisualSource(resolvedConfig);
     }
 
     function runRobotStudioCommand(payload) {
@@ -3094,6 +3355,74 @@
         return toSafeText(value).replaceAll('\n', ' ');
     }
 
+    function hasCartField(payload) {
+        return Boolean(payload)
+            && typeof payload === 'object'
+            && Object.prototype.hasOwnProperty.call(payload, 'cart');
+    }
+
+    function extractCartItemsFromPayload(payload) {
+        if (!payload || typeof payload !== 'object') return null;
+
+        if (Array.isArray(payload.cart)) {
+            return normalizeOrderItems(payload.cart);
+        }
+
+        if (payload.cart && typeof payload.cart === 'object' && !Array.isArray(payload.cart)) {
+            const menuById = new Map(
+                (Array.isArray(currentMenuItems) ? currentMenuItems : []).map((item) => [
+                    String(item?.item_id || item?.id || '').trim(),
+                    item,
+                ]),
+            );
+            const resolved = Object.entries(payload.cart)
+                .map(([itemId, quantityRaw]) => {
+                    const item = menuById.get(String(itemId || '').trim());
+                    const quantity = Math.max(0, Number(quantityRaw || 0));
+                    if (!item || quantity <= 0) return null;
+                    const price = Math.max(0, Number(item?.price || 0));
+                    return {
+                        item_id: String(item?.item_id || item?.id || ''),
+                        name: String(item?.name || 'Mon'),
+                        quantity,
+                        unit_price: price,
+                        line_total: price * quantity,
+                    };
+                })
+                .filter(Boolean);
+            return normalizeOrderItems(resolved);
+        }
+
+        if (Array.isArray(payload.cart_summary)) {
+            const menuByName = new Map(
+                (Array.isArray(currentMenuItems) ? currentMenuItems : []).map((item) => [
+                    normalizeNoToneKey(String(item?.name || '')),
+                    item,
+                ]),
+            );
+            const resolved = payload.cart_summary
+                .map((entry) => {
+                    const quantity = Math.max(0, Number(entry?.quantity || 0));
+                    if (quantity <= 0) return null;
+                    const name = String(entry?.name || '').trim();
+                    const lineTotal = Math.max(0, Number(entry?.line_total || 0));
+                    const menuItem = menuByName.get(normalizeNoToneKey(name));
+                    const inferredPrice = quantity > 0 ? lineTotal / quantity : 0;
+                    return {
+                        item_id: String(menuItem?.item_id || menuItem?.id || name || ''),
+                        name: name || String(menuItem?.name || 'Mon'),
+                        quantity,
+                        unit_price: Math.max(0, Number(menuItem?.price || inferredPrice || 0)),
+                        line_total: lineTotal,
+                    };
+                })
+                .filter(Boolean);
+            return normalizeOrderItems(resolved);
+        }
+
+        return null;
+    }
+
     const MOJIBAKE_MARKERS = ['Ã', 'Ä', 'á»', 'áº', 'Æ', 'â€'];
 
     const ASSISTANT_TONE_EXACT_ENTRIES = [
@@ -3175,8 +3504,34 @@
         return text;
     }
 
+    function repairDisplaySpacingArtifacts(value) {
+        let text = String(value || '').trim();
+        if (!text) return '';
+        text = text
+            .replace(/\s+/g, ' ')
+            .replace(/([,.!?;:])(?=\S)/g, '$1 ')
+            .replace(/\(\s+/g, '(')
+            .replace(/\s+\)/g, ')');
+
+        const phraseRepairs = [
+            [/\bc hào\b/giu, 'chào'],
+            [/\be m\b/giu, 'em'],
+            [/\bme nu\b/giu, 'menu'],
+            [/\bmen u\b/giu, 'menu'],
+            [/\bkhô ng\b/giu, 'không'],
+            [/\blu ôn\b/giu, 'luôn'],
+            [/\bưvấn\b/giu, 'tư vấn'],
+            [/\bgìh ôm\b/giu, 'gì hôm'],
+            [/\býmón\b/giu, 'ý món'],
+        ];
+        for (const [pattern, replacement] of phraseRepairs) {
+            text = text.replace(pattern, replacement);
+        }
+        return text.trim();
+    }
+
     function normalizeAssistantDisplayText(role, text) {
-        const raw = repairMojibakeText(text).trim();
+        const raw = repairDisplaySpacingArtifacts(repairMojibakeText(text)).trim();
         if (!raw) return '';
         if (role !== 'assistant') return raw;
 
@@ -3226,7 +3581,7 @@
         }
         chatMiniList.innerHTML = displayItems.map((entry) => `
             <p class="chat-mini-line ${entry.role} ${entry.isThinking ? 'thinking' : ''}">
-                <span class="chat-mini-line-label">${entry.role === 'user' ? 'Khach' : 'Robot'}:</span>${toSafeInlineText(entry.text)}
+                <span class="chat-mini-line-label">${entry.role === 'user' ? 'Khach' : 'Robot'}:</span> ${toSafeInlineText(entry.text)}
             </p>
         `).join('');
         chatMiniList.scrollTop = chatMiniList.scrollHeight;
@@ -3480,6 +3835,105 @@
             .filter((item) => item.quantity > 0);
     }
 
+    function parseLeadingQuantityFromText(rawText) {
+        const normalized = normalizeNoToneKey(rawText);
+        if (!normalized) return 1;
+        const numericMatch = normalized.match(/^(\d+)\b/);
+        if (numericMatch) {
+            return Math.max(1, Number.parseInt(numericMatch[1], 10) || 1);
+        }
+        const firstWord = normalized.split(' ')[0] || '';
+        const wordMap = {
+            mot: 1,
+            hai: 2,
+            ba: 3,
+            bon: 4,
+            tu: 4,
+            nam: 5,
+            sau: 6,
+            bay: 7,
+            tam: 8,
+            chin: 9,
+            muoi: 10,
+        };
+        return wordMap[firstWord] || 1;
+    }
+
+    function inferAddedItemFromReplyText(replyText) {
+        const normalizedReply = normalizeNoToneKey(replyText);
+        if (!normalizedReply.includes('da them') || !normalizedReply.includes('vao gio hang')) {
+            return null;
+        }
+        const match = normalizedReply.match(/da them (.+?) vao gio hang/);
+        if (!match || !match[1]) return null;
+        const addedPartRaw = String(match[1] || '').trim();
+        if (!addedPartRaw) return null;
+
+        const quantity = parseLeadingQuantityFromText(addedPartRaw);
+        const menuCandidates = Array.isArray(currentMenuItems) ? currentMenuItems : [];
+        const normalizedAddedPart = normalizeNoToneKey(addedPartRaw);
+
+        let bestItem = null;
+        let bestScore = 0;
+        for (const menuItem of menuCandidates) {
+            const itemId = String(menuItem?.item_id || menuItem?.id || '').trim();
+            const itemName = String(menuItem?.name || '').trim();
+            if (!itemId || !itemName) continue;
+            const normalizedItemName = normalizeNoToneKey(itemName);
+            if (!normalizedItemName) continue;
+
+            let score = 0;
+            if (normalizedAddedPart.includes(normalizedItemName)) score += normalizedItemName.length + 10;
+            if (normalizedItemName.includes(normalizedAddedPart)) score += normalizedAddedPart.length;
+            const addedTokens = normalizedAddedPart.split(' ').filter(Boolean);
+            const itemTokens = normalizedItemName.split(' ').filter(Boolean);
+            const common = addedTokens.filter((token) => itemTokens.includes(token)).length;
+            score += common * 2;
+
+            if (score > bestScore) {
+                bestScore = score;
+                bestItem = {
+                    item_id: itemId,
+                    name: itemName,
+                    quantity,
+                    unit_price: Math.max(0, Number(menuItem?.price || 0)),
+                };
+            }
+        }
+        if (!bestItem || bestScore < 4) return null;
+        return bestItem;
+    }
+
+    function applyOptimisticCartUpdateFromReply(replyText) {
+        const inferred = inferAddedItemFromReplyText(replyText);
+        if (!inferred) return false;
+
+        const nextCart = normalizeOrderItems(cartState);
+        const existingIndex = nextCart.findIndex((item) => item.item_id === inferred.item_id);
+        if (existingIndex >= 0) {
+            const existing = nextCart[existingIndex];
+            const unitPrice = Math.max(0, Number(existing.unit_price || inferred.unit_price || 0));
+            const quantity = Math.max(1, Number(existing.quantity || 0) + inferred.quantity);
+            nextCart[existingIndex] = {
+                ...existing,
+                quantity,
+                unit_price: unitPrice,
+                line_total: unitPrice * quantity,
+            };
+        } else {
+            const unitPrice = Math.max(0, Number(inferred.unit_price || 0));
+            nextCart.push({
+                item_id: inferred.item_id,
+                name: inferred.name,
+                quantity: inferred.quantity,
+                unit_price: unitPrice,
+                line_total: unitPrice * inferred.quantity,
+            });
+        }
+        updateMiniCart(nextCart);
+        return true;
+    }
+
     function shouldHandleOrderId(orderId) {
         const safeOrderId = String(orderId || '').trim();
         if (!safeOrderId) return true;
@@ -3627,22 +4081,26 @@
 
     async function runOrderCompletionFlow(orderData) {
         const items = normalizeOrderItems(orderData.items);
-        if (items.length === 0) return;
-        if (!shouldHandleOrderId(orderData.orderId)) return;
+        if (items.length > 0 && !shouldHandleOrderId(orderData.orderId)) return;
 
         const finalizedOrderData = { ...orderData, items };
         activeOrderFlowToken += 1;
         const flowToken = activeOrderFlowToken;
         try {
-            await showOrderPopupStep(finalizedOrderData, flowToken);
+            if (items.length > 0) {
+                await showOrderPopupStep(finalizedOrderData, flowToken);
+            }
             if (flowToken !== activeOrderFlowToken) return;
-            await showRatingPopupStep(finalizedOrderData, flowToken);
+            if (items.length > 0) {
+                await showRatingPopupStep(finalizedOrderData, flowToken);
+            }
         } finally {
             if (flowToken === activeOrderFlowToken) {
-                archiveChatHistorySnapshot(finalizedOrderData);
-                if (chatClearOnOrderComplete) {
-                    clearChatHistory();
+                if (items.length > 0) {
+                    archiveChatHistorySnapshot(finalizedOrderData);
                 }
+                clearChatHistory();
+                updateMiniCart([]);
                 hideOrderFlow();
             }
         }
@@ -5155,8 +5613,9 @@
                                     turnFirstTextAt = performance.now();
                                 }
                                 tryStartEarlySpeechFromStream();
-                                if (Array.isArray(chunk.cart)) {
-                                    updateMiniCart(chunk.cart);
+                                const streamedCart = extractCartItemsFromPayload(chunk);
+                                if (streamedCart) {
+                                    updateMiniCart(streamedCart);
                                 }
                                 const bridgeSource = String(chunk.bridge_source || '').trim();
                                 if (bridgeSource) {
@@ -5215,7 +5674,10 @@
                         );
                         ensureNotStale();
                         replyText = String(replyPayload?.reply_text || '').trim();
-                        updateMiniCart(replyPayload?.cart);
+                        const fallbackCart = extractCartItemsFromPayload(replyPayload);
+                        if (fallbackCart) {
+                            updateMiniCart(fallbackCart);
+                        }
                     } finally {
                         if (streamPlayer) {
                             if (turnAbortController.signal.aborted) {
@@ -5239,23 +5701,28 @@
                     if (replyPayload?.order_created) {
                         const finishedSessionId = currentSessionId;
                         const finishedOrderId = String(replyPayload?.order_id || '').trim();
+                        const payloadCartForOrder = extractCartItemsFromPayload(replyPayload);
                         const orderItemsForPopup = cartSnapshotBeforeTurn.length > 0
                             ? cartSnapshotBeforeTurn
-                            : normalizeOrderItems(replyPayload?.cart);
+                            : (payloadCartForOrder || []);
                         currentSessionId = null;
                         setVoiceStatus(`Da chot don ${finishedOrderId || ''}`.trim());
-                        if (orderItemsForPopup.length > 0) {
-                            void runOrderCompletionFlow({
-                                sessionId: finishedSessionId,
-                                orderId: finishedOrderId,
-                                items: orderItemsForPopup,
-                            });
-                        }
+                        void runOrderCompletionFlow({
+                            sessionId: finishedSessionId,
+                            orderId: finishedOrderId,
+                            items: orderItemsForPopup,
+                        });
                     }
                     hideThinkingIndicator(turnId);
                     stopThinkingMotion(turnId);
                     if (replyText) {
                         ensureNotStale();
+                        const resolvedPayloadCart = extractCartItemsFromPayload(replyPayload);
+                        if (resolvedPayloadCart) {
+                            updateMiniCart(resolvedPayloadCart);
+                        } else {
+                            applyOptimisticCartUpdateFromReply(replyText);
+                        }
                         appendChat('assistant', replyText);
                         if (streamedAudioChunks === 0 && !turnAbortController.signal.aborted) {
                             clearFillerTimer();

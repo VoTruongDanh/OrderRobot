@@ -1082,7 +1082,7 @@ class ConversationEngine:
 
         if contains_any(normalized_user_text, STATIC_CACHE_GREETING_KEYWORDS):
             return (
-                "Xin chao! Em la Order Robot. Hom nay anh chi muon thu mon nao de em tu van nhanh?",
+                "Xin chào! Em là Order Robot. Hôm nay anh/chị muốn thử món nào để em tư vấn nhanh?",
                 self.settings.voice_style,
             )
 
@@ -1091,11 +1091,11 @@ class ConversationEngine:
             if top_items:
                 listed = ", ".join(top_items)
                 return (
-                    f"Menu hom nay co {listed}. Anh chi muon em goi y mon de uong, it ngot hay dang hot?",
+                    f"Menu hôm nay có {listed}. Anh/chị muốn em gợi ý món dễ uống, ít ngọt hay đang hot?",
                     self.settings.voice_style,
                 )
             return (
-                "Menu hom nay da san sang. Anh chi muon xem nhom tra trai cay, latte hay ca phe?",
+                "Menu hôm nay đã sẵn sàng. Anh/chị muốn xem nhóm trà trái cây, latte hay cà phê?",
                 self.settings.voice_style,
             )
 
@@ -1103,7 +1103,7 @@ class ConversationEngine:
             normalized_user_text, STATIC_CACHE_CONFIRM_KEYWORDS
         ):
             return (
-                "Da ro. Em xac nhan don ngay cho anh chi va se doc lai gio hang de minh kiem tra lan cuoi nhe.",
+                "Dạ rõ. Em xác nhận đơn ngay cho anh/chị và sẽ đọc lại giỏ hàng để mình kiểm tra lần cuối nhé.",
                 self.settings.voice_style,
             )
         return None
@@ -1686,6 +1686,20 @@ _ORDER_CREATED_SUFFIXES = [
 ]
 
 _MOJIBAKE_MARKERS = ("Ã", "Ä", "á»", "áº", "Æ", "â€")
+_VI_DIACRITIC_CHARS = set("ăâđêôơưáàảãạấầẩẫậắằẳẵặéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ")
+_ASCII_VI_HINTS = (
+    " minh ",
+    " ban ",
+    " mon ",
+    " menu ",
+    " hom nay ",
+    " gio hang ",
+    " goi ",
+    " uong ",
+    " khong ",
+    " xin loi ",
+)
+_BROKEN_SPACING_PATTERN = re.compile(r"\b[bcdfghklmnpqrstvxđ]\b\s+[a-zà-ỹđ]{2,}\b", re.IGNORECASE)
 _SAFE_SCENE_REPLIES = {
     "greeting_intro": "Chào mừng bạn. Hôm nay bạn muốn thử món nào?",
     "greeting": "Xin chào. Bạn muốn gọi món gì hôm nay?",
@@ -1722,11 +1736,38 @@ def repair_mojibake_text(value: object) -> str:
     return min(candidates, key=score)
 
 
+def _looks_like_vietnamese_without_tone(text: str) -> bool:
+    sample = str(text or "").strip()
+    if len(sample) < 24:
+        return False
+    lower = sample.casefold()
+    if any(char in lower for char in _VI_DIACRITIC_CHARS):
+        return False
+    if not any("a" <= char <= "z" for char in lower):
+        return False
+    normalized_ascii = f" {normalize_text(sample)} "
+    hint_hits = sum(1 for hint in _ASCII_VI_HINTS if hint in normalized_ascii)
+    return hint_hits >= 2
+
+
+def _looks_like_broken_spacing_text(text: str) -> bool:
+    sample = str(text or "").strip()
+    if len(sample) < 20:
+        return False
+    if len(_BROKEN_SPACING_PATTERN.findall(sample)) >= 2:
+        return True
+    return False
+
+
 def ensure_frontend_safe_reply(scene: str, value: object) -> str:
     repaired = repair_mojibake_text(value)
     if not repaired.strip():
         return _SAFE_SCENE_REPLIES.get(scene, _SAFE_SCENE_REPLIES["fallback"])
     if any(marker in repaired for marker in _MOJIBAKE_MARKERS):
+        return _SAFE_SCENE_REPLIES.get(scene, _SAFE_SCENE_REPLIES["fallback"])
+    if scene in {"greeting", "recommendation", "fallback", "cart_follow_up"} and _looks_like_vietnamese_without_tone(repaired):
+        return _SAFE_SCENE_REPLIES.get(scene, _SAFE_SCENE_REPLIES["fallback"])
+    if scene in {"greeting", "fallback", "cart_follow_up"} and _looks_like_broken_spacing_text(repaired):
         return _SAFE_SCENE_REPLIES.get(scene, _SAFE_SCENE_REPLIES["fallback"])
     return repaired
 

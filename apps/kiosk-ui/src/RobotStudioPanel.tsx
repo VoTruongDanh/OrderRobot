@@ -39,6 +39,20 @@ type DragState = {
   offsetY: number
 }
 
+type RobotModelManifestEntry = {
+  id: string
+  name: string
+  path: string
+  format?: string
+}
+
+type LocalModelAnimationsMessage = {
+  type: 'orderrobot:local-model-animations'
+  modelPath: string
+  animations: string[]
+  activeAnimation: string
+}
+
 const PACK_OPTIONS: Array<{ id: PackFilter; label: string }> = [
   { id: 'all', label: 'Tat ca' },
   { id: 'maid', label: 'Maid' },
@@ -65,120 +79,13 @@ const CONDITION_OPERATOR_OPTIONS: RobotGraphConditionOperator[] = [
 const KIOSK_HEARTBEAT_KEY = 'orderrobot.kiosk.heartbeat'
 const KIOSK_HEARTBEAT_STALE_MS = 90000
 const ADMIN_LIVE_PREVIEW_SRC = '/stitch_robot_3d_control_center.html?adminPreview=1'
-
-const HEAD_SHAPE_OPTIONS: Array<{ id: RobotAvatarPartsV1['headShape']; label: string }> = [
-  { id: 'soft-square', label: 'Soft Square' },
-  { id: 'visor', label: 'Visor' },
-  { id: 'hex', label: 'Hex' },
-  { id: 'bubble', label: 'Bubble' },
-]
-
-const HEAD_ACCESSORY_OPTIONS: Array<{ id: RobotAvatarPartsV1['headAccessory']; label: string }> = [
-  { id: 'none', label: 'None' },
-  { id: 'antenna', label: 'Antenna' },
-  { id: 'halo', label: 'Halo' },
-  { id: 'crown', label: 'Crown' },
-]
-
-const EYE_STYLE_OPTIONS: Array<{ id: RobotAvatarPartsV1['eyeStyle']; label: string }> = [
-  { id: 'visor', label: 'Visor' },
-  { id: 'round', label: 'Round' },
-  { id: 'anime', label: 'Anime' },
-  { id: 'mono', label: 'Mono' },
-  { id: 'happy', label: 'Happy ^_^' },
-  { id: 'wink', label: 'Wink >_<' },
-  { id: 'surprised', label: 'Surprised O_O' },
-  { id: 'sleepy', label: 'Sleepy -_-' },
-]
-
-const MOUTH_STYLE_OPTIONS: Array<{ id: RobotAvatarPartsV1['mouthStyle']; label: string }> = [
-  { id: 'line', label: 'Line' },
-  { id: 'smile', label: 'Smile' },
-  { id: 'pixel', label: 'Pixel' },
-  { id: 'none', label: 'None' },
-  { id: 'big-smile', label: 'Big Smile :D' },
-  { id: 'surprised-o', label: 'Surprised :O' },
-  { id: 'sad', label: 'Sad :(' },
-  { id: 'tongue-out', label: 'Tongue :P' },
-]
-
-const ARM_STYLE_OPTIONS: Array<{ id: RobotAvatarPartsV1['armStyle']; label: string }> = [
-  { id: 'sleek', label: 'Sleek' },
-  { id: 'chunky', label: 'Chunky' },
-  { id: 'floating', label: 'Floating' },
-]
-
-const ARM_COLOR_OPTIONS: Array<{ id: RobotAvatarPartsV1['armColor']; label: string }> = [
-  { id: 'aqua', label: 'Aqua' },
-  { id: 'sunset', label: 'Sunset' },
-  { id: 'mint', label: 'Mint' },
-  { id: 'violet', label: 'Violet' },
-  { id: 'mono', label: 'Mono' },
-]
-
-const BODY_SHAPE_OPTIONS: Array<{ id: RobotAvatarPartsV1['bodyShape']; label: string }> = [
-  { id: 'core', label: 'Core' },
-  { id: 'shield', label: 'Shield' },
-  { id: 'orb', label: 'Orb' },
-  { id: 'compact', label: 'Compact' },
-]
+const ROBOT_MODEL_MANIFEST_URL = '/robot-models/manifest.json'
 
 const OUTFIT_STYLE_OPTIONS: Array<{ id: RobotAvatarPartsV1['outfitStyle']; label: string }> = [
   { id: 'service', label: 'Service' },
   { id: 'street', label: 'Street' },
   { id: 'formal', label: 'Formal' },
   { id: 'battle', label: 'Battle' },
-]
-
-const AVATAR_PRESETS: Array<{ id: string; label: string; parts: Partial<RobotAvatarPartsV1> }> = [
-  {
-    id: 'preset-aether',
-    label: 'Aether Hero',
-      parts: {
-        headShape: 'visor',
-        headAccessory: 'halo',
-        eyeStyle: 'visor',
-        mouthStyle: 'line',
-        faceFrameScale: 102,
-        faceFrameVisible: true,
-        armStyle: 'sleek',
-        armColor: 'aqua',
-        bodyShape: 'shield',
-        outfitStyle: 'formal',
-      },
-  },
-  {
-    id: 'preset-kawaii',
-    label: 'Kawaii Pop',
-      parts: {
-        headShape: 'bubble',
-        headAccessory: 'crown',
-        eyeStyle: 'anime',
-        mouthStyle: 'smile',
-        faceFrameScale: 108,
-        faceFrameVisible: true,
-        armStyle: 'chunky',
-        armColor: 'violet',
-        bodyShape: 'orb',
-        outfitStyle: 'street',
-      },
-  },
-  {
-    id: 'preset-combat',
-    label: 'Neo Combat',
-      parts: {
-        headShape: 'hex',
-        headAccessory: 'antenna',
-        eyeStyle: 'mono',
-        mouthStyle: 'pixel',
-        faceFrameScale: 96,
-        faceFrameVisible: true,
-        armStyle: 'floating',
-        armColor: 'sunset',
-        bodyShape: 'compact',
-        outfitStyle: 'battle',
-      },
-  },
 ]
 
 function randomId(prefix: string): string {
@@ -225,8 +132,9 @@ function createNode(type: RobotGraphNode['type']): RobotGraphNode {
   return base
 }
 
-function randomPick<T>(items: readonly T[]): T {
-  return items[Math.floor(Math.random() * items.length)] as T
+function isLikelyPoseAnimation(name: string): boolean {
+  const safe = String(name || '').toLowerCase()
+  return /(^|[_\-\s|])(t[_\-\s]?pose|a[_\-\s]?pose|pose)($|[_\-\s|])/.test(safe)
 }
 
 export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPanelProps) {
@@ -243,6 +151,9 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
   const [kioskConnected, setKioskConnected] = useState(false)
   const [assetLoading, setAssetLoading] = useState(false)
   const [assetPreviewById, setAssetPreviewById] = useState<Record<string, string>>({})
+  const [robotModelCatalog, setRobotModelCatalog] = useState<RobotModelManifestEntry[]>([])
+  const [robotModelCatalogLoading, setRobotModelCatalogLoading] = useState(false)
+  const [localModelAnimations, setLocalModelAnimations] = useState<string[]>([])
   const dragRef = useRef<DragState | null>(null)
   const previewIframeRef = useRef<HTMLIFrameElement | null>(null)
   const t = useCallback(
@@ -286,6 +197,21 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
       },
     [config.avatarParts],
   )
+  const outfitProfiles = useMemo(
+    () => config.outfitManager?.profiles ?? [],
+    [config.outfitManager],
+  )
+  const activeOutfitProfileId = config.outfitManager?.activeProfileId ?? outfitProfiles[0]?.id ?? ''
+  const activeOutfitProfile = useMemo(
+    () => outfitProfiles.find((profile) => profile.id === activeOutfitProfileId) ?? outfitProfiles[0] ?? null,
+    [activeOutfitProfileId, outfitProfiles],
+  )
+  const sortedLocalModelAnimations = useMemo(() => {
+    const unique = Array.from(new Set(localModelAnimations.map((item) => String(item || '').trim()).filter(Boolean)))
+    const actionLike = unique.filter((name) => !isLikelyPoseAnimation(name))
+    const poseLike = unique.filter((name) => isLikelyPoseAnimation(name))
+    return [...actionLike, ...poseLike]
+  }, [localModelAnimations])
 
   useEffect(() => {
     const readHeartbeat = () => {
@@ -333,6 +259,54 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
   useEffect(() => {
     syncLivePreviewFrame()
   }, [syncLivePreviewFrame])
+
+  useEffect(() => {
+    const onMessage = (event: MessageEvent<unknown>) => {
+      if (event.origin !== window.location.origin) return
+      if (!event.data || typeof event.data !== 'object') return
+      const payload = event.data as Partial<LocalModelAnimationsMessage>
+      if (payload.type !== 'orderrobot:local-model-animations') return
+      const animations = Array.isArray(payload.animations)
+        ? payload.animations
+            .map((item) => String(item || '').trim())
+            .filter(Boolean)
+        : []
+      setLocalModelAnimations(Array.from(new Set(animations)))
+    }
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
+  }, [])
+
+  const refreshRobotModelCatalog = useCallback(async () => {
+    setRobotModelCatalogLoading(true)
+    try {
+      const response = await fetch(ROBOT_MODEL_MANIFEST_URL, { cache: 'no-store' })
+      if (!response.ok) {
+        setRobotModelCatalog([])
+        return
+      }
+      const payload = (await response.json()) as { models?: RobotModelManifestEntry[] }
+      const models = Array.isArray(payload?.models)
+        ? payload.models
+            .map((item) => ({
+              id: String(item?.id || '').trim(),
+              name: String(item?.name || '').trim(),
+              path: String(item?.path || '').trim(),
+              format: String(item?.format || '').trim().toLowerCase(),
+            }))
+            .filter((item) => item.id && item.name && item.path)
+        : []
+      setRobotModelCatalog(models)
+    } catch {
+      setRobotModelCatalog([])
+    } finally {
+      setRobotModelCatalogLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void refreshRobotModelCatalog()
+  }, [refreshRobotModelCatalog])
 
   const notify = useCallback(
     (tone: NoticeTone, text: string) => {
@@ -444,49 +418,109 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
     [config, persistConfig],
   )
 
-  const updateAvatarParts = useCallback(
-    (patch: Partial<RobotAvatarPartsV1>) => {
-      const nextConfig: RobotStudioConfigV1 = {
-        ...config,
-        avatarParts: {
-          ...avatarParts,
+  const updateRobotVisual = useCallback(
+    (
+      patch: Partial<{
+        localModelPath: string
+        localModelAnimationName: string
+        localModelAutoRotate: boolean
+        localModelCameraControls: boolean
+        localModelYawDeg: number
+        localModelFaceMaterialFix: boolean
+      }>,
+    ) => {
+      const latest = getRobotStudioConfig()
+      const current = latest.robotVisual ?? createDefaultRobotStudioConfig().robotVisual
+      persistConfig({
+        ...latest,
+        robotVisual: {
+          ...current,
           ...patch,
         },
-      }
-      persistConfig(nextConfig)
-    },
-    [avatarParts, config, persistConfig],
-  )
-
-  const applyAvatarPreset = useCallback(
-    (presetId: string) => {
-      const preset = AVATAR_PRESETS.find((item) => item.id === presetId)
-      if (!preset) return
-      updateAvatarParts({
-        ...preset.parts,
-        randomSeed: Date.now() % 1000000,
       })
-      notify('info', t(`Da ap dung preset: ${preset.label}.`, `Preset applied: ${preset.label}.`))
     },
-    [notify, t, updateAvatarParts],
+    [persistConfig],
   )
 
-  const randomizeAvatarParts = useCallback(() => {
-    updateAvatarParts({
-      headShape: randomPick(HEAD_SHAPE_OPTIONS).id,
-      headAccessory: randomPick(HEAD_ACCESSORY_OPTIONS).id,
-      eyeStyle: randomPick(EYE_STYLE_OPTIONS).id,
-      mouthStyle: randomPick(MOUTH_STYLE_OPTIONS).id,
-      faceFrameScale: Math.max(72, Math.min(136, Math.round(88 + Math.random() * 44))),
-      faceFrameVisible: true,
-      armStyle: randomPick(ARM_STYLE_OPTIONS).id,
-      armColor: randomPick(ARM_COLOR_OPTIONS).id,
-      bodyShape: randomPick(BODY_SHAPE_OPTIONS).id,
-      outfitStyle: randomPick(OUTFIT_STYLE_OPTIONS).id,
-      randomSeed: Date.now() % 1000000,
+  useEffect(() => {
+    if ((config.robotVisual?.mode ?? 'local_glb') !== 'local_glb') return
+    if (config.robotVisual?.localModelAutoRotate !== true) return
+    updateRobotVisual({ localModelAutoRotate: false })
+  }, [config.robotVisual?.localModelAutoRotate, config.robotVisual?.mode, updateRobotVisual])
+
+  const updateOutfitManager = useCallback(
+    (next: RobotStudioConfigV1['outfitManager']) => {
+      persistConfig({ ...config, outfitManager: next })
+    },
+    [config, persistConfig],
+  )
+
+  const setActiveOutfitProfile = useCallback(
+    (profileId: string) => {
+      const safeProfileId = String(profileId || '').trim()
+      if (!safeProfileId) return
+      updateOutfitManager({
+        activeProfileId: safeProfileId,
+        profiles: outfitProfiles,
+      })
+    },
+    [outfitProfiles, updateOutfitManager],
+  )
+
+  const patchActiveOutfitProfile = useCallback(
+    (
+      patch: Partial<{
+        name: string
+        enabled: boolean
+        skinId: string
+        outfitStyle: RobotAvatarPartsV1['outfitStyle']
+        textureAssetId: string
+      }>,
+    ) => {
+      const targetId = activeOutfitProfile?.id
+      if (!targetId) return
+      const nextProfiles = outfitProfiles.map((profile) =>
+        profile.id === targetId
+          ? {
+              ...profile,
+              ...patch,
+            }
+          : profile,
+      )
+      updateOutfitManager({
+        activeProfileId: targetId,
+        profiles: nextProfiles,
+      })
+    },
+    [activeOutfitProfile?.id, outfitProfiles, updateOutfitManager],
+  )
+
+  const addOutfitProfile = useCallback(() => {
+    const id = randomId('outfit')
+    const baseSkinId = config.activeSkinId || ROBOT_STUDIO_SKIN_LIBRARY[0]?.id || 'maid-classic'
+    const nextProfile: RobotStudioConfigV1['outfitManager']['profiles'][number] = {
+      id,
+      name: `Outfit ${outfitProfiles.length + 1}`,
+      enabled: true,
+      skinId: baseSkinId,
+      outfitStyle: avatarParts.outfitStyle,
+      textureAssetId: '',
+    }
+    updateOutfitManager({
+      activeProfileId: id,
+      profiles: [...outfitProfiles, nextProfile],
     })
-    notify('info', t('Da random bo phan robot.', 'Robot parts randomized.'))
-  }, [notify, t, updateAvatarParts])
+  }, [avatarParts.outfitStyle, config.activeSkinId, outfitProfiles, updateOutfitManager])
+
+  const removeActiveOutfitProfile = useCallback(() => {
+    if (!activeOutfitProfile?.id) return
+    if (outfitProfiles.length <= 1) return
+    const nextProfiles = outfitProfiles.filter((profile) => profile.id !== activeOutfitProfile.id)
+    updateOutfitManager({
+      activeProfileId: nextProfiles[0]?.id ?? '',
+      profiles: nextProfiles,
+    })
+  }, [activeOutfitProfile?.id, outfitProfiles, updateOutfitManager])
 
   const handleAssetUpload = useCallback(
     async (files: FileList | null) => {
@@ -822,7 +856,7 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
         <header className="admin-subcard__head">
           <div>
             <h3>Quick Studio</h3>
-            <p>{t('Che do de chinh nhanh: builder 3 phan (dau, tay, than), random mau dep va test robot trong vai click.', 'Fast mode: 3-part builder (head, arms, body), random nice presets, and robot testing in a few clicks.')}</p>
+            <p>{t('Che do de chinh nhanh cho GLB: chon model, animation, goc xoay va test action/graph.', 'Quick GLB mode: pick model, animation, heading, and test actions/graphs.')}</p>
             <div className="admin-chip-list">
               <p className={`admin-chip ${kioskConnected ? 'admin-chip--ok' : 'admin-chip--warning'}`}>
                 {kioskConnected
@@ -853,39 +887,7 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
           </div>
         </header>
 
-        <div className="robot-studio-section">
-          <h4 className="robot-studio-section__title">{t('🎨 Bảng Màu Theme', '🎨 Color Theme Palette')}</h4>
-          <div className="robot-color-theme-gallery">
-            {ROBOT_STUDIO_SKIN_LIBRARY.map((skin) => (
-              <button
-                key={skin.id}
-                type="button"
-                className={`robot-color-swatch ${config.activeSkinId === skin.id ? 'is-active' : ''}`}
-                onClick={() => persistConfig({ ...config, activeSkinId: skin.id })}
-                title={skin.label}
-                aria-label={`${t('Chọn theme', 'Select theme')} ${skin.label}`}
-              >
-                <span className="robot-color-swatch__circle" data-skin-id={skin.id} />
-                <span className="robot-color-swatch__label">{skin.label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
         <div className="admin-fields-grid robot-studio-quick-grid">
-          <label className="admin-field" style={{ display: 'none' }}>
-            <span>{t('Theme mau nen', 'Base color theme')}</span>
-            <select
-              value={config.activeSkinId}
-              onChange={(event) => persistConfig({ ...config, activeSkinId: event.target.value })}
-            >
-              {ROBOT_STUDIO_SKIN_LIBRARY.map((skin) => (
-                <option key={skin.id} value={skin.id}>
-                  {skin.label}
-                </option>
-              ))}
-            </select>
-          </label>
           <label className="admin-field">
             <span>Quality profile</span>
             <select
@@ -933,264 +935,10 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
           </label>
         </div>
 
-        <div className="robot-studio-section">
-          <h4 className="robot-studio-section__title">{t('🎭 Chọn Preset Nhanh', '🎭 Quick Presets')}</h4>
-          <div className="robot-preset-showcase">
-            {AVATAR_PRESETS.map((preset) => (
-              <button
-                key={preset.id}
-                type="button"
-                className="robot-preset-card"
-                onClick={() => applyAvatarPreset(preset.id)}
-              >
-                <span className="robot-preset-card__icon">
-                  {preset.id === 'preset-aether' && '🦸'}
-                  {preset.id === 'preset-kawaii' && '🎀'}
-                  {preset.id === 'preset-combat' && '⚔️'}
-                </span>
-                <span className="robot-preset-card__label">{preset.label}</span>
-              </button>
-            ))}
-            <button
-              type="button"
-              className="robot-preset-card robot-preset-card--random"
-              onClick={randomizeAvatarParts}
-            >
-              <span className="robot-preset-card__icon">🎲</span>
-              <span className="robot-preset-card__label">{t('Random Đẹp', 'Random Nice')}</span>
-            </button>
-          </div>
-        </div>
-
-        <article className="robot-studio-builder-grid">
-          <header className="robot-studio-builder-grid__head">
-            <strong>{t('🤖 Tùy Chỉnh Chi Tiết', '🤖 Detailed Customization')}</strong>
-          </header>
-          <div className="robot-parts-grid">
-            <div className="robot-part-group">
-              <span className="robot-part-group__label">{t('🗿 Đầu', '🗿 Head')}</span>
-              <div className="robot-icon-buttons">
-                {HEAD_SHAPE_OPTIONS.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    className={`robot-icon-btn ${avatarParts.headShape === item.id ? 'is-active' : ''}`}
-                    onClick={() => updateAvatarParts({ headShape: item.id })}
-                    title={item.label}
-                  >
-                    <span className="robot-icon-btn__symbol">
-                      {item.id === 'soft-square' && '○'}
-                      {item.id === 'visor' && '□'}
-                      {item.id === 'hex' && '⬡'}
-                      {item.id === 'bubble' && '◯'}
-                    </span>
-                    <span className="robot-icon-btn__label">{item.label}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="robot-part-group">
-              <span className="robot-part-group__label">{t('✨ Phụ kiện', '✨ Accessory')}</span>
-              <div className="robot-icon-buttons">
-                {HEAD_ACCESSORY_OPTIONS.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    className={`robot-icon-btn ${avatarParts.headAccessory === item.id ? 'is-active' : ''}`}
-                    onClick={() => updateAvatarParts({ headAccessory: item.id })}
-                    title={item.label}
-                  >
-                    <span className="robot-icon-btn__symbol">
-                      {item.id === 'none' && '∅'}
-                      {item.id === 'antenna' && '⚡'}
-                      {item.id === 'halo' && '◉'}
-                      {item.id === 'crown' && '♔'}
-                    </span>
-                    <span className="robot-icon-btn__label">{item.label}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="robot-part-group">
-              <span className="robot-part-group__label">{t('👁️ Mắt', '👁️ Eyes')}</span>
-              <div className="robot-icon-buttons">
-                {EYE_STYLE_OPTIONS.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    className={`robot-icon-btn ${avatarParts.eyeStyle === item.id ? 'is-active' : ''}`}
-                    onClick={() => updateAvatarParts({ eyeStyle: item.id })}
-                    title={item.label}
-                  >
-                    <span className="robot-icon-btn__symbol">
-                      {item.id === 'visor' && '▬'}
-                      {item.id === 'round' && '●'}
-                      {item.id === 'anime' && '◉'}
-                      {item.id === 'mono' && '■'}
-                      {item.id === 'happy' && '^_^'}
-                      {item.id === 'wink' && '>_<'}
-                      {item.id === 'surprised' && 'O_O'}
-                      {item.id === 'sleepy' && '-_-'}
-                    </span>
-                    <span className="robot-icon-btn__label">{item.label}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="robot-part-group">
-              <span className="robot-part-group__label">{t('👄 Miệng', '👄 Mouth')}</span>
-              <div className="robot-icon-buttons">
-                {MOUTH_STYLE_OPTIONS.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    className={`robot-icon-btn ${avatarParts.mouthStyle === item.id ? 'is-active' : ''}`}
-                    onClick={() => updateAvatarParts({ mouthStyle: item.id })}
-                    title={item.label}
-                  >
-                    <span className="robot-icon-btn__symbol">
-                      {item.id === 'line' && '▬'}
-                      {item.id === 'smile' && '⌣'}
-                      {item.id === 'pixel' && '▪'}
-                      {item.id === 'none' && '∅'}
-                      {item.id === 'big-smile' && ':D'}
-                      {item.id === 'surprised-o' && ':O'}
-                      {item.id === 'sad' && ':('}
-                      {item.id === 'tongue-out' && ':P'}
-                    </span>
-                    <span className="robot-icon-btn__label">{item.label}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="robot-part-group">
-              <span className="robot-part-group__label">{t('💪 Tay', '💪 Arms')}</span>
-              <div className="robot-icon-buttons">
-                {ARM_STYLE_OPTIONS.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    className={`robot-icon-btn ${avatarParts.armStyle === item.id ? 'is-active' : ''}`}
-                    onClick={() => updateAvatarParts({ armStyle: item.id })}
-                    title={item.label}
-                  >
-                    <span className="robot-icon-btn__symbol">
-                      {item.id === 'sleek' && '│'}
-                      {item.id === 'chunky' && '▌'}
-                      {item.id === 'floating' && '○'}
-                    </span>
-                    <span className="robot-icon-btn__label">{item.label}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="robot-part-group">
-              <span className="robot-part-group__label">{t('🎨 Màu tay', '🎨 Arm Color')}</span>
-              <div className="robot-icon-buttons robot-icon-buttons--colors">
-                {ARM_COLOR_OPTIONS.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    className={`robot-icon-btn robot-icon-btn--color ${avatarParts.armColor === item.id ? 'is-active' : ''}`}
-                    onClick={() => updateAvatarParts({ armColor: item.id })}
-                    title={item.label}
-                  >
-                    <span className="robot-icon-btn__color-circle" data-arm-color={item.id} />
-                    <span className="robot-icon-btn__label">{item.label}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="robot-part-group">
-              <span className="robot-part-group__label">{t('🤖 Thân', '🤖 Body')}</span>
-              <div className="robot-icon-buttons">
-                {BODY_SHAPE_OPTIONS.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    className={`robot-icon-btn ${avatarParts.bodyShape === item.id ? 'is-active' : ''}`}
-                    onClick={() => updateAvatarParts({ bodyShape: item.id })}
-                    title={item.label}
-                  >
-                    <span className="robot-icon-btn__symbol">
-                      {item.id === 'core' && '■'}
-                      {item.id === 'shield' && '◆'}
-                      {item.id === 'orb' && '●'}
-                      {item.id === 'compact' && '▪'}
-                    </span>
-                    <span className="robot-icon-btn__label">{item.label}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="robot-part-group robot-part-group--full">
-              <span className="robot-part-group__label">{t('🖼️ Khung mặt', '🖼️ Face Frame')} {avatarParts.faceFrameScale}%</span>
-              <div className="robot-slider-group">
-                <input
-                  type="range"
-                  min={65}
-                  max={145}
-                  step={1}
-                  value={avatarParts.faceFrameScale}
-                  onChange={(event) => updateAvatarParts({ faceFrameScale: Number(event.target.value) })}
-                />
-                <label className="robot-inline-check">
-                  <input
-                    type="checkbox"
-                    checked={avatarParts.faceFrameVisible}
-                    onChange={(event) => updateAvatarParts({ faceFrameVisible: event.target.checked })}
-                  />
-                  <span>{avatarParts.faceFrameVisible ? t('Hiển thị', 'Visible') : t('Ẩn', 'Hidden')}</span>
-                </label>
-              </div>
-            </div>
-            <div className="admin-field admin-field--full">
-              <span>{t('🎨 Trang phục (Outfit Style)', '🎨 Outfit Style')}</span>
-              <div className="robot-outfit-selector">
-                {OUTFIT_STYLE_OPTIONS.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    className={`robot-outfit-card ${avatarParts.outfitStyle === item.id ? 'is-active' : ''}`}
-                    onClick={() => updateAvatarParts({ outfitStyle: item.id })}
-                  >
-                    <span className="robot-outfit-card__icon">
-                      {item.id === 'service' && '👔'}
-                      {item.id === 'street' && '👕'}
-                      {item.id === 'formal' && '🎩'}
-                      {item.id === 'battle' && '⚔️'}
-                    </span>
-                    <span className="robot-outfit-card__label">{item.label}</span>
-                    <span className="robot-outfit-card__gradient" data-outfit={item.id} />
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </article>
-
         <article className="robot-studio-mini-preview" aria-label={t('Xem truoc robot trong admin', 'Robot preview in admin')}>
           <div className="robot-studio-mini-preview__meta">
-            <strong>{t('Preview Modular Robot (Admin)', 'Modular robot preview (Admin)')}</strong>
-            <span>
-              {t('Dau', 'Head')}: {avatarParts.headShape}
-            </span>
-            <span>
-              {t('Mat/Mieng', 'Eyes/Mouth')}: {avatarParts.eyeStyle}/{avatarParts.mouthStyle}
-            </span>
-            <span>
-              {t('Tay/Than', 'Arms/Body')}: {avatarParts.armStyle}/{avatarParts.bodyShape}
-            </span>
-            <span>
-              {t('Khung', 'Frame')}: {avatarParts.faceFrameVisible ? t('Hien', 'On') : t('An', 'Off')} · {avatarParts.faceFrameScale}%
-            </span>
+            <strong>{t('Preview Robot GLB (Admin)', 'GLB Robot preview (Admin)')}</strong>
+            <span>{t('Chỉ dùng GLB cho toàn bộ kiosk web.', 'GLB-only mode is active for the whole kiosk web flow.')}</span>
           </div>
           <div className="robot-studio-mini-preview__stage robot-studio-mini-preview__stage--live">
             <iframe
@@ -1204,6 +952,126 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
         </article>
 
         <div className="admin-fields-grid robot-studio-quick-grid">
+          <label className="admin-field admin-field--full">
+            <span>{t('🎬 Chế độ hiển thị robot', '🎬 Robot render mode')}</span>
+            <input value={t('Local GLB (cố định)', 'Local GLB (fixed)')} disabled />
+          </label>
+          <>
+              <label className="admin-field">
+                <span>{t('Model GLB từ thư mục', 'GLB model from folder')}</span>
+                <select
+                  value={config.robotVisual?.localModelPath ?? ''}
+                  onChange={(event) =>
+                    updateRobotVisual({
+                      localModelPath: event.target.value,
+                      localModelAnimationName: '',
+                    })}
+                >
+                  <option value="">{t('Chọn model từ /public/robot-models', 'Select model from /public/robot-models')}</option>
+                  {robotModelCatalog.map((item) => (
+                    <option key={item.id} value={item.path}>
+                      {item.name} ({item.format || 'glb'})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="admin-field">
+                <span>{t('Animation name (tùy chọn)', 'Animation name (optional)')}</span>
+                <select
+                  value={config.robotVisual?.localModelAnimationName ?? ''}
+                  onChange={(event) => updateRobotVisual({ localModelAnimationName: event.target.value })}
+                >
+                  <option value="">{t('Mặc định animation đầu tiên trong file', 'Default to first animation in file')}</option>
+                  {sortedLocalModelAnimations.map((animationName) => (
+                    <option key={animationName} value={animationName}>
+                      {animationName}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="admin-field admin-field--full">
+                <span>{t('Đường dẫn model (ghi đè dropdown)', 'Model path (override dropdown)')}</span>
+                <input
+                  type="text"
+                  value={config.robotVisual?.localModelPath ?? ''}
+                  onChange={(event) =>
+                    updateRobotVisual({
+                      localModelPath: event.target.value,
+                      localModelAnimationName: '',
+                    })}
+                  placeholder="/robot-models/your-model.glb"
+                />
+              </label>
+              <label className="robot-inline-check">
+                <input
+                  type="checkbox"
+                  checked={config.robotVisual?.localModelAutoRotate !== false}
+                  onChange={(event) => updateRobotVisual({ localModelAutoRotate: event.target.checked })}
+                />
+                <span>{t('Auto rotate', 'Auto rotate')}</span>
+              </label>
+              <label className="robot-inline-check">
+                <input
+                  type="checkbox"
+                  checked={config.robotVisual?.localModelCameraControls === true}
+                  onChange={(event) => updateRobotVisual({ localModelCameraControls: event.target.checked })}
+                />
+                <span>{t('Camera controls', 'Camera controls')}</span>
+              </label>
+              <label className="robot-inline-check">
+                <input
+                  type="checkbox"
+                  checked={config.robotVisual?.localModelFaceMaterialFix !== false}
+                  onChange={(event) => updateRobotVisual({ localModelFaceMaterialFix: event.target.checked })}
+                />
+                <span>{t('Fix mặt đen/thiếu mắt', 'Fix black face/missing eyes')}</span>
+              </label>
+              <label className="admin-field admin-field--full">
+                <span>
+                  {t('Hướng model (Yaw)', 'Model heading (Yaw)')} {Number(config.robotVisual?.localModelYawDeg ?? 0)}°
+                </span>
+                <input
+                  type="range"
+                  min={-180}
+                  max={180}
+                  step={1}
+                  value={Number(config.robotVisual?.localModelYawDeg ?? 0)}
+                  onChange={(event) => updateRobotVisual({ localModelYawDeg: Number(event.target.value) })}
+                />
+              </label>
+              <label className="admin-field">
+                <span>{t('Yaw số', 'Yaw numeric')}</span>
+                <input
+                  type="number"
+                  min={-180}
+                  max={180}
+                  step={1}
+                  value={Number(config.robotVisual?.localModelYawDeg ?? 0)}
+                  onChange={(event) => updateRobotVisual({ localModelYawDeg: Number(event.target.value) })}
+                />
+              </label>
+              <div className="admin-inline-actions robot-studio-quick-actions">
+                <button className="admin-btn admin-btn--ghost" type="button" onClick={() => void refreshRobotModelCatalog()}>
+                  {robotModelCatalogLoading
+                    ? t('Đang quét thư mục...', 'Scanning folder...')
+                    : t('Làm mới danh sách model', 'Refresh model catalog')}
+                </button>
+                <button className="admin-btn admin-btn--ghost" type="button" onClick={() => updateRobotVisual({ localModelYawDeg: 0 })}>
+                  {t('Về hướng 0°', 'Reset to 0°')}
+                </button>
+                <button className="admin-btn admin-btn--ghost" type="button" onClick={() => updateRobotVisual({ localModelYawDeg: 180 })}>
+                  {t('Đảo 180°', 'Flip 180°')}
+                </button>
+              </div>
+              {sortedLocalModelAnimations.length > 0 && sortedLocalModelAnimations.every((name) => isLikelyPoseAnimation(name)) ? (
+                <p className="admin-service-card__detail">
+                  {t(
+                    'Model hiện chỉ có clip dạng pose tĩnh (T-Pose/A-Pose). Nếu muốn hành động đúng, cần model có clip anim động (idle/walk/talk...).',
+                    'This model currently exposes pose clips only (T-Pose/A-Pose). For real actions, use a model that includes dynamic clips (idle/walk/talk...).',
+                  )}
+                </p>
+              ) : null}
+            </>
           <label className="admin-field">
             <span>{t('Test nhanh action', 'Quick action test')}</span>
             <select value={quickActionId} onChange={(event) => setQuickActionId(event.target.value)}>
@@ -1236,6 +1104,104 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
             </button>
           </div>
         </div>
+
+        <article className="admin-subcard robot-studio-subcard">
+          <header className="admin-subcard__head">
+            <div>
+              <h3>{t('Outfit Manager', 'Outfit Manager')}</h3>
+              <p>
+                {t(
+                  'Tạo profile trang phục riêng: skin + texture + model, rồi chọn profile active để robot áp dụng ngay.',
+                  'Create dedicated outfit profiles (skin + texture + model), then activate one for live robot.',
+                )}
+              </p>
+            </div>
+            <div className="admin-inline-actions">
+              <button className="admin-btn admin-btn--ghost" type="button" onClick={addOutfitProfile}>
+                {t('Thêm profile', 'Add profile')}
+              </button>
+              <button
+                className="admin-btn admin-btn--ghost"
+                type="button"
+                disabled={outfitProfiles.length <= 1}
+                onClick={removeActiveOutfitProfile}
+              >
+                {t('Xóa profile', 'Delete profile')}
+              </button>
+            </div>
+          </header>
+          <div className="admin-fields-grid robot-studio-quick-grid">
+            <label className="admin-field">
+              <span>{t('Profile active', 'Active profile')}</span>
+              <select value={activeOutfitProfileId} onChange={(event) => setActiveOutfitProfile(event.target.value)}>
+                {outfitProfiles.map((profile) => (
+                  <option key={profile.id} value={profile.id}>
+                    {profile.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="admin-field">
+              <span>{t('Tên profile', 'Profile name')}</span>
+              <input
+                type="text"
+                value={activeOutfitProfile?.name ?? ''}
+                onChange={(event) => patchActiveOutfitProfile({ name: event.target.value })}
+                placeholder={t('Ví dụ: Maid Pink', 'e.g. Maid Pink')}
+              />
+            </label>
+            <label className="admin-field">
+              <span>{t('Skin', 'Skin')}</span>
+              <select
+                value={activeOutfitProfile?.skinId ?? config.activeSkinId}
+                onChange={(event) => patchActiveOutfitProfile({ skinId: event.target.value })}
+              >
+                {ROBOT_STUDIO_SKIN_LIBRARY.map((skin) => (
+                  <option key={skin.id} value={skin.id}>
+                    {skin.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="admin-field">
+              <span>{t('Outfit style', 'Outfit style')}</span>
+              <select
+                value={activeOutfitProfile?.outfitStyle ?? avatarParts.outfitStyle}
+                onChange={(event) =>
+                  patchActiveOutfitProfile({ outfitStyle: event.target.value as RobotAvatarPartsV1['outfitStyle'] })
+                }
+              >
+                {OUTFIT_STYLE_OPTIONS.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="admin-field">
+              <span>{t('Texture asset', 'Texture asset')}</span>
+              <select
+                value={activeOutfitProfile?.textureAssetId ?? ''}
+                onChange={(event) => patchActiveOutfitProfile({ textureAssetId: event.target.value })}
+              >
+                <option value="">{t('Không dùng texture', 'No texture')}</option>
+                {config.uploadedAssets.map((asset) => (
+                  <option key={asset.id} value={asset.id}>
+                    {asset.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="robot-inline-check">
+              <input
+                type="checkbox"
+                checked={activeOutfitProfile?.enabled !== false}
+                onChange={(event) => patchActiveOutfitProfile({ enabled: event.target.checked })}
+              />
+              <span>{t('Bật profile này', 'Enable this profile')}</span>
+            </label>
+          </div>
+        </article>
 
         <p className="admin-service-card__detail">
           {t(
@@ -1800,8 +1766,3 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
 }
 
 export default RobotStudioPanel
-
-
-
-
-

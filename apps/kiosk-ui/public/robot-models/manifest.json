@@ -1,0 +1,71 @@
+{
+  "generated_at": "2026-03-31T09:53:16.488Z",
+  "models": [
+    {
+      "id": "cristiano-ronaldo",
+      "name": "Cristiano Ronaldo",
+      "path": "/robot-models/cristiano_ronaldo.glb",
+      "format": "glb"
+    },
+    {
+      "id": "fashion-girl-asian-girl",
+      "name": "Fashion Girl Asian Girl",
+      "path": "/robot-models/fashion_girl_asian_girl.glb",
+      "format": "glb"
+    },
+    {
+      "id": "maid-merge-yandere-202xupdate",
+      "name": "Maid Merge Yandere 202xupdate",
+      "path": "/robot-models/maid_merge_yandere_202xupdate.glb",
+      "format": "glb"
+    },
+    {
+      "id": "mini-robot",
+      "name": "Mini Robot",
+      "path": "/robot-models/mini_robot.glb",
+      "format": "glb"
+    },
+    {
+      "id": "mitasidegirl",
+      "name": "Mitasidegirl",
+      "path": "/robot-models/mitasidegirl.glb",
+      "format": "glb"
+    },
+    {
+      "id": "rem-rezero",
+      "name": "Rem Rezero",
+      "path": "/robot-models/rem_-_rezero.glb",
+      "format": "glb"
+    },
+    {
+      "id": "robot-playground",
+      "name": "Robot Playground",
+      "path": "/robot-models/robot_playground.glb",
+      "format": "glb"
+    },
+    {
+      "id": "vrchat-azusa",
+      "name": "Vrchat Azusa",
+      "path": "/robot-models/vrchat_azusa.glb",
+      "format": "glb"
+    },
+    {
+      "id": "vrchat-natja",
+      "name": "Vrchat Natja",
+      "path": "/robot-models/vrchat_natja.glb",
+      "format": "glb"
+    },
+    {
+      "id": "x-12-mech",
+      "name": "X 12 Mech",
+      "path": "/robot-models/x-12_mech.glb",
+      "format": "glb"
+    },
+    {
+      "id": "yuji-itadori-free-fire-skin",
+      "name": "Yuji Itadori Free Fire Skin",
+      "path": "/robot-models/yuji_itadori_free_fire_skin.glb",
+      "format": "glb"
+    }
+  ]
+}

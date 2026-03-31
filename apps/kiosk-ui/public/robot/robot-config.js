@@ -79,6 +79,28 @@
         outfitStyle: 'service',
         randomSeed: 420,
       },
+      robotVisual: {
+        mode: 'local_glb',
+        localModelPath: '',
+        localModelAnimationName: '',
+        localModelAutoRotate: false,
+        localModelCameraControls: false,
+        localModelYawDeg: 0,
+        localModelFaceMaterialFix: true,
+      },
+      outfitManager: {
+        activeProfileId: 'default',
+        profiles: [
+          {
+            id: 'default',
+            name: 'Default Outfit',
+            enabled: true,
+            skinId: 'maid-classic',
+            outfitStyle: 'service',
+            textureAssetId: '',
+          },
+        ],
+      },
     };
   }
 

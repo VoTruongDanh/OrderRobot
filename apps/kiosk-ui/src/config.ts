@@ -33,6 +33,7 @@ export type RobotArmStyle = 'sleek' | 'chunky' | 'floating'
 export type RobotArmColor = 'aqua' | 'sunset' | 'mint' | 'violet' | 'mono'
 export type RobotBodyShape = 'core' | 'shield' | 'orb' | 'compact'
 export type RobotOutfitStyle = 'service' | 'street' | 'formal' | 'battle'
+export type RobotVisualMode = 'local_glb'
 
 export type RobotStudioSkinMeta = { id: string; label: string; pack: RobotSkinPack }
 export type RobotStudioActionMeta = {
@@ -127,6 +128,26 @@ export type RobotStudioConfigV1 = {
   uploadedAssets: RobotStudioAssetMeta[]
   skinAssetBindings: Record<string, string>
   avatarParts: RobotAvatarPartsV1
+  robotVisual: {
+    mode: RobotVisualMode
+    localModelPath: string
+    localModelAnimationName: string
+    localModelAutoRotate: boolean
+    localModelCameraControls: boolean
+    localModelYawDeg: number
+    localModelFaceMaterialFix: boolean
+  }
+  outfitManager: {
+    activeProfileId: string
+    profiles: Array<{
+      id: string
+      name: string
+      enabled: boolean
+      skinId: string
+      outfitStyle: RobotOutfitStyle
+      textureAssetId: string
+    }>
+  }
 }
 
 const ROBOT_HEAD_SHAPE_OPTIONS = ['soft-square', 'visor', 'hex', 'bubble'] as const
@@ -349,6 +370,28 @@ export function createDefaultRobotStudioConfig(): RobotStudioConfigV1 {
     uploadedAssets: [],
     skinAssetBindings: {},
     avatarParts: createDefaultRobotAvatarParts(),
+    robotVisual: {
+      mode: 'local_glb',
+      localModelPath: '',
+      localModelAnimationName: '',
+      localModelAutoRotate: false,
+      localModelCameraControls: false,
+      localModelYawDeg: 0,
+      localModelFaceMaterialFix: true,
+    },
+    outfitManager: {
+      activeProfileId: 'default',
+      profiles: [
+        {
+          id: 'default',
+          name: 'Default Outfit',
+          enabled: true,
+          skinId: defaultSkinIds[0] ?? 'maid-classic',
+          outfitStyle: 'service',
+          textureAssetId: '',
+        },
+      ],
+    },
   }
 }
 function normalizeRobotStudioConfig(raw: unknown): RobotStudioConfigV1 {
@@ -433,6 +476,27 @@ function normalizeRobotStudioConfig(raw: unknown): RobotStudioConfigV1 {
     : defaults.enabledSkinIds
   const avatarRaw = isObject(raw.avatarParts) ? raw.avatarParts : {}
   const avatarDefaults = defaults.avatarParts
+  const robotVisualRaw = isObject(raw.robotVisual) ? raw.robotVisual : {}
+  const robotVisualDefaults = defaults.robotVisual
+  const outfitManagerRaw = isObject(raw.outfitManager) ? raw.outfitManager : {}
+  const outfitManagerDefaults = defaults.outfitManager
+  const profilesRaw = Array.isArray(outfitManagerRaw.profiles) ? outfitManagerRaw.profiles : []
+  const profiles = profilesRaw
+    .filter((item) => isObject(item))
+    .map((item) => {
+      const profile = item as Record<string, unknown>
+      return {
+        id: String(profile.id || '').trim(),
+        name: String(profile.name || '').trim(),
+        enabled: profile.enabled !== false,
+        skinId: skinIds.has(String(profile.skinId || '')) ? String(profile.skinId) : defaults.activeSkinId,
+        outfitStyle: pickEnumOption(profile.outfitStyle, ROBOT_OUTFIT_STYLE_OPTIONS, avatarDefaults.outfitStyle),
+        textureAssetId: String(profile.textureAssetId || '').trim(),
+      }
+    })
+    .filter((item) => item.id.length > 0)
+  const activeProfileId = String(outfitManagerRaw.activeProfileId || '').trim()
+  const safeProfiles = profiles.length > 0 ? profiles : outfitManagerDefaults.profiles
 
   return {
     schema: 'robotStudio.v1',
@@ -462,6 +526,34 @@ function normalizeRobotStudioConfig(raw: unknown): RobotStudioConfigV1 {
       bodyShape: pickEnumOption(avatarRaw.bodyShape, ROBOT_BODY_SHAPE_OPTIONS, avatarDefaults.bodyShape),
       outfitStyle: pickEnumOption(avatarRaw.outfitStyle, ROBOT_OUTFIT_STYLE_OPTIONS, avatarDefaults.outfitStyle),
       randomSeed: clampAvatarSeed(Number(avatarRaw.randomSeed ?? avatarDefaults.randomSeed)),
+    },
+    robotVisual: {
+      mode: 'local_glb',
+      localModelPath: String(robotVisualRaw.localModelPath ?? robotVisualDefaults.localModelPath).trim(),
+      localModelAnimationName: String(
+        robotVisualRaw.localModelAnimationName ?? robotVisualDefaults.localModelAnimationName,
+      ).trim(),
+      localModelAutoRotate:
+        typeof robotVisualRaw.localModelAutoRotate === 'boolean'
+          ? robotVisualRaw.localModelAutoRotate
+          : robotVisualDefaults.localModelAutoRotate,
+      localModelCameraControls:
+        typeof robotVisualRaw.localModelCameraControls === 'boolean'
+          ? robotVisualRaw.localModelCameraControls
+          : robotVisualDefaults.localModelCameraControls,
+      localModelYawDeg: Number.isFinite(Number(robotVisualRaw.localModelYawDeg))
+        ? Math.max(-180, Math.min(180, Math.round(Number(robotVisualRaw.localModelYawDeg))))
+        : robotVisualDefaults.localModelYawDeg,
+      localModelFaceMaterialFix:
+        typeof robotVisualRaw.localModelFaceMaterialFix === 'boolean'
+          ? robotVisualRaw.localModelFaceMaterialFix
+          : robotVisualDefaults.localModelFaceMaterialFix,
+    },
+    outfitManager: {
+      activeProfileId: safeProfiles.some((profile) => profile.id === activeProfileId)
+        ? activeProfileId
+        : safeProfiles[0]?.id || outfitManagerDefaults.activeProfileId,
+      profiles: safeProfiles,
     },
   }
 }

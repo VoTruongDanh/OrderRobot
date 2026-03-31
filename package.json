@@ -6,7 +6,7 @@
     "install:ui": "npm --prefix apps/kiosk-ui install",
     "install:python": "python -m pip install -r services/core-backend/requirements.txt -r services/ai-backend/requirements.txt",
     "install:all": "npm run install:ui && npm run install:python",
-    "dev:ui": "npm --prefix apps/kiosk-ui run dev",
+    "dev:ui": "npm --prefix apps/kiosk-ui run dev:with-models",
     "dev:core": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-core.ps1",
     "dev:ai": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-ai.ps1",
     "dev:ai:bridge": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-ai.ps1 -ForceRestart",
@@ -23,7 +23,7 @@
     "test:ai": "powershell -NoProfile -Command \"Set-Location 'services/ai-backend'; python -m pytest tests\"",
     "test:python": "npm run test:core && npm run test:ai",
     "build": "npm run build:ui",
-    "build:ui": "npm --prefix apps/kiosk-ui run build"
+    "build:ui": "npm --prefix apps/kiosk-ui run robot-models:sync && npm --prefix apps/kiosk-ui run build"
   },
   "devDependencies": {
     "chrome-devtools-mcp": "^0.20.3",

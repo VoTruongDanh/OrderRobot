@@ -4,7 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "robot-models:sync": "node scripts/generate-robot-model-manifest.mjs",
     "dev": "vite",
+    "dev:with-models": "npm run robot-models:sync && vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview"
