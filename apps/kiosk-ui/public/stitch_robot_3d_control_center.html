@@ -1787,6 +1787,56 @@
             filter: drop-shadow(0 24px 28px rgba(78, 52, 140, 0.24));
         }
 
+        #robot-container.sketchfab-mode {
+            width: min(76vw, 640px) !important;
+            height: min(86vh, 820px) !important;
+            transform: translateY(6px) scale(1) !important;
+            filter: none;
+            overflow: visible !important;
+        }
+
+        #robot-container.sketchfab-mode .robot-float {
+            position: absolute !important;
+            width: 1px !important;
+            height: 1px !important;
+            opacity: 0 !important;
+            pointer-events: none !important;
+            overflow: hidden !important;
+        }
+
+        #robot-container.sketchfab-mode .sketchfab-embed-wrapper {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: stretch;
+            gap: 0;
+            pointer-events: auto;
+            z-index: 5;
+            background: transparent;
+            border: 0;
+            border-radius: 0;
+            overflow: visible;
+        }
+
+        #robot-container.sketchfab-mode .sketchfab-embed-wrapper iframe {
+            width: 100%;
+            height: 100%;
+            border: 0;
+            border-radius: 0;
+            background: transparent !important;
+            box-shadow: none;
+        }
+
+        #robot-container.sketchfab-mode .sketchfab-credit {
+            display: none;
+        }
+
+        #robot-container.sketchfab-mode .sketchfab-credit a {
+            color: inherit;
+            font-weight: inherit;
+        }
+
         #head {
             background: linear-gradient(165deg, #fff8ff 5%, #f0f7ff 100%) !important;
             border: 3px solid #3b3361 !important;
@@ -1997,6 +2047,11 @@
             #robot-container {
                 transform: translateY(8px) scale(1.48) !important;
             }
+            #robot-container.sketchfab-mode {
+                width: min(80vw, 540px) !important;
+                height: min(76vh, 640px) !important;
+                transform: translateY(10px) scale(1) !important;
+            }
             .camera-mini-panel,
             .voice-mini-panel {
                 width: 310px;
@@ -2048,6 +2103,14 @@
 
             #robot-container {
                 transform: translateY(16px) scale(1.2) !important;
+            }
+            #robot-container.sketchfab-mode {
+                width: min(96vw, 460px) !important;
+                height: min(70vh, 620px) !important;
+                transform: translateY(10px) scale(1) !important;
+            }
+            #robot-container.sketchfab-mode .sketchfab-embed-wrapper iframe {
+                border-radius: 0;
             }
 
             .camera-mini-panel {
@@ -2181,7 +2244,11 @@
 <div id="shockwave-holder"></div>
 <div class="absolute bottom-10 w-48 h-12 bg-on-background/5 rounded-[100%] blur-3xl scale-x-150 transition-opacity duration-700" id="robot-shadow"></div>
 <!-- Robot Group -->
-<div class="relative w-56 h-72 flex flex-col items-center" id="robot-container">
+<div class="relative w-56 h-72 flex flex-col items-center sketchfab-mode" id="robot-container">
+<div class="sketchfab-embed-wrapper">
+<iframe title="sexy oufit girl 2" frameborder="0" allowfullscreen mozallowfullscreen="true" webkitallowfullscreen="true" allow="autoplay; fullscreen; xr-spatial-tracking" xr-spatial-tracking execution-while-out-of-viewport execution-while-not-rendered web-share src="https://sketchfab.com/models/35c321d7919744a39ef5f7986d68efd5/embed?autostart=1&transparent=1&ui_infos=0&ui_controls=0&ui_hint=0&ui_help=0&ui_stop=0&ui_watermark=0&ui_watermark_link=0&dnt=1"></iframe>
+<p class="sketchfab-credit"><a href="https://sketchfab.com/3d-models/sexy-oufit-girl-2-35c321d7919744a39ef5f7986d68efd5?utm_medium=embed&utm_campaign=share-popup&utm_content=35c321d7919744a39ef5f7986d68efd5" target="_blank" rel="nofollow">sexy oufit girl 2</a> by <a href="https://sketchfab.com/golden4445?utm_medium=embed&utm_campaign=share-popup&utm_content=35c321d7919744a39ef5f7986d68efd5" target="_blank" rel="nofollow">golden4445etetet@gmail.com</a> on <a href="https://sketchfab.com?utm_medium=embed&utm_campaign=share-popup&utm_content=35c321d7919744a39ef5f7986d68efd5" target="_blank" rel="nofollow">Sketchfab</a></p>
+</div>
 <div class="robot-float flex flex-col items-center w-full h-full">
 <!-- Head -->
 <div class="robot-head w-36 h-28 bg-white rounded-[2.5rem] shadow-xl relative border-t border-slate-100 flex flex-col items-center justify-center z-30 transition-transform duration-500" id="head">
@@ -2312,6 +2379,7 @@
     const DEFAULT_BACKEND_STT_FORCE_FINALIZE_MS = 1400;
     const DEFAULT_BACKEND_STT_CHUNK_MS = 120;
     const DEFAULT_SUBMIT_SILENCE_MS = 1200;
+    const BUSY_AUTO_SUBMIT_SUPPRESS_MS = 2400;
     const DEFAULT_TTS_STREAM_PLAYBACK_RATE = 1.0;
     const AI_RUNTIME_FALLBACK_URL = 'http://127.0.0.1:8012';
     const AI_RUNTIME_PROBE_TIMEOUT_MS = 1600;
@@ -2384,6 +2452,7 @@
     let activeProcessingTurnId = '';
     let lastQueuedUserTranscriptNorm = '';
     let lastQueuedUserTranscriptAt = 0;
+    let lastAcceptedUserTurnAt = 0;
     let lastRobotSpokenNorm = '';
     let lastRobotSpokenAt = 0;
     let voiceLatencyStatusTimer = null;
@@ -3846,6 +3915,29 @@
             .trim();
     }
 
+    function areTranscriptsLikelySame(leftText, rightText) {
+        const left = normalizeTranscriptForDedup(leftText);
+        const right = normalizeTranscriptForDedup(rightText);
+        if (!left || !right) return false;
+        if (left === right) return true;
+        if (left.length < 4 || right.length < 4) return false;
+        if (left.includes(right) || right.includes(left)) {
+            const shorter = Math.min(left.length, right.length);
+            const longer = Math.max(left.length, right.length);
+            if (shorter / longer >= 0.72) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    function isConversationTurnBusy() {
+        return Boolean(activeProcessingTurnId)
+            || Boolean(activeTurnAbortController)
+            || pendingUserTurns.length > 0
+            || voiceQueueRunning;
+    }
+
     function isAbortError(error) {
         if (!error) return false;
         const name = String(error?.name || '').toLowerCase();
@@ -4797,12 +4889,31 @@
         }
     }
 
-    function enqueueUserTurn(transcript) {
+    function enqueueUserTurn(transcript, options = {}) {
         const cleanText = String(transcript || '').trim();
         if (!cleanText) return;
+        const source = String(options?.source || 'auto').trim().toLowerCase();
         const normalizedTranscript = normalizeTranscriptForDedup(cleanText);
         const now = Date.now();
         if (!normalizedTranscript) return;
+        const tokenCount = normalizedTranscript.split(' ').filter(Boolean).length;
+        const busy = isConversationTurnBusy();
+        if (source === 'browser-interim' && busy) {
+            console.info('[voice-dedup] dropped interim transcript while turn is busy', { transcript: cleanText });
+            return;
+        }
+        if (
+            source !== 'manual'
+            && busy
+            && now - lastAcceptedUserTurnAt < BUSY_AUTO_SUBMIT_SUPPRESS_MS
+            && tokenCount <= 6
+        ) {
+            console.info('[voice-dedup] dropped rapid transcript while turn is busy', {
+                transcript: cleanText,
+                source,
+            });
+            return;
+        }
         if (
             normalizedTranscript === lastQueuedUserTranscriptNorm
             && now - lastQueuedUserTranscriptAt < 4500
@@ -4811,15 +4922,23 @@
             return;
         }
         if (
+            areTranscriptsLikelySame(normalizedTranscript, lastQueuedUserTranscriptNorm)
+            && now - lastQueuedUserTranscriptAt < 6500
+        ) {
+            console.info('[voice-dedup] dropped near-duplicate transcript', { transcript: cleanText });
+            return;
+        }
+        if (
             lastRobotSpokenNorm
-            && normalizedTranscript === lastRobotSpokenNorm
-            && now - lastRobotSpokenAt < 3500
+            && areTranscriptsLikelySame(normalizedTranscript, lastRobotSpokenNorm)
+            && now - lastRobotSpokenAt < 12000
         ) {
             console.info('[voice-dedup] dropped likely echo transcript', { transcript: cleanText });
             return;
         }
         lastQueuedUserTranscriptNorm = normalizedTranscript;
         lastQueuedUserTranscriptAt = now;
+        lastAcceptedUserTurnAt = now;
         const turnId = createTurnId();
         latestIssuedTurnId = turnId;
         markSpeechActivity();
@@ -5278,10 +5397,14 @@
         voiceBrowserSubmitTimer = window.setTimeout(() => {
             voiceBrowserSubmitTimer = null;
             if (!voiceListening || voiceInputMode !== 'browser') return;
+            if (isConversationTurnBusy()) {
+                voiceBrowserPendingInterim = '';
+                return;
+            }
             const textToSubmit = String(voiceBrowserPendingInterim || '').trim();
             if (!textToSubmit) return;
             voiceBrowserPendingInterim = '';
-            enqueueUserTurn(textToSubmit);
+            enqueueUserTurn(textToSubmit, { source: 'browser-interim' });
         }, submitSilenceMs);
     }
 
@@ -5389,7 +5512,7 @@
                     }
                     voiceBackendLastFinal = transcript;
                     voiceBackendLastFinalAt = now;
-                    enqueueUserTurn(transcript);
+                    enqueueUserTurn(transcript, { source: 'backend-final' });
                     return;
                 }
 
@@ -5592,7 +5715,7 @@
                 if (botSpeechActive) {
                     prioritizeUserSpeech();
                 }
-                enqueueUserTurn(text);
+                enqueueUserTurn(text, { source: 'browser-final' });
             });
         };
 
@@ -5676,6 +5799,7 @@
             pendingUserTurns.length = 0;
             latestIssuedTurnId = '';
             activeProcessingTurnId = '';
+            lastAcceptedUserTurnAt = 0;
             try {
                 if (voiceRecognition) {
                     voiceRecognition.stop();

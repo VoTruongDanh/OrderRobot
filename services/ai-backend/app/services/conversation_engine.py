@@ -106,6 +106,20 @@ _CHITCHAT_PATTERNS = [
     re.compile(r"the la"),                          # "thế là"
     re.compile(r"khong tin"),                       # "không tin"
 ]
+_NON_ORDERING_REQUEST_PATTERNS = [
+    re.compile(r"\bhat cho\b"),
+    re.compile(r"\bhat (mot )?bai\b"),
+    re.compile(r"\bcho toi (mot )?bai hat\b"),
+    re.compile(r"\blam tho\b"),
+    re.compile(r"\bdoc tho\b"),
+    re.compile(r"\btam su\b"),
+    re.compile(r"\bco don\b"),
+]
+_SPECIFIC_ITEM_REQUEST_PATTERNS = [
+    re.compile(r"\b(?:toi|minh|em|anh|chi)\s+muon\s+(?:an|uong|goi|lay|mua)\b"),
+    re.compile(r"\b(?:muon|goi|lay|mua|them)\s+(?:an|uong)\b"),
+    re.compile(r"\bcho\s+(?:toi|minh|em|anh|chi)\s+(?:an|uong|goi|lay|mua)\b"),
+]
 
 # Vietnamese STT common misrecognitions and aliases
 # Maps normalized (diacritics-stripped) words to their correct forms
@@ -379,8 +393,21 @@ class ConversationEngine:
                     menu,
                 )
 
-        has_ordering_hint = contains_any(normalized, ORDERING_HINT_KEYWORDS)
+        non_ordering_request = _is_non_ordering_request_text(normalized)
+        has_ordering_hint = contains_any(normalized, ORDERING_HINT_KEYWORDS) and not non_ordering_request
         if _contains_profanity_text(normalized):
+            return await self._build_response(
+                session_id,
+                Decision(
+                    scene="fallback",
+                    reply_seed="",
+                    user_text=transcript,
+                ),
+                menu,
+                turn_id=turn_id,
+            )
+
+        if non_ordering_request:
             return await self._build_response(
                 session_id,
                 Decision(
@@ -513,6 +540,28 @@ class ConversationEngine:
                     scene="recommendation",
                     reply_seed="Mình có vài gợi ý để uống, để chọn cho bạn đây.",
                     recommended_item_ids=[candidate.item.item_id for candidate in ranked_items],
+                    user_text=transcript,
+                ),
+                menu,
+                turn_id=turn_id,
+            )
+
+        if _is_specific_item_request_text(normalized):
+            top_available_items = [item for item in menu if item.available][:3]
+            fallback_recommendations = (
+                [candidate.item.item_id for candidate in ranked_items]
+                if ranked_items
+                else [item.item_id for item in top_available_items]
+            )
+            return await self._build_response(
+                session_id,
+                Decision(
+                    scene="recommendation",
+                    reply_seed=(
+                        "Xin lỗi, món bạn vừa nhắc tới hiện chưa có trong menu. "
+                        "Mình gợi ý vài món đang phục vụ để bạn chọn nhé."
+                    ),
+                    recommended_item_ids=fallback_recommendations,
                     user_text=transcript,
                 ),
                 menu,
@@ -1092,6 +1141,8 @@ class ConversationEngine:
             return True, "escalation_keyword"
 
         if scene == "recommendation":
+            if _is_non_ordering_request_text(normalized_user_text):
+                return True, "recommendation_non_ordering_query"
             if recommended_count > 0 and not has_long_or_hard_pattern:
                 return False, "recommendation_local_match"
             if has_long_or_hard_pattern:
@@ -1384,6 +1435,30 @@ def _is_chitchat(normalized_text: str) -> bool:
     return False
 
 
+def _is_non_ordering_request_text(normalized_text: str) -> bool:
+    if not normalized_text:
+        return False
+    return any(pattern.search(normalized_text) for pattern in _NON_ORDERING_REQUEST_PATTERNS)
+
+
+def _is_specific_item_request_text(normalized_text: str) -> bool:
+    if not normalized_text:
+        return False
+    if _is_non_ordering_request_text(normalized_text):
+        return False
+    if contains_any(normalized_text, RECOMMEND_KEYWORDS):
+        return False
+    if any(pattern.search(normalized_text) for pattern in _SPECIFIC_ITEM_REQUEST_PATTERNS):
+        return True
+
+    tokens = normalized_text.split()
+    if len(tokens) < 3:
+        return False
+    if contains_any(normalized_text, {"menu", "co gi", "mon nao", "giup", "tu van", "goi y"}):
+        return False
+    return contains_any(normalized_text, {"muon", "goi", "lay", "mua", "them", "an", "uong"})
+
+
 def _contains_profanity_text(normalized_text: str) -> bool:
     return contains_any(normalized_text, PROFANITY_KEYWORDS)
 
@@ -1583,7 +1658,7 @@ _FALLBACK_REPLIES = [
 ]
 
 _SOFT_REDIRECT_PATTERNS = {
-    "sing": [re.compile(r"\bhat\b"), re.compile(r"\bca\b")],
+    "sing": [re.compile(r"\bhat\b"), re.compile(r"\bbai hat\b"), re.compile(r"\bhat cho\b")],
     "poem": [re.compile(r"\btho\b"), re.compile(r"\blam tho\b")],
     "heart": [re.compile(r"\btam su\b"), re.compile(r"\bbuon\b"), re.compile(r"\bmet\b"), re.compile(r"\bco don\b")],
 }

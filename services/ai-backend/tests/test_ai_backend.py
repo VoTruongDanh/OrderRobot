@@ -128,6 +128,25 @@ def test_stream_buffer_keeps_incomplete_tail_until_punctuation() -> None:
     assert buffer.strip() == ""
 
 
+def test_stream_buffer_heals_split_words_for_broken_chunks() -> None:
+    buffer = append_stream_content("", "Da em c")
+    buffer = append_stream_content(buffer, "hao anh chi a.")
+    emitted, _ = split_completed_sentences(buffer)
+    assert emitted == ["Da em chao anh chi a."]
+
+    buffer = append_stream_content("", "Mon do ben em kho")
+    buffer = append_stream_content(buffer, "ng phuc vu.")
+    emitted, _ = split_completed_sentences(buffer)
+    assert emitted == ["Mon do ben em khong phuc vu."]
+
+
+def test_stream_buffer_joins_known_split_loan_words() -> None:
+    buffer = append_stream_content("", "Moi anh chi xem me")
+    buffer = append_stream_content(buffer, "nu hom nay.")
+    emitted, _ = split_completed_sentences(buffer)
+    assert emitted == ["Moi anh chi xem menu hom nay."]
+
+
 def test_tts_config_request_accepts_legacy_and_new_payload_keys() -> None:
     legacy_payload = TTSConfigRequest.model_validate({"tts_voice": "vi-VN-HoaiMyNeural", "tts_rate": 165})
     assert legacy_payload.voice == "vi-VN-HoaiMyNeural"
@@ -668,6 +687,71 @@ async def test_handle_turn_stream_routes_profanity_to_bridge_fallback_scene() ->
 
 
 @pytest.mark.anyio
+async def test_non_ordering_song_request_routes_to_fallback_scene() -> None:
+    settings = Settings(
+        ai_base_url="",
+        ai_api_key="",
+        ai_model="",
+        core_backend_url="http://127.0.0.1:8001",
+        voice_lang="vi-VN",
+        voice_style="cute_friendly",
+        tts_voice="vietnam",
+        tts_rate="165",
+        stt_model="small",
+        stt_device="cpu",
+        stt_compute_type="int8",
+    )
+    core_client = FakeCoreBackendClient()
+    engine = ConversationEngine(settings, core_client)
+
+    start = await engine.start_session()
+    reply = await engine.handle_turn(start.session_id, "hat cho toi mot bai")
+
+    assert reply.scene == "fallback"
+    assert reply.recommended_item_ids == []
+
+
+@pytest.mark.anyio
+async def test_song_request_stream_prefers_bridge_over_local_recommendation() -> None:
+    settings = Settings(
+        ai_base_url="",
+        ai_api_key="",
+        ai_model="",
+        core_backend_url="http://127.0.0.1:8001",
+        bridge_base_url="http://127.0.0.1:1122",
+        llm_mode="bridge_only",
+        voice_lang="vi-VN",
+        voice_style="cute_friendly",
+        tts_voice="vietnam",
+        tts_rate="165",
+        stt_model="small",
+        stt_device="cpu",
+        stt_compute_type="int8",
+    )
+    core_client = FakeCoreBackendClient()
+    speech_service = FakeSpeechService()
+    provider_client = FakeProviderClient()
+    engine = ConversationEngine(settings, core_client, speech_service)
+    engine.provider_client = provider_client
+
+    start = await engine.start_session()
+    chunks = [
+        chunk
+        async for chunk in engine.handle_turn_stream(
+            start.session_id,
+            "hat cho toi mot bai",
+            turn_id="turn-test-song-bridge",
+            include_audio=False,
+        )
+    ]
+
+    final_chunks = [chunk for chunk in chunks if chunk.get("type") == "text_final"]
+    assert final_chunks
+    assert final_chunks[-1].get("scene") == "fallback"
+    assert provider_client.stream_calls >= 1
+
+
+@pytest.mark.anyio
 async def test_non_ordering_chat_does_not_fall_into_recommendation_scene() -> None:
     settings = Settings(
         ai_base_url="",
@@ -720,6 +804,33 @@ async def test_recommendation_fast_path_skips_bridge_for_simple_query() -> None:
     assert response.scene == "recommendation"
     assert response.reply_text
     assert provider_client.compose_calls == 0
+
+
+@pytest.mark.anyio
+async def test_unknown_specific_item_request_reports_not_in_menu() -> None:
+    settings = Settings(
+        ai_base_url="",
+        ai_api_key="",
+        ai_model="",
+        core_backend_url="http://127.0.0.1:8001",
+        voice_lang="vi-VN",
+        voice_style="cute_friendly",
+        tts_voice="vietnam",
+        tts_rate="165",
+        stt_model="small",
+        stt_device="cpu",
+        stt_compute_type="int8",
+    )
+    core_client = FakeCoreBackendClient()
+    engine = ConversationEngine(settings, core_client)
+
+    start = await engine.start_session()
+    response = await engine.handle_turn(start.session_id, "Toi muon an kem chuoi")
+
+    assert response.scene == "recommendation"
+    assert len(response.cart) == 0
+    assert response.recommended_item_ids != []
+    assert "trong menu" in normalize_text(response.reply_text)
 
 
 @pytest.mark.anyio

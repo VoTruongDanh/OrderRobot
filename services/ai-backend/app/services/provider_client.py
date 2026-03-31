@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from typing import Any, AsyncIterator
 
 import httpx
@@ -262,13 +263,94 @@ def split_sentences(text: str) -> list[str]:
         return []
     parts = re.split(r"(?<=[\.\!\?])\s+", cleaned)
     if parts and len(parts) == 1:
-        comma_parts = [p.strip() for p in cleaned.split(",") if p.strip()]
+        comma_parts = [_heal_split_words(p.strip()) for p in cleaned.split(",") if p.strip()]
         if comma_parts:
             return comma_parts
-    return [p.strip() for p in parts if p.strip()]
+    return [_heal_split_words(p.strip()) for p in parts if p.strip()]
 
 
 STREAM_SENTENCE_END_MARKERS = {".", "!", "?", "。", "！", "？", "\n"}
+
+STREAM_WORD_JOIN_EXCEPTIONS = {
+    "menu",
+    "robot",
+    "orderrobot",
+    "chatgpt",
+}
+
+
+def _strip_diacritics(text: str) -> str:
+    normalized = unicodedata.normalize("NFD", text)
+    return "".join(char for char in normalized if unicodedata.category(char) != "Mn")
+
+
+def _tail_alpha_fragment(text: str) -> str:
+    if not text:
+        return ""
+    index = len(text) - 1
+    while index >= 0 and text[index].isalpha():
+        index -= 1
+    return text[index + 1 :]
+
+
+def _head_alpha_fragment(text: str) -> str:
+    if not text:
+        return ""
+    index = 0
+    while index < len(text) and text[index].isalpha():
+        index += 1
+    return text[:index]
+
+
+def _has_vowel(token: str) -> bool:
+    folded = _strip_diacritics(token).lower()
+    return any(char in "aeiouy" for char in folded)
+
+
+def _looks_like_split_word(buffer: str, piece: str) -> bool:
+    tail_fragment = _tail_alpha_fragment(buffer)
+    head_fragment = _head_alpha_fragment(piece)
+    if not tail_fragment or not head_fragment:
+        return False
+
+    combined = f"{tail_fragment}{head_fragment}".lower()
+    if combined in STREAM_WORD_JOIN_EXCEPTIONS:
+        return True
+
+    tail_no_vowel = not _has_vowel(tail_fragment)
+    head_no_vowel = not _has_vowel(head_fragment)
+    if (len(tail_fragment) <= 2 and tail_no_vowel) or (len(head_fragment) <= 2 and head_no_vowel):
+        return True
+
+    if len(tail_fragment) == 1 and tail_fragment.isalpha():
+        return True
+
+    return False
+
+
+def _heal_split_words(text: str) -> str:
+    cleaned = str(text or "")
+    if not cleaned:
+        return ""
+
+    tokens = cleaned.split()
+    if len(tokens) < 2:
+        return cleaned
+
+    merged: list[str] = []
+    index = 0
+    while index < len(tokens):
+        current = tokens[index]
+        if index < len(tokens) - 1:
+            nxt = tokens[index + 1]
+            if _tail_alpha_fragment(current) and _head_alpha_fragment(nxt):
+                if _looks_like_split_word(current, nxt):
+                    current = f"{current}{nxt}"
+                    index += 1
+        merged.append(current)
+        index += 1
+
+    return " ".join(merged)
 
 
 def append_stream_content(buffer: str, content: str) -> str:
@@ -279,10 +361,16 @@ def append_stream_content(buffer: str, content: str) -> str:
         return piece
 
     if piece[0].isspace() or buffer[-1].isspace():
-        return f"{buffer}{piece}"
+        combined = f"{buffer}{piece}"
+        return _heal_split_words(combined)
     if piece[0] in ".,!?;:)]}":
-        return f"{buffer}{piece}"
-    return f"{buffer} {piece}"
+        combined = f"{buffer}{piece}"
+        return _heal_split_words(combined)
+    if _looks_like_split_word(buffer, piece):
+        combined = f"{buffer}{piece}"
+        return _heal_split_words(combined)
+    combined = f"{buffer} {piece}"
+    return _heal_split_words(combined)
 
 
 def split_completed_sentences(buffer: str) -> tuple[list[str], str]:
