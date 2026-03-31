@@ -25,6 +25,9 @@ class Settings:
     bridge_base_url: str = "http://127.0.0.1:1122"
     bridge_timeout_seconds: float = 25.0
     bridge_stream_timeout_seconds: float = 120.0
+    bridge_keepalive_enabled: bool = True
+    bridge_keepalive_interval_seconds: float = 90.0
+    bridge_keepalive_timeout_seconds: float = 5.0
     llm_mode: str = "disabled"  # disabled | bridge_only
 
     voice_lang: str = "vi-VN"
@@ -97,6 +100,9 @@ def get_settings() -> Settings:
         bridge_base_url=bridge_base_url,
         bridge_timeout_seconds=float(os.getenv("BRIDGE_TIMEOUT_SECONDS", "25.0")),
         bridge_stream_timeout_seconds=float(os.getenv("BRIDGE_STREAM_TIMEOUT_SECONDS", "120.0")),
+        bridge_keepalive_enabled=os.getenv("BRIDGE_KEEPALIVE_ENABLED", "true").strip().lower() not in {"0", "false", "no"},
+        bridge_keepalive_interval_seconds=max(15.0, float(os.getenv("BRIDGE_KEEPALIVE_INTERVAL_SECONDS", "90.0"))),
+        bridge_keepalive_timeout_seconds=max(1.0, float(os.getenv("BRIDGE_KEEPALIVE_TIMEOUT_SECONDS", "5.0"))),
         llm_mode=llm_mode,
         voice_lang=os.getenv("VOICE_LANG", "vi-VN").strip(),
         voice_style=os.getenv("VOICE_STYLE", "cute_friendly").strip(),

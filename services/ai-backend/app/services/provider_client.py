@@ -164,6 +164,7 @@ class ProviderClient:
                 response.raise_for_status()
 
                 emitted = False
+                pending_text = ""
                 async for line in response.aiter_lines():
                     if not line:
                         continue
@@ -184,11 +185,20 @@ class ProviderClient:
                     if chunk_type not in {"text", "content"}:
                         continue
 
-                    content = str(chunk.get("content", "")).strip()
+                    content = str(chunk.get("content", ""))
                     if not content:
                         continue
+
+                    pending_text = append_stream_content(pending_text, content)
+                    completed_sentences, pending_text = split_completed_sentences(pending_text)
+                    for sentence in completed_sentences:
+                        emitted = True
+                        yield sentence
+
+                trailing = pending_text.strip()
+                if trailing:
                     emitted = True
-                    yield content
+                    yield trailing
 
                 if emitted:
                     return
@@ -206,6 +216,20 @@ class ProviderClient:
         for sentence in split_sentences(fallback["reply_text"]):
             if sentence:
                 yield sentence
+
+    async def ping(self, *, timeout_seconds: float | None = None) -> bool:
+        if not self.settings.provider_enabled:
+            return False
+
+        timeout = timeout_seconds if timeout_seconds is not None else min(5.0, self.settings.bridge_timeout_seconds)
+        try:
+            response = await self.client.get("/ping", timeout=timeout)
+            if response.status_code == 404:
+                response = await self.client.get("/health", timeout=timeout)
+            response.raise_for_status()
+            return True
+        except httpx.HTTPError as exc:
+            raise ProviderError(f"Bridge ping failed: {exc}") from exc
 
     async def transcribe_audio(self, _filename: str, _content: bytes, _content_type: str) -> str:
         raise ProviderError("Audio transcription via provider is disabled in bridge-only mode.")
@@ -242,3 +266,38 @@ def split_sentences(text: str) -> list[str]:
         if comma_parts:
             return comma_parts
     return [p.strip() for p in parts if p.strip()]
+
+
+STREAM_SENTENCE_END_MARKERS = {".", "!", "?", "。", "！", "？", "\n"}
+
+
+def append_stream_content(buffer: str, content: str) -> str:
+    piece = str(content or "")
+    if not piece:
+        return buffer
+    if not buffer:
+        return piece
+
+    if piece[0].isspace() or buffer[-1].isspace():
+        return f"{buffer}{piece}"
+    if piece[0] in ".,!?;:)]}":
+        return f"{buffer}{piece}"
+    return f"{buffer} {piece}"
+
+
+def split_completed_sentences(buffer: str) -> tuple[list[str], str]:
+    if not buffer:
+        return [], ""
+
+    completed: list[str] = []
+    start = 0
+    for index, char in enumerate(buffer):
+        if char not in STREAM_SENTENCE_END_MARKERS:
+            continue
+        sentence = buffer[start : index + 1].strip()
+        if sentence:
+            completed.append(sentence)
+        start = index + 1
+
+    remainder = buffer[start:]
+    return completed, remainder

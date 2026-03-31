@@ -9,6 +9,7 @@ import pytest
 from app.config import Settings, get_settings
 from app.models import CreateOrderResponse, MenuItem, TTSConfigRequest, TurnRequest
 from app.services.conversation_engine import ConversationEngine, normalize_text, render_fallback_reply
+from app.services.provider_client import append_stream_content, split_completed_sentences
 
 
 class FakeCoreBackendClient:
@@ -88,6 +89,43 @@ def test_get_settings_keeps_custom_bridge_url(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setenv("BRIDGE_BASE_URL", "http://10.0.0.8:9000")
     settings = get_settings()
     assert settings.bridge_base_url == "http://10.0.0.8:9000"
+
+
+def test_get_settings_reads_bridge_keepalive_controls(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LLM_MODE", "bridge_only")
+    monkeypatch.setenv("BRIDGE_KEEPALIVE_ENABLED", "false")
+    monkeypatch.setenv("BRIDGE_KEEPALIVE_INTERVAL_SECONDS", "120")
+    monkeypatch.setenv("BRIDGE_KEEPALIVE_TIMEOUT_SECONDS", "7")
+
+    settings = get_settings()
+    assert settings.bridge_keepalive_enabled is False
+    assert settings.bridge_keepalive_interval_seconds == 120.0
+    assert settings.bridge_keepalive_timeout_seconds == 7.0
+
+
+def test_stream_buffer_splits_completed_sentences_incrementally() -> None:
+    buffer = ""
+    emitted: list[str] = []
+
+    for token in ["Xin chao", " ban.", " Hom nay", " minh co", " gi ngon?"]:
+        buffer = append_stream_content(buffer, token)
+        sentences, buffer = split_completed_sentences(buffer)
+        emitted.extend(sentences)
+
+    assert emitted == ["Xin chao ban.", "Hom nay minh co gi ngon?"]
+    assert buffer.strip() == ""
+
+
+def test_stream_buffer_keeps_incomplete_tail_until_punctuation() -> None:
+    buffer = append_stream_content("", "Tra dao cam sa la mon")
+    emitted, buffer = split_completed_sentences(buffer)
+    assert emitted == []
+    assert "Tra dao cam sa la mon" in buffer
+
+    buffer = append_stream_content(buffer, " de uong.")
+    emitted, buffer = split_completed_sentences(buffer)
+    assert emitted == ["Tra dao cam sa la mon de uong."]
+    assert buffer.strip() == ""
 
 
 def test_tts_config_request_accepts_legacy_and_new_payload_keys() -> None:
@@ -547,6 +585,111 @@ async def test_handle_turn_stream_emits_text_final_and_bridge_source_for_complex
     assert provider_client.stream_calls >= 1
     # Stream endpoint should not do an extra blocking bridge call before streaming.
     assert provider_client.compose_calls == 0
+
+
+@pytest.mark.anyio
+async def test_handle_turn_stream_routes_self_intro_to_greeting_bridge_scene() -> None:
+    settings = Settings(
+        ai_base_url="",
+        ai_api_key="",
+        ai_model="",
+        core_backend_url="http://127.0.0.1:8001",
+        bridge_base_url="http://127.0.0.1:1122",
+        llm_mode="bridge_only",
+        voice_lang="vi-VN",
+        voice_style="cute_friendly",
+        tts_voice="vietnam",
+        tts_rate="165",
+        stt_model="small",
+        stt_device="cpu",
+        stt_compute_type="int8",
+    )
+    core_client = FakeCoreBackendClient()
+    speech_service = FakeSpeechService()
+    provider_client = FakeProviderClient()
+    engine = ConversationEngine(settings, core_client, speech_service)
+    engine.provider_client = provider_client
+
+    start = await engine.start_session()
+    chunks = [
+        chunk
+        async for chunk in engine.handle_turn_stream(
+            start.session_id,
+            "tao ten la danh",
+            turn_id="turn-test-stream-intro",
+            include_audio=False,
+        )
+    ]
+
+    final_chunks = [chunk for chunk in chunks if chunk.get("type") == "text_final"]
+    assert final_chunks
+    assert final_chunks[-1].get("scene") == "greeting"
+    assert provider_client.stream_calls >= 1
+
+
+@pytest.mark.anyio
+async def test_handle_turn_stream_routes_profanity_to_bridge_fallback_scene() -> None:
+    settings = Settings(
+        ai_base_url="",
+        ai_api_key="",
+        ai_model="",
+        core_backend_url="http://127.0.0.1:8001",
+        bridge_base_url="http://127.0.0.1:1122",
+        llm_mode="bridge_only",
+        voice_lang="vi-VN",
+        voice_style="cute_friendly",
+        tts_voice="vietnam",
+        tts_rate="165",
+        stt_model="small",
+        stt_device="cpu",
+        stt_compute_type="int8",
+    )
+    core_client = FakeCoreBackendClient()
+    speech_service = FakeSpeechService()
+    provider_client = FakeProviderClient()
+    engine = ConversationEngine(settings, core_client, speech_service)
+    engine.provider_client = provider_client
+
+    start = await engine.start_session()
+    chunks = [
+        chunk
+        async for chunk in engine.handle_turn_stream(
+            start.session_id,
+            "cut",
+            turn_id="turn-test-stream-profanity",
+            include_audio=False,
+        )
+    ]
+
+    final_chunks = [chunk for chunk in chunks if chunk.get("type") == "text_final"]
+    assert final_chunks
+    assert final_chunks[-1].get("scene") == "fallback"
+    assert provider_client.stream_calls >= 1
+
+
+@pytest.mark.anyio
+async def test_non_ordering_chat_does_not_fall_into_recommendation_scene() -> None:
+    settings = Settings(
+        ai_base_url="",
+        ai_api_key="",
+        ai_model="",
+        core_backend_url="http://127.0.0.1:8001",
+        voice_lang="vi-VN",
+        voice_style="cute_friendly",
+        tts_voice="vietnam",
+        tts_rate="165",
+        stt_model="small",
+        stt_device="cpu",
+        stt_compute_type="int8",
+    )
+    core_client = FakeCoreBackendClient()
+    engine = ConversationEngine(settings, core_client)
+
+    start = await engine.start_session()
+    reply = await engine.handle_turn(start.session_id, "lam gi")
+
+    assert reply.scene == "greeting"
+    assert reply.recommended_item_ids == []
 
 
 @pytest.mark.anyio

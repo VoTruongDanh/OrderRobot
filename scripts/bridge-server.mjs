@@ -526,6 +526,14 @@ const httpServer = http.createServer(async (req, res) => {
     });
   }
 
+  if (req.method === 'GET' && url.pathname === '/ping') {
+    return json(200, {
+      ok: true,
+      ts: Date.now(),
+      busy: Boolean(activeRequest),
+    });
+  }
+
   if (
     req.method === 'POST'
     && (

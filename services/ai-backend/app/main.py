@@ -32,7 +32,7 @@ from app.models import (
 from app.services.conversation_engine import ConversationEngine
 from app.services.conversation_engine import render_fallback_reply
 from app.services.core_backend_client import CoreBackendClient
-from app.services.provider_client import ProviderError
+from app.services.provider_client import ProviderError, split_sentences
 from app.services.speech_service import SpeechNotHeardError, SpeechService
 
 
@@ -43,6 +43,7 @@ conversation_engine = ConversationEngine(settings, core_client, speech_service)
 logger = logging.getLogger("uvicorn.error")
 SUPPORTED_TTS_ENGINES = {"auto", "vieneu", "edge", "local", "pyttsx3"}
 VIENEU_INSTALL_TIMEOUT_SECONDS = 900
+bridge_keepalive_task: asyncio.Task[None] | None = None
 
 app = FastAPI(title="Order Robot AI Backend", version="1.0.0")
 
@@ -82,8 +83,29 @@ async def preload_speech_model() -> None:
         )
 
 
+@app.on_event("startup")
+async def start_bridge_keepalive() -> None:
+    global bridge_keepalive_task
+    provider_client = conversation_engine.provider_client
+    if provider_client is None or not settings.bridge_keepalive_enabled:
+        return
+    if bridge_keepalive_task is not None and not bridge_keepalive_task.done():
+        return
+    bridge_keepalive_task = asyncio.create_task(_bridge_keepalive_loop())
+
+
 @app.on_event("shutdown")
 async def shutdown_clients() -> None:
+    global bridge_keepalive_task
+    if bridge_keepalive_task is not None:
+        bridge_keepalive_task.cancel()
+        try:
+            await bridge_keepalive_task
+        except asyncio.CancelledError:
+            pass
+        finally:
+            bridge_keepalive_task = None
+
     await core_client.aclose()
     if conversation_engine.provider_client is not None:
         await conversation_engine.provider_client.aclose()
@@ -97,6 +119,9 @@ async def health() -> dict[str, object]:
         "provider_enabled": settings.provider_enabled,
         "llm_mode": settings.llm_mode,
         "bridge_base_url": settings.bridge_base_url,
+        "bridge_keepalive_enabled": settings.bridge_keepalive_enabled,
+        "bridge_keepalive_interval_seconds": settings.bridge_keepalive_interval_seconds,
+        "bridge_keepalive_timeout_seconds": settings.bridge_keepalive_timeout_seconds,
         "voice_style": settings.voice_style,
         "tts_engine": settings.tts_engine,
         "stt_model": settings.stt_model,
@@ -122,6 +147,92 @@ async def health() -> dict[str, object]:
         "vieneu_installed": speech_service._is_vieneu_available(),
         "active_sessions": await conversation_engine.active_session_count(),
     }
+
+
+async def _bridge_keepalive_loop() -> None:
+    provider_client = conversation_engine.provider_client
+    if provider_client is None:
+        return
+
+    interval_seconds = max(15.0, float(settings.bridge_keepalive_interval_seconds))
+    timeout_seconds = max(1.0, float(settings.bridge_keepalive_timeout_seconds))
+
+    while True:
+        try:
+            await asyncio.sleep(interval_seconds)
+            started_at = time.perf_counter()
+            await provider_client.ping(timeout_seconds=timeout_seconds)
+            logger.debug(
+                "bridge_keepalive_ms=%s status=ok",
+                int((time.perf_counter() - started_at) * 1000),
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.debug("bridge_keepalive status=error detail=%s", exc)
+
+
+@app.get("/chat/stream")
+async def chat_stream(session_id: str, text: str) -> StreamingResponse:
+    provider_client = conversation_engine.provider_client
+    clean_text = str(text or "").strip()
+
+    async def generator():
+        if not clean_text:
+            yield "data: [DONE]\n\n"
+            return
+
+        if provider_client is None:
+            fallback_reply = render_fallback_reply(
+                {
+                    "scene": "fallback",
+                    "seed": "",
+                    "cart_summary": [],
+                    "recommended_items": [],
+                    "needs_confirmation": False,
+                    "order_created": False,
+                    "voice_style": settings.voice_style,
+                    "user_text": clean_text,
+                }
+            )
+            for sentence in split_sentences(fallback_reply):
+                yield f"data: {json.dumps({'sentence': sentence}, ensure_ascii=False)}\n\n"
+            yield "data: [DONE]\n\n"
+            return
+
+        prompt_payload: dict[str, object] = {
+            "scene": "fallback",
+            "seed": "",
+            "cart_summary": [],
+            "recommended_items": [],
+            "needs_confirmation": False,
+            "order_created": False,
+            "voice_style": settings.voice_style,
+            "user_text": clean_text,
+        }
+        turn_id = f"chat-stream-{int(time.time() * 1000)}"
+
+        try:
+            async for sentence in provider_client.compose_reply_stream(
+                prompt_payload,
+                session_id=session_id,
+                turn_id=turn_id,
+                latest_wins=True,
+            ):
+                clean_sentence = str(sentence or "").strip()
+                if not clean_sentence:
+                    continue
+                yield f"data: {json.dumps({'sentence': clean_sentence}, ensure_ascii=False)}\n\n"
+        except Exception as exc:
+            yield f"data: {json.dumps({'error': str(exc)}, ensure_ascii=False)}\n\n"
+        finally:
+            yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+    )
 
 
 @app.post("/debug/bridge-chat", response_model=BridgeDebugChatResponse)

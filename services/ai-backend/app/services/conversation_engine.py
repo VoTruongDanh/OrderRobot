@@ -96,6 +96,8 @@ SEGMENT_SPLIT_PATTERN = re.compile(r"\s*(?:,|\bva\b|\bvoi\b|\bcung\b|\bthem\b)\s
 _CHITCHAT_PATTERNS = [
     re.compile(r"ten (toi|minh|em|anh|chi) la"),  # "tên tôi là X"
     re.compile(r"toi ten (la )?"),                  # "tôi tên là X"
+    re.compile(r"\bten la\b"),                      # "tên là X"
+    re.compile(r"\blam gi\b"),                      # "làm gì"
     re.compile(r"^(chao|hi|hello|xin chao)"),       # greetings
     re.compile(r"o dau"),                           # "ở đâu"
     re.compile(r"may gio"),                         # "mấy giờ"
@@ -152,6 +154,8 @@ _STT_ALIASES: dict[str, str] = {
 _FUZZY_THRESHOLD = 0.70
 # Auto-add threshold: items with confidence >= this are added directly to cart
 _AUTO_ADD_THRESHOLD = 0.85
+# Recommendation ranking confidence floor for fallback matching path.
+_MIN_RANK_SCORE_FOR_RECOMMENDATION = 6
 
 # Scenes handled locally without LLM
 SIMPLE_SCENES = {"reset", "cart_updated", "remove_item",
@@ -160,7 +164,7 @@ SIMPLE_SCENES = {"reset", "cart_updated", "remove_item",
 # Scenes that benefit from bridge context and natural conversational style.
 # Keep ordering-critical scenes local for deterministic behavior.
 COMPLEX_SCENES = {"recommendation", "fallback", "greeting", "cart_follow_up"}
-BRIDGE_LOCAL_ONLY_SCENES = {"greeting", "cart_follow_up"}
+BRIDGE_LOCAL_ONLY_SCENES = {"cart_follow_up"}
 BRIDGE_RESPONSE_BUDGET_SECONDS = 8.0
 BRIDGE_SCENE_BUDGET_SECONDS = {
     "recommendation": 6.0,
@@ -171,6 +175,20 @@ BRIDGE_SCENE_BUDGET_SECONDS = {
 QUICK_REPLY_CACHE_TTL_SECONDS = 300.0
 QUICK_REPLY_CACHE_MAX_SIZE = 256
 QUICK_REPLY_CACHE_SCENES = {"greeting", "fallback", "recommendation"}
+STATIC_CACHE_MAX_QUERY_CHARS = 64
+STATIC_CACHE_GREETING_KEYWORDS = {"chao", "xin chao", "hello", "hi"}
+STATIC_CACHE_MENU_KEYWORDS = {"menu", "thuc don", "thực đơn", "co gi", "ban co gi", "co mon gi"}
+STATIC_CACHE_CONFIRM_KEYWORDS = {"xac nhan", "xác nhận", "dong y", "chot don", "dat luon", "len don"}
+ORDERING_HINT_KEYWORDS = (
+    RECOMMEND_KEYWORDS
+    | ADD_INTENT_KEYWORDS
+    | CHECKOUT_KEYWORDS
+    | CONFIRM_KEYWORDS
+    | RESET_KEYWORDS
+    | REMOVE_KEYWORDS
+)
+SIMPLE_GREETING_KEYWORDS = {"chao", "xin chao", "hello", "hi", "alo", "chao ban", "xin chao ban"}
+PROFANITY_KEYWORDS = {"cut", "dit", "dm", "dmm", "cl", "cac", "lon", "deo"}
 BRIDGE_LONG_QUERY_WORDS_THRESHOLD = 20
 BRIDGE_LONG_QUERY_CHARS_THRESHOLD = 120
 BRIDGE_ESCALATION_KEYWORDS = {
@@ -361,9 +379,35 @@ class ConversationEngine:
                     menu,
                 )
 
+        has_ordering_hint = contains_any(normalized, ORDERING_HINT_KEYWORDS)
+        if _contains_profanity_text(normalized):
+            return await self._build_response(
+                session_id,
+                Decision(
+                    scene="fallback",
+                    reply_seed="",
+                    user_text=transcript,
+                ),
+                menu,
+                turn_id=turn_id,
+            )
+
+        # Chitchat / self-intro / non-ordering input â€” avoid forcing recommendation mode.
+        if _is_chitchat(normalized) and not has_ordering_hint:
+            return await self._build_response(
+                session_id,
+                Decision(
+                    scene="greeting",
+                    reply_seed="",
+                    user_text=transcript,
+                ),
+                menu,
+                turn_id=turn_id,
+            )
+
         if contains_any(normalized, RECOMMEND_KEYWORDS) or "?" in transcript:
             recommended = self._rank_items(normalized, menu)[:3]
-            if recommended:
+            if recommended and recommended[0].score >= _MIN_RANK_SCORE_FOR_RECOMMENDATION:
                 return await self._build_response(
                     session_id,
                     Decision(
@@ -375,19 +419,6 @@ class ConversationEngine:
                     menu,
                     turn_id=turn_id,
                 )
-
-        # Chitchat / name / non-ordering input â€” respond naturally
-        if _is_chitchat(normalized):
-            return await self._build_response(
-                session_id,
-                Decision(
-                    scene="greeting",
-                    reply_seed="",
-                    user_text=transcript,
-                ),
-                menu,
-                turn_id=turn_id,
-            )
 
         segment_matches = self._extract_segment_matches(normalized, menu)
         if segment_matches:
@@ -471,7 +502,11 @@ class ConversationEngine:
             )
 
         ranked_items = self._rank_items(normalized, menu)[:3]
-        if ranked_items:
+        if (
+            has_ordering_hint
+            and ranked_items
+            and ranked_items[0].score >= _MIN_RANK_SCORE_FOR_RECOMMENDATION
+        ):
             return await self._build_response(
                 session_id,
                 Decision(
@@ -603,7 +638,7 @@ class ConversationEngine:
             
             # Score using both original and corrected tokens
             for token in set(tokens + corrected_tokens):
-                if len(token) <= 1:
+                if len(token) <= 2:
                     continue
                 if token in haystack:
                     score += 2
@@ -984,6 +1019,46 @@ class ConversationEngine:
         for stale_key in list(self._quick_reply_cache.keys())[:overflow]:
             self._quick_reply_cache.pop(stale_key, None)
 
+    def _try_static_keyword_reply(
+        self,
+        *,
+        scene: str,
+        normalized_user_text: str,
+        menu: list[MenuItem],
+    ) -> tuple[str, str] | None:
+        if not normalized_user_text:
+            return None
+        if len(normalized_user_text) > STATIC_CACHE_MAX_QUERY_CHARS:
+            return None
+
+        if contains_any(normalized_user_text, STATIC_CACHE_GREETING_KEYWORDS):
+            return (
+                "Xin chao! Em la Order Robot. Hom nay anh chi muon thu mon nao de em tu van nhanh?",
+                self.settings.voice_style,
+            )
+
+        if contains_any(normalized_user_text, STATIC_CACHE_MENU_KEYWORDS):
+            top_items = [item.name for item in menu[:3]]
+            if top_items:
+                listed = ", ".join(top_items)
+                return (
+                    f"Menu hom nay co {listed}. Anh chi muon em goi y mon de uong, it ngot hay dang hot?",
+                    self.settings.voice_style,
+                )
+            return (
+                "Menu hom nay da san sang. Anh chi muon xem nhom tra trai cay, latte hay ca phe?",
+                self.settings.voice_style,
+            )
+
+        if scene in {"ask_confirmation", "cart_follow_up", "fallback"} and contains_any(
+            normalized_user_text, STATIC_CACHE_CONFIRM_KEYWORDS
+        ):
+            return (
+                "Da ro. Em xac nhan don ngay cho anh chi va se doc lai gio hang de minh kiem tra lan cuoi nhe.",
+                self.settings.voice_style,
+            )
+        return None
+
     def _should_use_bridge(
         self,
         *,
@@ -1024,9 +1099,20 @@ class ConversationEngine:
             return recommended_count <= 0, "recommendation_no_match"
 
         if scene == "fallback":
+            if _contains_profanity_text(normalized_user_text):
+                return True, "fallback_profanity"
+            if _is_chitchat(normalized_user_text):
+                return True, "fallback_chitchat"
             if has_long_or_hard_pattern:
                 return True, "fallback_long_query"
-            return False, "fallback_local_template"
+            if token_count >= 2:
+                return True, "fallback_contextual_short"
+            return False, "fallback_local_short_noise"
+
+        if scene == "greeting":
+            if _is_simple_greeting_text(normalized_user_text):
+                return False, "greeting_simple_local"
+            return True, "greeting_contextual"
 
         return False, "default_local"
 
@@ -1117,11 +1203,20 @@ class ConversationEngine:
         normalized_user_text = normalize_text(str(decision.user_text or ""))
         is_local_only_turn = bool(turn_id and turn_id in self._local_only_turn_ids)
 
+        static_cached_reply = self._try_static_keyword_reply(
+            scene=decision.scene,
+            normalized_user_text=normalized_user_text,
+            menu=menu,
+        )
         cached_reply = self._load_quick_reply_cache(
             scene=decision.scene,
             normalized_user_text=normalized_user_text,
         )
-        if cached_reply is not None:
+        if static_cached_reply is not None:
+            reply_text, voice_style = static_cached_reply
+            reply_source = "static_keyword_cache"
+            route_reason = "keyword_cache_hit"
+        elif cached_reply is not None:
             reply_text, voice_style = cached_reply
             reply_source = "quick_cache"
             route_reason = "cache_hit"
@@ -1283,8 +1378,24 @@ def _is_chitchat(normalized_text: str) -> bool:
     for pattern in _CHITCHAT_PATTERNS:
         if pattern.search(normalized_text):
             return True
-    # Very short input (1-2 chars) that doesn't match any menu keyword
-    if len(normalized_text) <= 3:
+    # Very short input (1-2 chars) is usually acknowledgement/noise.
+    if len(normalized_text) <= 2:
+        return True
+    return False
+
+
+def _contains_profanity_text(normalized_text: str) -> bool:
+    return contains_any(normalized_text, PROFANITY_KEYWORDS)
+
+
+def _is_simple_greeting_text(normalized_text: str) -> bool:
+    compact = normalized_text.strip()
+    if not compact:
+        return False
+    if compact in SIMPLE_GREETING_KEYWORDS:
+        return True
+    words = compact.split()
+    if len(words) == 1 and words[0] in SIMPLE_GREETING_KEYWORDS:
         return True
     return False
 

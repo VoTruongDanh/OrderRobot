@@ -4916,8 +4916,8 @@
                 let turnFirstTextAt = 0;
                 let turnSpeechStartAt = 0;
                 let fillerSpoken = false;
-                let earlySpeechText = '';
-                let earlySpeechPromise = null;
+                let earlySpeechSpokenText = '';
+                let earlySpeechQueuePromise = null;
                 let earlySpeechSucceeded = false;
                 let fillerTimer = null;
                 const clearFillerTimer = () => {
@@ -4941,12 +4941,13 @@
                 };
                 const tryStartEarlySpeechFromStream = () => {
                     if (streamedAudioChunks > 0) return;
-                    if (earlySpeechPromise) return;
                     if (!streamReplyBuffer || turnAbortController.signal.aborted) return;
                     if (!isTurnStillLatest(turnId)) return;
-                    const leadCandidate = extractEarlySpeakableText(streamReplyBuffer, earlySpeechText);
+                    const leadCandidate = extractEarlySpeakableText(streamReplyBuffer, earlySpeechSpokenText);
                     if (!leadCandidate) return;
-                    earlySpeechText = leadCandidate;
+                    const incrementalCandidate = removeSpokenPrefixText(leadCandidate, earlySpeechSpokenText);
+                    if (!incrementalCandidate) return;
+                    earlySpeechSpokenText = leadCandidate;
                     clearFillerTimer();
                     if (fillerSpoken) {
                         interruptBotSpeech();
@@ -4956,16 +4957,23 @@
                         turnSpeechStartAt = performance.now();
                     }
                     setVoiceStatus('Robot dang tra loi...');
-                    earlySpeechPromise = (async () => {
+                    const playbackTask = async () => {
+                        if (turnAbortController.signal.aborted || !isTurnStillLatest(turnId)) {
+                            return;
+                        }
                         try {
-                            await playBotSpeech(leadCandidate);
+                            await playBotSpeech(incrementalCandidate);
                             earlySpeechSucceeded = true;
                         } catch (earlySpeechError) {
                             if (!isAbortError(earlySpeechError)) {
                                 console.warn('[voice-early-speech] failed:', earlySpeechError);
                             }
                         }
-                    })();
+                    };
+                    const queueBase = earlySpeechQueuePromise || Promise.resolve();
+                    earlySpeechQueuePromise = queueBase
+                        .catch(() => {})
+                        .then(playbackTask);
                 };
                 showThinkingIndicator(turnId);
                 startThinkingMotion(turnId);
@@ -5136,13 +5144,13 @@
                                 interruptBotSpeech();
                                 fillerSpoken = false;
                             }
-                            if (earlySpeechPromise) {
-                                await earlySpeechPromise;
+                            if (earlySpeechQueuePromise) {
+                                await earlySpeechQueuePromise;
                                 ensureNotStale();
                             }
 
                             const tailReplyText = earlySpeechSucceeded
-                                ? removeSpokenPrefixText(replyText, earlySpeechText)
+                                ? removeSpokenPrefixText(replyText, earlySpeechSpokenText)
                                 : replyText;
                             if (tailReplyText) {
                                 setVoiceStatus('Robot dang tra loi...');
