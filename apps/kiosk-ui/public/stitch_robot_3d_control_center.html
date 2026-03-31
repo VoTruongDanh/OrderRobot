@@ -2286,13 +2286,20 @@
     const DEFAULT_CHAT_CLEAR_AFTER_ABSENCE_MS = 0;
     const DEFAULT_CHAT_CLEAR_ON_ORDER_COMPLETE = false;
     const DEFAULT_VOICE_ALWAYS_LISTEN = true;
-    const DEFAULT_VOICE_TTS_WS_REALTIME = false;
+    const DEFAULT_VOICE_TTS_WS_REALTIME = true;
     const AUTO_GREETING_VARIANTS = [
         'Chào mừng bạn. Hôm nay bạn muốn thử món nào để mình tư vấn ngay?',
         'Xin chào bạn. Mình sẵn sàng tư vấn món ngon cho bạn đây.',
         'Hello bạn ơi. Bạn muốn uống gì để mình gợi ý nhanh nha?',
         'Chào bạn. Cần mình gợi ý món dễ uống hay ít ngọt không?',
     ];
+    const FAST_FILLER_VARIANTS = [
+        'Để mình kiểm tra nhanh cho bạn nhé.',
+        'Một chút thôi, mình trả lời ngay.',
+        'Mình đang xử lý cho bạn đây.',
+    ];
+    const FAST_FILLER_DELAY_MS = 420;
+    const STREAM_EARLY_SPEECH_MIN_CHARS = 42;
     const AUTO_GREETING_COOLDOWN_MS = 25000;
     const AUTO_GREETING_RETRY_BASE_MS = 900;
     const AUTO_GREETING_MAX_RETRIES = 5;
@@ -2381,8 +2388,10 @@
     let voiceAutoRetryTimer = null;
     let greetingWarmupTask = null;
     let lastGreetingVariantIndex = -1;
+    let lastFillerVariantIndex = -1;
     let suppressNextSessionOpening = false;
     const greetingAudioCache = new Map();
+    const fillerAudioCache = new Map();
     let wsTtsWorkletModuleUrl = '';
     let wsTtsWorkletLoaded = false;
     let thinkingTurnId = '';
@@ -3714,6 +3723,108 @@
             .trim();
     }
 
+    function splitTextForFastTts(text) {
+        const normalized = String(text || '').trim();
+        if (!normalized) return [];
+        const sentenceSegments = normalized
+            .split(/(?<=[\.\!\?])\s+/)
+            .map((segment) => segment.trim())
+            .filter(Boolean);
+        const baseSegments = sentenceSegments.length > 0 ? sentenceSegments : [normalized];
+        const clauseSegments = [];
+        for (const sentence of baseSegments) {
+            const clauses = sentence
+                .split(/(?<=[,;:])\s+/)
+                .map((segment) => segment.trim())
+                .filter(Boolean);
+            const parts = clauses.length > 0 ? clauses : [sentence];
+            for (const part of parts) {
+                const compact = String(part || '').trim();
+                if (!compact) continue;
+                if (compact.length <= 62) {
+                    clauseSegments.push(compact);
+                    continue;
+                }
+                const words = compact.split(/\s+/).filter(Boolean);
+                let rolling = '';
+                for (const word of words) {
+                    const candidate = rolling ? `${rolling} ${word}` : word;
+                    if (candidate.length > 62 && rolling) {
+                        clauseSegments.push(rolling);
+                        rolling = word;
+                    } else {
+                        rolling = candidate;
+                    }
+                }
+                if (rolling) {
+                    clauseSegments.push(rolling);
+                }
+            }
+        }
+
+        if (clauseSegments.length <= 1) {
+            return clauseSegments.length === 1 ? clauseSegments : [normalized];
+        }
+        const merged = [];
+        for (const segment of clauseSegments) {
+            if (segment.length < 18 && merged.length > 0) {
+                merged[merged.length - 1] = `${merged[merged.length - 1]} ${segment}`.trim();
+            } else {
+                merged.push(segment);
+            }
+        }
+        return merged;
+    }
+
+    function extractEarlySpeakableText(text, alreadySpokenText = '') {
+        const normalized = normalizeTextForTtsPlayback(text);
+        if (!normalized) return '';
+        const punctuationMatches = [...normalized.matchAll(/[\.\!\?;:,]/g)];
+        if (punctuationMatches.length <= 0) {
+            return '';
+        }
+        const lastMatch = punctuationMatches[punctuationMatches.length - 1];
+        const endIndex = Number(lastMatch.index) + 1;
+        const candidate = normalized.slice(0, endIndex).trim();
+        if (candidate.length < STREAM_EARLY_SPEECH_MIN_CHARS) {
+            return '';
+        }
+        const spokenNormalized = normalizeTextForTtsPlayback(alreadySpokenText);
+        if (spokenNormalized && candidate.length <= (spokenNormalized.length + 4)) {
+            return '';
+        }
+        return candidate;
+    }
+
+    function removeSpokenPrefixText(fullText, spokenPrefixText) {
+        const full = normalizeTextForTtsPlayback(fullText);
+        const spoken = normalizeTextForTtsPlayback(spokenPrefixText);
+        if (!full || !spoken) {
+            return full;
+        }
+        if (full.startsWith(spoken)) {
+            return full.slice(spoken.length).replace(/^[\s,.;:!?-]+/, '').trim();
+        }
+
+        const fullWords = full.split(/\s+/).filter(Boolean);
+        const spokenWords = spoken.split(/\s+/).filter(Boolean);
+        if (fullWords.length === 0 || spokenWords.length === 0) {
+            return full;
+        }
+
+        let matchedWords = 0;
+        while (matchedWords < fullWords.length && matchedWords < spokenWords.length) {
+            if (normalizeTranscriptForDedup(fullWords[matchedWords]) !== normalizeTranscriptForDedup(spokenWords[matchedWords])) {
+                break;
+            }
+            matchedWords += 1;
+        }
+        if (matchedWords <= 0) {
+            return full;
+        }
+        return fullWords.slice(matchedWords).join(' ').replace(/^[\s,.;:!?-]+/, '').trim();
+    }
+
     function normalizeTranscriptForDedup(text) {
         return String(text || '')
             .toLowerCase()
@@ -3802,6 +3913,25 @@
         return AUTO_GREETING_VARIANTS[nextIndex];
     }
 
+    function pickFillerVariantText() {
+        if (!FAST_FILLER_VARIANTS.length) {
+            return 'Để mình kiểm tra nhanh cho bạn nhé.';
+        }
+        if (FAST_FILLER_VARIANTS.length === 1) {
+            lastFillerVariantIndex = 0;
+            return FAST_FILLER_VARIANTS[0];
+        }
+        let nextIndex = lastFillerVariantIndex;
+        for (let attempts = 0; attempts < 5 && nextIndex === lastFillerVariantIndex; attempts += 1) {
+            nextIndex = Math.floor(Math.random() * FAST_FILLER_VARIANTS.length);
+        }
+        if (nextIndex === lastFillerVariantIndex) {
+            nextIndex = (lastFillerVariantIndex + 1) % FAST_FILLER_VARIANTS.length;
+        }
+        lastFillerVariantIndex = nextIndex;
+        return FAST_FILLER_VARIANTS[nextIndex];
+    }
+
     async function preloadGreetingAudioCache() {
         if (greetingWarmupTask) return greetingWarmupTask;
         greetingWarmupTask = (async () => {
@@ -3810,25 +3940,34 @@
                 const runtimeTtsEngine = String(resolvedAiApiHealth?.tts_engine || '').trim().toLowerCase();
                 if (!runtimeTtsEngine) return;
 
-                for (const greetingText of AUTO_GREETING_VARIANTS) {
-                    if (greetingAudioCache.has(greetingText)) continue;
-                    const payload = buildSpeechSynthesisPayload(greetingText);
-                    const response = await fetch(`${aiApiUrl}/speech/synthesize`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload),
-                    });
-                    if (!response.ok) continue;
-                    const blob = await response.blob();
-                    if (!blob || blob.size <= 0) continue;
-                    const objectUrl = URL.createObjectURL(blob);
-                    greetingAudioCache.set(greetingText, objectUrl);
+                const preloadPlans = [
+                    { texts: AUTO_GREETING_VARIANTS, cache: greetingAudioCache },
+                    { texts: FAST_FILLER_VARIANTS, cache: fillerAudioCache },
+                ];
+                for (const plan of preloadPlans) {
+                    for (const text of plan.texts) {
+                        if (plan.cache.has(text)) continue;
+                        const payload = buildSpeechSynthesisPayload(text);
+                        const response = await fetch(`${aiApiUrl}/speech/synthesize`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload),
+                        });
+                        if (!response.ok) continue;
+                        const blob = await response.blob();
+                        if (!blob || blob.size <= 0) continue;
+                        const objectUrl = URL.createObjectURL(blob);
+                        plan.cache.set(text, objectUrl);
+                    }
                 }
-                if (greetingAudioCache.size > 0) {
-                    console.info('[voice-greeting-cache] ready', { entries: greetingAudioCache.size });
+                if (greetingAudioCache.size > 0 || fillerAudioCache.size > 0) {
+                    console.info('[voice-prompt-cache] ready', {
+                        greetingEntries: greetingAudioCache.size,
+                        fillerEntries: fillerAudioCache.size,
+                    });
                 }
             } catch (error) {
-                console.warn('[voice-greeting-cache] preload failed:', error);
+                console.warn('[voice-prompt-cache] preload failed:', error);
             } finally {
                 greetingWarmupTask = null;
             }
@@ -3836,8 +3975,8 @@
         return greetingWarmupTask;
     }
 
-    async function playCachedGreetingAudio(greetingText, speechAbortController) {
-        const cachedUrl = greetingAudioCache.get(greetingText);
+    async function playCachedPromptAudio(cacheMap, promptText, speechAbortController, cacheLabel = 'prompt') {
+        const cachedUrl = cacheMap.get(promptText);
         if (!cachedUrl) return false;
         try {
             if (activeGreetingAudio) {
@@ -3857,7 +3996,7 @@
             return !speechAbortController?.signal?.aborted;
         } catch (error) {
             if (!isAbortError(error)) {
-                console.warn('[voice-greeting-cache] playback failed:', error);
+                console.warn(`[voice-${cacheLabel}-cache] playback failed:`, error);
             }
             return false;
         } finally {
@@ -3874,13 +4013,22 @@
         }
     }
 
+    async function playCachedGreetingAudio(greetingText, speechAbortController) {
+        return playCachedPromptAudio(greetingAudioCache, greetingText, speechAbortController, 'greeting');
+    }
+
+    async function playCachedFillerAudio(fillerText, speechAbortController) {
+        return playCachedPromptAudio(fillerAudioCache, fillerText, speechAbortController, 'filler');
+    }
+
     async function prewarmVieneuStream() {
         try {
             const aiApiUrl = await ensureAiApiUrlReady();
             const runtimeTtsEngine = String(resolvedAiApiHealth?.tts_engine || '').trim().toLowerCase();
             const vieneuMode = String(resolvedAiApiHealth?.tts_vieneu_mode || '').trim().toLowerCase();
             if (runtimeTtsEngine !== 'vieneu') return;
-            if (!(vieneuMode === 'fast' || vieneuMode === 'xpu')) return;
+            const allowWarmup = voiceTtsWsRealtimeEnabled || vieneuMode === 'fast' || vieneuMode === 'xpu';
+            if (!allowWarmup) return;
 
             const warmupPayload = buildSpeechSynthesisPayload('Xin chao');
             warmupPayload.tts_engine = 'vieneu';
@@ -4023,6 +4171,8 @@
         let ws = null;
         let doneReceived = false;
         let totalSamples = 0;
+        const wsStartedAt = performance.now();
+        let firstFrameAt = 0;
         const waitDone = new Promise((resolve, reject) => {
             const safeReject = (err) => {
                 if (doneReceived) return;
@@ -4068,6 +4218,13 @@
                     const floatSamples = pcm16ToFloat32Samples(bytes);
                     if (!floatSamples || floatSamples.length === 0) return;
                     totalSamples += floatSamples.length;
+                    if (!firstFrameAt) {
+                        firstFrameAt = performance.now();
+                        console.info('[voice-tts-ws]', {
+                            firstAudioMs: Math.round(firstFrameAt - wsStartedAt),
+                            turnId: activeProcessingTurnId || '',
+                        });
+                    }
                     node.port.postMessage({ type: 'chunk', samples: floatSamples }, [floatSamples.buffer]);
                 }
             };
@@ -4110,6 +4267,11 @@
                 );
             });
             await Promise.race([waitDone, abortPromise]);
+            console.info('[voice-tts-ws]', {
+                firstAudioMs: firstFrameAt ? Math.round(firstFrameAt - wsStartedAt) : null,
+                totalSamples,
+                turnId: activeProcessingTurnId || '',
+            });
             const tailMs = totalSamples > 0 ? Math.min(900, Math.max(80, Math.round((totalSamples / 24000) * 1000 * 0.08))) : 120;
             await new Promise((resolve) => window.setTimeout(resolve, tailMs));
         } finally {
@@ -4515,15 +4677,25 @@
             delete speechPayload.tts_vieneu_max_chars;
         }
         const forcedVieneu = isVieneuForced(speechPayload);
-        const allowRealtimeVieneuStream = forcedVieneu && isVieneuRealtimeCapable();
+        const allowRealtimeVieneuStream = forcedVieneu && (voiceTtsWsRealtimeEnabled || isVieneuRealtimeCapable());
         if (allowRealtimeVieneuStream) {
             setFaceState('happy');
             botSpeechActive = true;
+            const realtimeSegments = splitTextForFastTts(ttsText);
+            let failedSegmentIndex = 0;
             try {
-                if (voiceTtsWsRealtimeEnabled) {
-                    await playVieneuWsRealtime(aiApiUrl, speechPayload, speechAbortController);
-                } else {
-                    await playVieneuWavStream(aiApiUrl, speechPayload, speechAbortController);
+                for (let index = 0; index < realtimeSegments.length; index += 1) {
+                    failedSegmentIndex = index;
+                    const segmentPayload = {
+                        ...speechPayload,
+                        text: realtimeSegments[index],
+                        tts_engine: 'vieneu',
+                    };
+                    if (voiceTtsWsRealtimeEnabled) {
+                        await playVieneuWsRealtime(aiApiUrl, segmentPayload, speechAbortController);
+                    } else {
+                        await playVieneuWavStream(aiApiUrl, segmentPayload, speechAbortController);
+                    }
                 }
                 if (activeBotSpeechAbortController === speechAbortController) {
                     activeBotSpeechAbortController = null;
@@ -4547,7 +4719,13 @@
                 console.warn('[voice-vieneu-stream] fallback to blob playback:', {
                     error: String(error?.message || error || 'unknown'),
                     wsRealtimeEnabled: voiceTtsWsRealtimeEnabled,
+                    failedSegmentIndex,
+                    segmentCount: realtimeSegments.length,
                 });
+                const remainingText = realtimeSegments.slice(failedSegmentIndex).join(' ').trim();
+                if (remainingText) {
+                    speechPayload.text = remainingText;
+                }
                 botSpeechActive = false;
                 if (!isMenuOpen && !robotController.isCinematicRunning) {
                     setFaceState('normal');
@@ -4726,9 +4904,62 @@
                 const turnStartedAt = performance.now();
                 let turnFirstTextAt = 0;
                 let turnSpeechStartAt = 0;
+                let fillerSpoken = false;
+                let earlySpeechText = '';
+                let earlySpeechPromise = null;
+                let earlySpeechSucceeded = false;
+                let fillerTimer = null;
+                const clearFillerTimer = () => {
+                    if (!fillerTimer) return;
+                    window.clearTimeout(fillerTimer);
+                    fillerTimer = null;
+                };
+                const scheduleFastFiller = () => {
+                    clearFillerTimer();
+                    fillerTimer = window.setTimeout(() => {
+                        if (turnAbortController.signal.aborted) return;
+                        if (!isTurnStillLatest(turnId)) return;
+                        if (turnSpeechStartAt) return;
+                        const fillerText = pickFillerVariantText();
+                        if (!fillerText) return;
+                        fillerSpoken = true;
+                        turnSpeechStartAt = performance.now();
+                        setVoiceStatus('Robot dang phan hoi...');
+                        void playCachedFillerAudio(fillerText, turnAbortController).catch(() => {});
+                    }, FAST_FILLER_DELAY_MS);
+                };
+                const tryStartEarlySpeechFromStream = () => {
+                    if (streamedAudioChunks > 0) return;
+                    if (earlySpeechPromise) return;
+                    if (!streamReplyBuffer || turnAbortController.signal.aborted) return;
+                    if (!isTurnStillLatest(turnId)) return;
+                    const leadCandidate = extractEarlySpeakableText(streamReplyBuffer, earlySpeechText);
+                    if (!leadCandidate) return;
+                    earlySpeechText = leadCandidate;
+                    clearFillerTimer();
+                    if (fillerSpoken) {
+                        interruptBotSpeech();
+                        fillerSpoken = false;
+                    }
+                    if (!turnSpeechStartAt) {
+                        turnSpeechStartAt = performance.now();
+                    }
+                    setVoiceStatus('Robot dang tra loi...');
+                    earlySpeechPromise = (async () => {
+                        try {
+                            await playBotSpeech(leadCandidate);
+                            earlySpeechSucceeded = true;
+                        } catch (earlySpeechError) {
+                            if (!isAbortError(earlySpeechError)) {
+                                console.warn('[voice-early-speech] failed:', earlySpeechError);
+                            }
+                        }
+                    })();
+                };
                 showThinkingIndicator(turnId);
                 startThinkingMotion(turnId);
                 setVoiceStatus('Robot dang suy nghi', { thinking: true });
+                scheduleFastFiller();
 
                 try {
                     ensureNotStale();
@@ -4771,6 +5002,7 @@
                                 if (!turnFirstTextAt) {
                                     turnFirstTextAt = performance.now();
                                 }
+                                tryStartEarlySpeechFromStream();
                                 return;
                             }
                             if (chunk?.type === 'text_final') {
@@ -4784,6 +5016,7 @@
                                 if (!turnFirstTextAt && replyText) {
                                     turnFirstTextAt = performance.now();
                                 }
+                                tryStartEarlySpeechFromStream();
                                 if (Array.isArray(chunk.cart)) {
                                     updateMiniCart(chunk.cart);
                                 }
@@ -4795,7 +5028,8 @@
                                         sessionId: currentSessionId,
                                     });
                                 }
-                                return;
+                                // We already have the complete text, stop waiting for trailing stream chunks.
+                                return false;
                             }
                             if (chunk?.type === 'error') {
                                 streamChunkErrorCode = String(chunk.code || '').trim();
@@ -4886,9 +5120,26 @@
                         ensureNotStale();
                         appendChat('assistant', replyText);
                         if (streamedAudioChunks === 0 && !turnAbortController.signal.aborted) {
-                            setVoiceStatus('Robot dang tra loi...');
-                            turnSpeechStartAt = performance.now();
-                            await playBotSpeech(replyText);
+                            clearFillerTimer();
+                            if (fillerSpoken) {
+                                interruptBotSpeech();
+                                fillerSpoken = false;
+                            }
+                            if (earlySpeechPromise) {
+                                await earlySpeechPromise;
+                                ensureNotStale();
+                            }
+
+                            const tailReplyText = earlySpeechSucceeded
+                                ? removeSpokenPrefixText(replyText, earlySpeechText)
+                                : replyText;
+                            if (tailReplyText) {
+                                setVoiceStatus('Robot dang tra loi...');
+                                if (!turnSpeechStartAt) {
+                                    turnSpeechStartAt = performance.now();
+                                }
+                                await playBotSpeech(tailReplyText);
+                            }
                         }
                         robotController.reactToConversation({
                             scene: backendScene || inferVoiceIntent(replyText),
@@ -4923,6 +5174,7 @@
                     });
                     showVoiceLatencyStatus(firstTextMs, speechStartMs, turnTotalMs);
                 } catch (error) {
+                    clearFillerTimer();
                     hideThinkingIndicator(turnId);
                     stopThinkingMotion(turnId);
                     if (isAbortError(error)) {
@@ -4937,6 +5189,7 @@
                         );
                     }
                 } finally {
+                    clearFillerTimer();
                     hideThinkingIndicator(turnId);
                     stopThinkingMotion(turnId);
                     if (activeTurnAbortController === turnAbortController) {
@@ -6024,6 +6277,14 @@
                 } catch {}
             }
             greetingAudioCache.clear();
+        }
+        if (fillerAudioCache.size > 0) {
+            for (const url of fillerAudioCache.values()) {
+                try {
+                    URL.revokeObjectURL(url);
+                } catch {}
+            }
+            fillerAudioCache.clear();
         }
         if (wsTtsWorkletModuleUrl) {
             try {

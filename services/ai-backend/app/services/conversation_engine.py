@@ -160,12 +160,39 @@ SIMPLE_SCENES = {"reset", "cart_updated", "remove_item",
 # Scenes that benefit from bridge context and natural conversational style.
 # Keep ordering-critical scenes local for deterministic behavior.
 COMPLEX_SCENES = {"recommendation", "fallback", "greeting", "cart_follow_up"}
+BRIDGE_LOCAL_ONLY_SCENES = {"greeting", "cart_follow_up"}
 BRIDGE_RESPONSE_BUDGET_SECONDS = 8.0
 BRIDGE_SCENE_BUDGET_SECONDS = {
     "recommendation": 6.0,
     "fallback": 3.5,
     "greeting": 3.0,
     "cart_follow_up": 3.0,
+}
+QUICK_REPLY_CACHE_TTL_SECONDS = 300.0
+QUICK_REPLY_CACHE_MAX_SIZE = 256
+QUICK_REPLY_CACHE_SCENES = {"greeting", "fallback", "recommendation"}
+BRIDGE_LONG_QUERY_WORDS_THRESHOLD = 20
+BRIDGE_LONG_QUERY_CHARS_THRESHOLD = 120
+BRIDGE_ESCALATION_KEYWORDS = {
+    "moi nhat",
+    "hom nay",
+    "hien tai",
+    "gia",
+    "tin tuc",
+    "tin nong",
+    "thoi tiet",
+    "ti gia",
+    "chung khoan",
+    "co phieu",
+    "ty so",
+    "ket qua",
+    "so sanh",
+    "giai thich",
+    "tai sao",
+    "vi sao",
+    "news",
+    "web",
+    "google",
 }
 
 MENU_CACHE_TTL = 60.0  # seconds
@@ -213,6 +240,8 @@ class ConversationEngine:
         self.lock = asyncio.Lock()
         self._menu_cache: list[MenuItem] | None = None
         self._menu_cache_at: float = 0.0
+        self._quick_reply_cache: dict[str, tuple[float, str, str]] = {}
+        self._local_only_turn_ids: set[str] = set()
 
     async def _get_menu(self) -> list[MenuItem]:
         """Get menu with caching (TTL=60s) to avoid HTTP round-trip every turn."""
@@ -463,6 +492,7 @@ class ConversationEngine:
                     reply_seed="Mình chưa nghe rõ món mới. Giỏ hàng của bạn vẫn đang có sẵn, bạn muốn mình đọc lại để xác nhận không?",
                 ),
                 menu,
+                turn_id=turn_id,
             )
 
         return await self._build_response(
@@ -623,12 +653,27 @@ class ConversationEngine:
         include_audio: bool = True,
     ):
         """Stream conversation response with incremental text and optional audio chunks."""
-        response = await self.handle_turn(session_id, transcript, turn_id=turn_id)
+        local_only_turn_id = str(turn_id or "").strip()
+        if local_only_turn_id:
+            self._local_only_turn_ids.add(local_only_turn_id)
+        try:
+            response = await self.handle_turn(session_id, transcript, turn_id=turn_id)
+        finally:
+            if local_only_turn_id:
+                self._local_only_turn_ids.discard(local_only_turn_id)
+
         final_reply_text = ensure_frontend_safe_reply(response.scene or "fallback", response.reply_text)
         bridge_source = "local_rule"
         streamed_any = False
 
-        if self.provider_client is not None and (response.scene or "") in COMPLEX_SCENES:
+        should_stream_from_bridge, bridge_reason = self._should_use_bridge(
+            scene=response.scene or "",
+            raw_user_text=transcript,
+            normalized_user_text=normalize_text(transcript),
+            recommended_count=len(response.recommended_item_ids),
+            force_local=False,
+        )
+        if self.provider_client is not None and should_stream_from_bridge:
             try:
                 prompt_payload = await self._build_stream_prompt_payload(response, transcript)
                 streamed_parts: list[str] = []
@@ -668,6 +713,14 @@ class ConversationEngine:
                     "session_id": session_id,
                     "turn_id": turn_id,
                 }
+        elif (response.scene or "") in COMPLEX_SCENES:
+            logger.info(
+                "bridge_stream_skipped reason=%s session_id=%s turn_id=%s scene=%s",
+                bridge_reason,
+                session_id,
+                turn_id or "",
+                response.scene or "",
+            )
 
         if not streamed_any:
             for segment in chunk_text_for_stream(final_reply_text):
@@ -887,6 +940,96 @@ class ConversationEngine:
             self._cleanup_expired_sessions()
             return len(self.sessions)
 
+    @staticmethod
+    def _make_quick_reply_cache_key(scene: str, normalized_user_text: str) -> str:
+        return f"{scene}:{normalized_user_text}"
+
+    def _load_quick_reply_cache(
+        self,
+        *,
+        scene: str,
+        normalized_user_text: str,
+    ) -> tuple[str, str] | None:
+        if scene not in QUICK_REPLY_CACHE_SCENES or not normalized_user_text:
+            return None
+        cache_key = self._make_quick_reply_cache_key(scene, normalized_user_text)
+        cached = self._quick_reply_cache.get(cache_key)
+        if not cached:
+            return None
+
+        cached_at, cached_text, cached_voice_style = cached
+        if (time.monotonic() - cached_at) > QUICK_REPLY_CACHE_TTL_SECONDS:
+            self._quick_reply_cache.pop(cache_key, None)
+            return None
+        return cached_text, cached_voice_style
+
+    def _save_quick_reply_cache(
+        self,
+        *,
+        scene: str,
+        normalized_user_text: str,
+        reply_text: str,
+        voice_style: str,
+    ) -> None:
+        if scene not in QUICK_REPLY_CACHE_SCENES or not normalized_user_text or not reply_text:
+            return
+
+        cache_key = self._make_quick_reply_cache_key(scene, normalized_user_text)
+        self._quick_reply_cache[cache_key] = (time.monotonic(), reply_text, voice_style)
+        if len(self._quick_reply_cache) <= QUICK_REPLY_CACHE_MAX_SIZE:
+            return
+
+        # Keep cache bounded with a cheap LRU-ish trim by insertion order.
+        overflow = len(self._quick_reply_cache) - QUICK_REPLY_CACHE_MAX_SIZE
+        for stale_key in list(self._quick_reply_cache.keys())[:overflow]:
+            self._quick_reply_cache.pop(stale_key, None)
+
+    def _should_use_bridge(
+        self,
+        *,
+        scene: str,
+        raw_user_text: str,
+        normalized_user_text: str,
+        recommended_count: int,
+        force_local: bool,
+    ) -> tuple[bool, str]:
+        if force_local:
+            return False, "forced_local_turn"
+        if self.provider_client is None:
+            return False, "provider_disabled"
+        if scene not in COMPLEX_SCENES:
+            return False, "simple_scene"
+        if scene in BRIDGE_LOCAL_ONLY_SCENES:
+            return False, "scene_local_fastpath"
+
+        if not normalized_user_text:
+            return scene == "recommendation" and recommended_count <= 0, "empty_user_text"
+
+        token_count = len(normalized_user_text.split())
+        char_count = len(normalized_user_text)
+        contains_escalation_keyword = contains_any(normalized_user_text, BRIDGE_ESCALATION_KEYWORDS)
+        has_long_or_hard_pattern = (
+            token_count >= BRIDGE_LONG_QUERY_WORDS_THRESHOLD
+            or char_count >= BRIDGE_LONG_QUERY_CHARS_THRESHOLD
+        )
+
+        if contains_escalation_keyword:
+            return True, "escalation_keyword"
+
+        if scene == "recommendation":
+            if recommended_count > 0 and not has_long_or_hard_pattern:
+                return False, "recommendation_local_match"
+            if has_long_or_hard_pattern:
+                return True, "recommendation_long_query"
+            return recommended_count <= 0, "recommendation_no_match"
+
+        if scene == "fallback":
+            if has_long_or_hard_pattern:
+                return True, "fallback_long_query"
+            return False, "fallback_local_template"
+
+        return False, "default_local"
+
     def _cleanup_expired_sessions(self) -> None:
         now = datetime.now(UTC)
         ttl = timedelta(minutes=self.settings.session_timeout_minutes)
@@ -971,62 +1114,91 @@ class ConversationEngine:
         if decision.user_text:
             prompt_payload["user_text"] = decision.user_text
 
-        reply_source = "local_rule"
+        normalized_user_text = normalize_text(str(decision.user_text or ""))
+        is_local_only_turn = bool(turn_id and turn_id in self._local_only_turn_ids)
 
-        # Only call bridge provider for complex scenes; simple scenes use local templates.
-        if self.provider_client is not None and decision.scene in COMPLEX_SCENES:
-            try:
-                bridge_started_at = time.perf_counter()
-                scene_budget = BRIDGE_SCENE_BUDGET_SECONDS.get(decision.scene, 3.5)
-                bridge_budget = max(
-                    2.2,
-                    min(scene_budget, self.settings.bridge_timeout_seconds, BRIDGE_RESPONSE_BUDGET_SECONDS),
-                )
-                async with asyncio.timeout(bridge_budget):
-                    provider_reply = await self.provider_client.compose_reply(
-                        prompt_payload,
-                        session_id=session_id,
-                        turn_id=turn_id,
-                        latest_wins=True,
-                    )
-                reply_text = provider_reply["reply_text"]
-                voice_style = provider_reply.get("voice_style", self.settings.voice_style)
-                reply_source = str(provider_reply.get("source") or "bridge")
-                reply_reason = str(provider_reply.get("reason") or "")
-                logger.info(
-                    "bridge_ms=%s bridge_budget_ms=%s bridge_source=%s bridge_reason=%s session_id=%s turn_id=%s scene=%s",
-                    int((time.perf_counter() - bridge_started_at) * 1000),
-                    int(bridge_budget * 1000),
-                    reply_source,
-                    reply_reason,
-                    session_id,
-                    turn_id or "",
-                    decision.scene,
-                )
-            except TimeoutError:
-                logger.warning(
-                    "Bridge call timeout after %ss for scene '%s' session_id=%s turn_id=%s; using local fallback",
-                    bridge_budget,
-                    decision.scene,
-                    session_id,
-                    turn_id or "",
-                )
-                reply_text = render_fallback_reply(prompt_payload)
-                voice_style = self.settings.voice_style
-                reply_source = "fallback"
-            except Exception as exc:
-                logger.warning("Bridge call failed for scene '%s': %s - using local fallback", decision.scene, exc)
-                reply_text = render_fallback_reply(prompt_payload)
-                voice_style = self.settings.voice_style
-                reply_source = "fallback"
+        cached_reply = self._load_quick_reply_cache(
+            scene=decision.scene,
+            normalized_user_text=normalized_user_text,
+        )
+        if cached_reply is not None:
+            reply_text, voice_style = cached_reply
+            reply_source = "quick_cache"
+            route_reason = "cache_hit"
         else:
-            reply_text = render_fallback_reply(prompt_payload)
-            voice_style = self.settings.voice_style
+            should_use_bridge, route_reason = self._should_use_bridge(
+                scene=decision.scene,
+                raw_user_text=str(decision.user_text or ""),
+                normalized_user_text=normalized_user_text,
+                recommended_count=len(decision.recommended_item_ids),
+                force_local=is_local_only_turn,
+            )
+
+            if self.provider_client is not None and should_use_bridge:
+                try:
+                    bridge_started_at = time.perf_counter()
+                    scene_budget = BRIDGE_SCENE_BUDGET_SECONDS.get(decision.scene, 3.5)
+                    bridge_budget = max(
+                        2.2,
+                        min(scene_budget, self.settings.bridge_timeout_seconds, BRIDGE_RESPONSE_BUDGET_SECONDS),
+                    )
+                    async with asyncio.timeout(bridge_budget):
+                        provider_reply = await self.provider_client.compose_reply(
+                            prompt_payload,
+                            session_id=session_id,
+                            turn_id=turn_id,
+                            latest_wins=True,
+                        )
+                    reply_text = provider_reply["reply_text"]
+                    voice_style = provider_reply.get("voice_style", self.settings.voice_style)
+                    reply_source = str(provider_reply.get("source") or "bridge")
+                    reply_reason = str(provider_reply.get("reason") or "")
+                    route_reason = route_reason or "bridge_route"
+                    logger.info(
+                        "bridge_ms=%s bridge_budget_ms=%s bridge_source=%s bridge_reason=%s session_id=%s turn_id=%s scene=%s",
+                        int((time.perf_counter() - bridge_started_at) * 1000),
+                        int(bridge_budget * 1000),
+                        reply_source,
+                        reply_reason,
+                        session_id,
+                        turn_id or "",
+                        decision.scene,
+                    )
+                except TimeoutError:
+                    logger.warning(
+                        "Bridge call timeout after %ss for scene '%s' session_id=%s turn_id=%s; using local fallback",
+                        bridge_budget,
+                        decision.scene,
+                        session_id,
+                        turn_id or "",
+                    )
+                    reply_text = render_fallback_reply(prompt_payload)
+                    voice_style = self.settings.voice_style
+                    reply_source = "fallback"
+                    route_reason = "bridge_timeout_fallback"
+                except Exception as exc:
+                    logger.warning("Bridge call failed for scene '%s': %s - using local fallback", decision.scene, exc)
+                    reply_text = render_fallback_reply(prompt_payload)
+                    voice_style = self.settings.voice_style
+                    reply_source = "fallback"
+                    route_reason = "bridge_error_fallback"
+            else:
+                reply_text = render_fallback_reply(prompt_payload)
+                voice_style = self.settings.voice_style
+                reply_source = "local_rule"
+
+        self._save_quick_reply_cache(
+            scene=decision.scene,
+            normalized_user_text=normalized_user_text,
+            reply_text=str(reply_text or ""),
+            voice_style=str(voice_style or self.settings.voice_style),
+        )
 
         reply_text = ensure_frontend_safe_reply(decision.scene, reply_text)
         logger.info(
-            "reply_source=%s scene=%s session_id=%s turn_id=%s",
+            "reply_source=%s route_reason=%s scene=%s session_id=%s turn_id=%s",
             reply_source,
+            route_reason,
             decision.scene,
             session_id,
             turn_id or "",

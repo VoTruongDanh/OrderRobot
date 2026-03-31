@@ -175,7 +175,7 @@ const ENV_TEMPLATE: EnvField[] = [
   { key: 'BACKEND_STT_FINALIZE_SILENCE_MS', label: 'Kiosk STT Finalize Silence Ms', value: '420' },
   { key: 'BACKEND_STT_FORCE_FINALIZE_MS', label: 'Kiosk STT Force Finalize Ms', value: '1400' },
   { key: 'VOICE_ALWAYS_LISTEN', label: 'Voice Always Listen', value: 'true' },
-  { key: 'VOICE_TTS_WS_REALTIME', label: 'Voice TTS WS Realtime', value: 'false' },
+  { key: 'VOICE_TTS_WS_REALTIME', label: 'Voice TTS WS Realtime', value: 'true' },
   { key: 'CHAT_CLEAR_AFTER_ABSENCE_MS', label: 'Chat Clear After Absence Ms', value: '0' },
   { key: 'CHAT_CLEAR_ON_ORDER_COMPLETE', label: 'Chat Clear On Order Complete', value: 'false' },
   { key: 'TTS_STREAM_PLAYBACK_RATE', label: 'TTS Stream Playback Rate', value: '1.0' },

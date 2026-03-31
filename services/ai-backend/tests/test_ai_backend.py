@@ -532,7 +532,7 @@ async def test_handle_turn_stream_emits_text_final_and_bridge_source_for_complex
         chunk
         async for chunk in engine.handle_turn_stream(
             start.session_id,
-            "Mon nao de uong va it ngot vay?",
+            "So sanh tra dao va matcha hom nay, mon nao hop hon?",
             turn_id="turn-test-stream-final",
             include_audio=False,
         )
@@ -545,6 +545,38 @@ async def test_handle_turn_stream_emits_text_final_and_bridge_source_for_complex
     assert final_chunks[-1].get("bridge_source") in {"bridge_stream", "fallback", "local_rule"}
     assert final_chunks[-1].get("turn_id") == "turn-test-stream-final"
     assert provider_client.stream_calls >= 1
+    # Stream endpoint should not do an extra blocking bridge call before streaming.
+    assert provider_client.compose_calls == 0
+
+
+@pytest.mark.anyio
+async def test_recommendation_fast_path_skips_bridge_for_simple_query() -> None:
+    settings = Settings(
+        ai_base_url="",
+        ai_api_key="",
+        ai_model="",
+        core_backend_url="http://127.0.0.1:8001",
+        bridge_base_url="http://127.0.0.1:1122",
+        llm_mode="bridge_only",
+        voice_lang="vi-VN",
+        voice_style="cute_friendly",
+        tts_voice="vietnam",
+        tts_rate="165",
+        stt_model="small",
+        stt_device="cpu",
+        stt_compute_type="int8",
+    )
+    core_client = FakeCoreBackendClient()
+    provider_client = FakeProviderClient()
+    engine = ConversationEngine(settings, core_client)
+    engine.provider_client = provider_client
+
+    start = await engine.start_session()
+    response = await engine.handle_turn(start.session_id, "Mon nao de uong it ngot?")
+
+    assert response.scene == "recommendation"
+    assert response.reply_text
+    assert provider_client.compose_calls == 0
 
 
 @pytest.mark.anyio
