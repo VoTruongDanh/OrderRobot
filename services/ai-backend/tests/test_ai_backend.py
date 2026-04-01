@@ -82,6 +82,36 @@ class FailingMenuCoreBackendClient(FakeCoreBackendClient):
         raise RuntimeError("list_menu should not be called for session greeting start")
 
 
+class CappuccinoCoreBackendClient(FakeCoreBackendClient):
+    async def list_menu(self) -> list[MenuItem]:
+        base = await super().list_menu()
+        base.append(
+            MenuItem(
+                item_id="cappuccino",
+                name="Cappuccino",
+                category="Coffee",
+                description="Ca phe sua bong nhe",
+                price=Decimal("52000"),
+                available=True,
+                tags=["ca-phe", "nong"],
+            )
+        )
+        return base
+
+
+class MenuRemovesTraDaoAfterFirstFetchCoreBackendClient(FakeCoreBackendClient):
+    def __init__(self) -> None:
+        super().__init__()
+        self._menu_fetch_count = 0
+
+    async def list_menu(self) -> list[MenuItem]:
+        self._menu_fetch_count += 1
+        menu = await super().list_menu()
+        if self._menu_fetch_count >= 2:
+            return [item for item in menu if item.item_id != "tra-dao"]
+        return menu
+
+
 def test_get_settings_migrates_legacy_bridge_url_in_bridge_only(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LLM_MODE", "bridge_only")
     monkeypatch.setenv("BRIDGE_BASE_URL", "http://127.0.0.1:1111")
@@ -143,6 +173,16 @@ def test_ensure_frontend_safe_reply_keeps_properly_accented_text() -> None:
     raw = "Mình có vài gợi ý để uống, bạn muốn thử món nào?"
     safe = ensure_frontend_safe_reply("recommendation", raw)
     assert safe == raw
+
+
+def test_ensure_frontend_safe_reply_repairs_vietnamese_spacing_artifacts() -> None:
+    raw = "Món này bên mình khôngph ục vụ ạ 😅 Bạn chọn món khác trong menu giúp mình nhé, mình sẵn sàng gợi ýcho bạn nè!"
+    safe = ensure_frontend_safe_reply("fallback", raw)
+    assert safe == "Món này bên mình không phục vụ ạ 😅 Bạn chọn món khác trong menu giúp mình nhé, mình sẵn sàng gợi ý cho bạn nè!"
+
+
+def test_normalize_text_preserves_d_letter_for_vietnamese_intents() -> None:
+    assert normalize_text("Đặt đi giúp mình") == "dat di giup minh"
 
 
 def test_stream_buffer_heals_split_words_for_broken_chunks() -> None:
@@ -851,6 +891,58 @@ async def test_unknown_specific_item_request_reports_not_in_menu() -> None:
 
 
 @pytest.mark.anyio
+async def test_stt_alias_gui_di_routes_to_recommendation_with_items() -> None:
+    settings = Settings(
+        ai_base_url="",
+        ai_api_key="",
+        ai_model="",
+        core_backend_url="http://127.0.0.1:8001",
+        voice_lang="vi-VN",
+        voice_style="cute_friendly",
+        tts_voice="vietnam",
+        tts_rate="165",
+        stt_model="small",
+        stt_device="cpu",
+        stt_compute_type="int8",
+    )
+    core_client = FakeCoreBackendClient()
+    engine = ConversationEngine(settings, core_client)
+
+    start = await engine.start_session()
+    response = await engine.handle_turn(start.session_id, "gui di")
+
+    assert response.scene == "recommendation"
+    assert response.recommended_item_ids != []
+
+
+@pytest.mark.anyio
+async def test_stt_alias_capuchino_still_adds_cappuccino_item() -> None:
+    settings = Settings(
+        ai_base_url="",
+        ai_api_key="",
+        ai_model="",
+        core_backend_url="http://127.0.0.1:8001",
+        voice_lang="vi-VN",
+        voice_style="cute_friendly",
+        tts_voice="vietnam",
+        tts_rate="165",
+        stt_model="small",
+        stt_device="cpu",
+        stt_compute_type="int8",
+    )
+    core_client = CappuccinoCoreBackendClient()
+    engine = ConversationEngine(settings, core_client)
+
+    start = await engine.start_session()
+    response = await engine.handle_turn(start.session_id, "cho minh 1 capuchino")
+
+    assert response.scene in {"cart_updated", "ask_confirmation"}
+    added = next((item for item in response.cart if item.item_id == "cappuccino"), None)
+    assert added is not None
+    assert added.quantity == 1
+
+
+@pytest.mark.anyio
 async def test_quantity_word_before_item_is_extracted_correctly() -> None:
     settings = Settings(
         ai_base_url="",
@@ -923,6 +1015,124 @@ async def test_remove_phrase_can_decrement_quantity_instead_of_deleting_all() ->
     removed = await engine.handle_turn(start.session_id, "bo mot tra dao cam sa")
 
     assert len(removed.cart) == 1
+    assert removed.cart[0].quantity == 1
+
+
+@pytest.mark.anyio
+async def test_remove_unknown_item_does_not_drop_last_cart_item() -> None:
+    settings = Settings(
+        ai_base_url="",
+        ai_api_key="",
+        ai_model="",
+        core_backend_url="http://127.0.0.1:8001",
+        voice_lang="vi-VN",
+        voice_style="cute_friendly",
+        tts_voice="vietnam",
+        tts_rate="165",
+        stt_model="small",
+        stt_device="cpu",
+        stt_compute_type="int8",
+    )
+    core_client = FakeCoreBackendClient()
+    engine = ConversationEngine(settings, core_client)
+
+    start = await engine.start_session()
+    await engine.handle_turn(start.session_id, "them 1 tra dao cam sa")
+    removed = await engine.handle_turn(start.session_id, "bo cappuccino")
+
+    assert removed.scene == "remove_item"
+    assert len(removed.cart) == 1
+    assert removed.cart[0].item_id == "tra-dao"
+    assert removed.cart[0].quantity == 1
+
+
+@pytest.mark.anyio
+async def test_checkout_prunes_items_not_in_latest_menu_api() -> None:
+    settings = Settings(
+        ai_base_url="",
+        ai_api_key="",
+        ai_model="",
+        core_backend_url="http://127.0.0.1:8001",
+        voice_lang="vi-VN",
+        voice_style="cute_friendly",
+        tts_voice="vietnam",
+        tts_rate="165",
+        stt_model="small",
+        stt_device="cpu",
+        stt_compute_type="int8",
+    )
+    core_client = MenuRemovesTraDaoAfterFirstFetchCoreBackendClient()
+    engine = ConversationEngine(settings, core_client)
+
+    start = await engine.start_session()
+    added = await engine.handle_turn(start.session_id, "them 1 tra dao cam sa")
+    assert len(added.cart) == 1
+
+    # Force next turn to read latest menu from API (simulate menu changed remotely).
+    engine._menu_cache = None
+    engine._menu_cache_at = 0
+
+    confirm = await engine.handle_turn(start.session_id, "xac nhan")
+
+    assert confirm.scene == "recommendation"
+    assert len(confirm.cart) == 0
+    assert core_client.created_orders == []
+    assert "khong con phuc vu" in normalize_text(confirm.reply_text)
+
+
+@pytest.mark.anyio
+async def test_generic_remove_with_quantity_decrements_last_item() -> None:
+    settings = Settings(
+        ai_base_url="",
+        ai_api_key="",
+        ai_model="",
+        core_backend_url="http://127.0.0.1:8001",
+        voice_lang="vi-VN",
+        voice_style="cute_friendly",
+        tts_voice="vietnam",
+        tts_rate="165",
+        stt_model="small",
+        stt_device="cpu",
+        stt_compute_type="int8",
+    )
+    core_client = FakeCoreBackendClient()
+    engine = ConversationEngine(settings, core_client)
+
+    start = await engine.start_session()
+    await engine.handle_turn(start.session_id, "them 3 tra dao cam sa")
+    removed = await engine.handle_turn(start.session_id, "bot 1 ly")
+
+    assert removed.scene == "remove_item"
+    assert len(removed.cart) == 1
+    assert removed.cart[0].item_id == "tra-dao"
+    assert removed.cart[0].quantity == 2
+
+
+@pytest.mark.anyio
+async def test_generic_remove_with_number_words_decrements_last_item() -> None:
+    settings = Settings(
+        ai_base_url="",
+        ai_api_key="",
+        ai_model="",
+        core_backend_url="http://127.0.0.1:8001",
+        voice_lang="vi-VN",
+        voice_style="cute_friendly",
+        tts_voice="vietnam",
+        tts_rate="165",
+        stt_model="small",
+        stt_device="cpu",
+        stt_compute_type="int8",
+    )
+    core_client = FakeCoreBackendClient()
+    engine = ConversationEngine(settings, core_client)
+
+    start = await engine.start_session()
+    await engine.handle_turn(start.session_id, "them 3 tra dao cam sa")
+    removed = await engine.handle_turn(start.session_id, "bot hai")
+
+    assert removed.scene == "remove_item"
+    assert len(removed.cart) == 1
+    assert removed.cart[0].item_id == "tra-dao"
     assert removed.cart[0].quantity == 1
 
 

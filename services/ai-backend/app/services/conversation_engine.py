@@ -70,6 +70,7 @@ RESET_KEYWORDS = {"huy", "lam lai", "dat lai", "bo het", "xoa het", "xoa tat ca"
 REMOVE_KEYWORDS = {
     "bo", "xoa", "huy mon", "khong lay", "bo di", "xoa di", "xoa mon", "bo mon",
     "khong can", "bo ra", "xoa ra", "huy mon nay", "bo mon nay", "khong muon",
+    "bot", "giam",
 }
 ADD_INTENT_KEYWORDS = {
     "them", "cho", "goi", "dat", "lay", "order", "mua",
@@ -162,6 +163,24 @@ _STT_ALIASES: dict[str, str] = {
     # Action confusion
     "cho em": "cho",
     "gui em": "cho",
+    "gui y di": "goi y di",
+    "gui di": "goi y di",
+    "gui i di": "goi y di",
+    "gui y": "goi y",
+    "gui i": "goi y",
+    "goi i": "goi y",
+    # Common drink-name STT variants
+    "capuchino": "cappuccino",
+    "capuccino": "cappuccino",
+    "capuchinno": "cappuccino",
+    "ca pu chi no": "cappuccino",
+}
+REMOVE_FALLBACK_GENERIC_TOKENS = {
+    "bo", "xoa", "huy", "mon", "nay", "di", "ra", "bot", "nua",
+    "khong", "lay", "can", "giup", "dum", "cho", "toi", "minh", "em", "anh", "chi",
+}
+GENERIC_REMOVE_UNIT_WORDS = {
+    "ly", "cai", "phan", "chiec", "to", "dia", "bat", "chai", "lon", "coc", "tach",
 }
 
 # Minimum similarity ratio for fuzzy matching (0.0 - 1.0)
@@ -329,7 +348,8 @@ class ConversationEngine:
             state.history.append(transcript)
 
         menu = await self._get_menu()
-        normalized = normalize_text(transcript)
+        normalized_raw = normalize_text(transcript)
+        normalized = _apply_stt_aliases(normalized_raw)
 
         if state.cart and contains_any(normalized, RESET_KEYWORDS):
             state.cart.clear()
@@ -346,6 +366,39 @@ class ConversationEngine:
         if state.cart and (
             contains_any(normalized, CONFIRM_KEYWORDS) or contains_any(normalized, CHECKOUT_KEYWORDS)
         ):
+            pruned_items = self._prune_non_orderable_cart_items(state, menu)
+            if pruned_items:
+                removed_summary = ", ".join(pruned_items[:2])
+                if len(pruned_items) > 2:
+                    removed_summary += ", ..."
+                if not state.cart:
+                    return await self._build_response(
+                        session_id,
+                        Decision(
+                            scene="recommendation",
+                            reply_seed=(
+                                f"Mình vừa cập nhật menu: {removed_summary} hiện không còn phục vụ "
+                                "nên đã bỏ khỏi giỏ. Bạn muốn mình gợi ý món thay thế không?"
+                            ),
+                            user_text=transcript,
+                        ),
+                        menu,
+                        turn_id=turn_id,
+                    )
+                state.awaiting_confirmation = True
+                return await self._build_response(
+                    session_id,
+                    Decision(
+                        scene="ask_confirmation",
+                        reply_seed=(
+                            f"Mình vừa cập nhật menu: {removed_summary} hiện không còn phục vụ "
+                            "nên đã bỏ khỏi giỏ. Mình đọc lại giỏ hiện tại để bạn xác nhận nhé."
+                        ),
+                        needs_confirmation=True,
+                    ),
+                    menu,
+                )
+
             if state.awaiting_confirmation:
                 order = await self.core_client.create_order(
                     CreateOrderRequest(
@@ -392,6 +445,14 @@ class ConversationEngine:
                     ),
                     menu,
                 )
+            return await self._build_response(
+                session_id,
+                Decision(
+                    scene="remove_item",
+                    reply_seed="Mình chưa thấy món đó trong giỏ hàng hiện tại. Bạn nói lại đúng tên món cần bớt giúp mình nhé.",
+                ),
+                menu,
+            )
 
         non_ordering_request = _is_non_ordering_request_text(normalized)
         has_ordering_hint = contains_any(normalized, ORDERING_HINT_KEYWORDS) and not non_ordering_request
@@ -432,7 +493,8 @@ class ConversationEngine:
                 turn_id=turn_id,
             )
 
-        if contains_any(normalized, RECOMMEND_KEYWORDS) or "?" in transcript:
+        recommendation_request = contains_any(normalized, RECOMMEND_KEYWORDS) or ("?" in transcript and has_ordering_hint)
+        if recommendation_request:
             recommended = self._rank_items(normalized, menu)[:3]
             if recommended and recommended[0].score >= _MIN_RANK_SCORE_FOR_RECOMMENDATION:
                 return await self._build_response(
@@ -446,6 +508,23 @@ class ConversationEngine:
                     menu,
                     turn_id=turn_id,
                 )
+            top_available_items = [item for item in menu if item.available][:3]
+            fallback_recommendations = (
+                [candidate.item.item_id for candidate in recommended]
+                if recommended
+                else [item.item_id for item in top_available_items]
+            )
+            return await self._build_response(
+                session_id,
+                Decision(
+                    scene="recommendation",
+                    reply_seed="Mình gợi ý nhanh vài món dễ chọn cho bạn nhé.",
+                    recommended_item_ids=fallback_recommendations,
+                    user_text=transcript,
+                ),
+                menu,
+                turn_id=turn_id,
+            )
 
         segment_matches = self._extract_segment_matches(normalized, menu)
         if segment_matches:
@@ -722,12 +801,37 @@ class ConversationEngine:
                 return item.name
 
         if state.cart:
+            if not _is_generic_remove_request_text(normalized_transcript):
+                return None
             last_item_id = next(reversed(state.cart))
             item_name = menu_map.get(last_item_id).name if last_item_id in menu_map else "món vừa chọn"
-            del state.cart[last_item_id]
+            quantity_to_remove = extract_quantity(normalized_transcript)
+            remaining = state.cart[last_item_id] - quantity_to_remove
+            if remaining > 0:
+                state.cart[last_item_id] = remaining
+            else:
+                del state.cart[last_item_id]
             state.awaiting_confirmation = False
+            if quantity_to_remove > 1:
+                return f"{quantity_to_remove} {item_name}"
             return item_name
         return None
+
+    def _prune_non_orderable_cart_items(self, state: SessionState, menu: list[MenuItem]) -> list[str]:
+        menu_map = {item.item_id: item for item in menu}
+        removed: list[str] = []
+        for item_id in list(state.cart.keys()):
+            menu_item = menu_map.get(item_id)
+            if menu_item is None:
+                removed.append(item_id.replace("-", " "))
+                del state.cart[item_id]
+                continue
+            if not menu_item.available:
+                removed.append(menu_item.name)
+                del state.cart[item_id]
+        if removed:
+            state.awaiting_confirmation = False
+        return removed
 
     async def handle_turn_stream(
         self,
@@ -899,10 +1003,13 @@ class ConversationEngine:
             # We don't read from state.history because frontend sends the full synced transcript_history, removing any async timing mismatch
             pass
 
+        normalized_comment = repair_mojibake_text(comment or "").strip() or None
+        normalized_transcript_history = self._normalize_feedback_transcript_history(transcript_history)
+        normalized_review_status = self._normalize_feedback_review_status(review_status)
         auto_tags, auto_notes = self._analyze_feedback_issues(
             rating=rating,
-            comment=comment,
-            transcript_history=transcript_history,
+            comment=normalized_comment,
+            transcript_history=normalized_transcript_history,
         )
         manual_tags = [
             normalize_text(tag).replace(" ", "_")
@@ -915,13 +1022,13 @@ class ConversationEngine:
         feedback_data = {
             "session_id": session_id,
             "rating": rating,
-            "comment": comment,
-            "transcript_history": transcript_history,
+            "comment": normalized_comment,
+            "transcript_history": normalized_transcript_history,
             "needs_improvement": final_needs_improvement,
             "improvement_tags": merged_tags,
-            "review_status": review_status,
+            "review_status": normalized_review_status,
             "analysis_notes": auto_notes,
-            "analysis_version": 1,
+            "analysis_version": 2,
             "created_at": datetime.now(UTC).isoformat(),
         }
 
@@ -930,6 +1037,171 @@ class ConversationEngine:
         log_path.parent.mkdir(parents=True, exist_ok=True)
         with log_path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(feedback_data, ensure_ascii=False) + "\n")
+
+    async def audit_feedback_log(self) -> dict[str, object]:
+        log_path = self._feedback_log_path()
+        if not log_path.exists():
+            return {
+                "path": str(log_path),
+                "total_rows": 0,
+                "invalid_json_rows": 0,
+                "missing_metadata_rows": 0,
+                "review_status_counts": {},
+                "pending_review_session_ids": [],
+            }
+
+        rows = log_path.read_text(encoding="utf-8").splitlines()
+        required_keys = {
+            "needs_improvement",
+            "improvement_tags",
+            "review_status",
+            "analysis_notes",
+            "analysis_version",
+        }
+        invalid_json_rows = 0
+        missing_metadata_rows = 0
+        review_status_counter: Counter[str] = Counter()
+        pending_review_session_ids: list[str] = []
+
+        for raw_line in rows:
+            if not raw_line.strip():
+                continue
+            try:
+                entry = json.loads(raw_line)
+            except json.JSONDecodeError:
+                invalid_json_rows += 1
+                continue
+
+            if not isinstance(entry, dict):
+                invalid_json_rows += 1
+                continue
+
+            if any(key not in entry for key in required_keys):
+                missing_metadata_rows += 1
+
+            review_status = self._normalize_feedback_review_status(str(entry.get("review_status", "new")))
+            review_status_counter[review_status] += 1
+            if review_status == "new":
+                session_id = str(entry.get("session_id", "")).strip()
+                if session_id:
+                    pending_review_session_ids.append(session_id)
+
+        return {
+            "path": str(log_path),
+            "total_rows": len(rows),
+            "invalid_json_rows": invalid_json_rows,
+            "missing_metadata_rows": missing_metadata_rows,
+            "review_status_counts": dict(review_status_counter),
+            "pending_review_session_ids": pending_review_session_ids,
+        }
+
+    async def repair_feedback_log(self) -> dict[str, object]:
+        async with self.lock:
+            log_path = self._feedback_log_path()
+            if not log_path.exists():
+                return {
+                    "path": str(log_path),
+                    "total_rows": 0,
+                    "repaired_rows": 0,
+                    "invalid_json_rows": 0,
+                    "backup_path": "",
+                }
+
+            raw_lines = log_path.read_text(encoding="utf-8").splitlines()
+            required_keys = {
+                "needs_improvement",
+                "improvement_tags",
+                "review_status",
+                "analysis_notes",
+                "analysis_version",
+            }
+            repaired_lines: list[str] = []
+            repaired_rows = 0
+            invalid_json_rows = 0
+
+            for raw_line in raw_lines:
+                if not raw_line.strip():
+                    continue
+                try:
+                    entry = json.loads(raw_line)
+                except json.JSONDecodeError:
+                    invalid_json_rows += 1
+                    continue
+                if not isinstance(entry, dict):
+                    invalid_json_rows += 1
+                    continue
+
+                before = json.dumps(entry, ensure_ascii=False, sort_keys=True)
+                rating = int(entry.get("rating", 5) or 5)
+                comment = repair_mojibake_text(str(entry.get("comment", "") or "")).strip() or None
+                transcript_history = self._normalize_feedback_transcript_history(
+                    [str(item) for item in (entry.get("transcript_history") or []) if isinstance(item, str) or item is not None],
+                )
+
+                manual_tags = [
+                    normalize_text(tag).replace(" ", "_")
+                    for tag in (entry.get("improvement_tags") or [])
+                    if isinstance(tag, str) and tag.strip()
+                ]
+                auto_tags, auto_notes = self._analyze_feedback_issues(
+                    rating=rating,
+                    comment=comment,
+                    transcript_history=transcript_history,
+                )
+                merged_tags = sorted(set(auto_tags + manual_tags))
+
+                repaired_entry = dict(entry)
+                repaired_entry["comment"] = comment
+                repaired_entry["transcript_history"] = transcript_history
+                repaired_entry["improvement_tags"] = merged_tags
+                repaired_entry["needs_improvement"] = bool(merged_tags) if repaired_entry.get("needs_improvement") is None else bool(repaired_entry.get("needs_improvement"))
+                repaired_entry["review_status"] = self._normalize_feedback_review_status(
+                    str(repaired_entry.get("review_status", "new")),
+                )
+                repaired_entry["analysis_notes"] = auto_notes
+                repaired_entry["analysis_version"] = 2
+                if not repaired_entry.get("created_at"):
+                    repaired_entry["created_at"] = datetime.now(UTC).isoformat()
+                for key in required_keys:
+                    repaired_entry.setdefault(key, [] if key in {"improvement_tags", "analysis_notes"} else ("new" if key == "review_status" else False))
+
+                after = json.dumps(repaired_entry, ensure_ascii=False, sort_keys=True)
+                if after != before:
+                    repaired_rows += 1
+                repaired_lines.append(json.dumps(repaired_entry, ensure_ascii=False))
+
+            backup_path = log_path.with_suffix(".jsonl.bak")
+            backup_path.write_text("\n".join(raw_lines) + ("\n" if raw_lines else ""), encoding="utf-8")
+            log_path.write_text("\n".join(repaired_lines) + ("\n" if repaired_lines else ""), encoding="utf-8")
+
+            return {
+                "path": str(log_path),
+                "total_rows": len(raw_lines),
+                "repaired_rows": repaired_rows,
+                "invalid_json_rows": invalid_json_rows,
+                "backup_path": str(backup_path),
+            }
+
+    @staticmethod
+    def _feedback_log_path() -> Path:
+        backend_root = Path(__file__).resolve().parents[2]
+        return backend_root / "data" / "feedback.jsonl"
+
+    @staticmethod
+    def _normalize_feedback_review_status(review_status: str | None) -> str:
+        value = str(review_status or "").strip().lower()
+        if value in {"new", "triaged", "resolved"}:
+            return value
+        return "new"
+
+    @staticmethod
+    def _normalize_feedback_transcript_history(transcript_history: list[str]) -> list[str]:
+        normalized_lines: list[str] = []
+        for raw_line in transcript_history:
+            cleaned = repair_mojibake_text(raw_line).strip()
+            if cleaned:
+                normalized_lines.append(cleaned)
+        return normalized_lines
 
     def _analyze_feedback_issues(
         self,
@@ -1420,6 +1692,7 @@ def split_feedback_line(raw_line: str) -> tuple[str, str]:
 def normalize_text(text: str) -> str:
     normalized = unicodedata.normalize("NFD", text.casefold())
     stripped = "".join(char for char in normalized if unicodedata.category(char) != "Mn")
+    stripped = stripped.replace("đ", "d").replace("ð", "d")
     stripped = re.sub(r"[^a-z0-9\s]", " ", stripped)
     return re.sub(r"\s+", " ", stripped).strip()
 
@@ -1461,6 +1734,27 @@ def _is_specific_item_request_text(normalized_text: str) -> bool:
 
 def _contains_profanity_text(normalized_text: str) -> bool:
     return contains_any(normalized_text, PROFANITY_KEYWORDS)
+
+
+def _is_generic_remove_request_text(normalized_text: str) -> bool:
+    tokens = [token for token in normalized_text.split() if token]
+    if not tokens:
+        return False
+    if not contains_any(normalized_text, REMOVE_KEYWORDS):
+        return False
+    allowed_tokens = (
+        REMOVE_FALLBACK_GENERIC_TOKENS
+        | GENERIC_REMOVE_UNIT_WORDS
+        | set(QUANTITY_WORDS.keys())
+        | {"so", "luong"}
+    )
+    for token in tokens:
+        if token.isdigit():
+            continue
+        if token in allowed_tokens:
+            continue
+        return False
+    return True
 
 
 def _is_simple_greeting_text(normalized_text: str) -> bool:
@@ -1636,6 +1930,12 @@ _GREETING_REPLIES = [
     "Xin chào. Mình sẵn sàng phục vụ, bạn muốn gọi gì?",
     "Chào mừng bạn. Bạn muốn uống gì hôm nay để mình gợi ý?",
     "Hi bạn. Mình là robot gọi món. Bạn cần mình giúp gì?",
+    "Chào bạn nha. Bạn thích vị đậm, ngọt nhẹ hay thanh mát để mình gợi ý đúng gu?",
+    "Xin chào bạn. Nếu chưa biết chọn gì, mình gợi ý nhanh vài món bán chạy nhé?",
+    "Hello bạn ơi. Bạn muốn gọi mang đi hay dùng tại chỗ để mình tư vấn tiện hơn?",
+    "Mừng bạn ghé quán. Bạn muốn mình đề xuất combo tiết kiệm hay món signature?",
+    "Chào bạn. Bạn muốn ưu tiên cà phê, trà trái cây hay trà sữa hôm nay?",
+    "Hi bạn. Mình luôn sẵn sàng, bạn muốn xem menu nổi bật trước không?",
 ]
 
 _CART_UPDATED_SUFFIXES = [
@@ -1700,6 +2000,21 @@ _ASCII_VI_HINTS = (
     " xin loi ",
 )
 _BROKEN_SPACING_PATTERN = re.compile(r"\b[bcdfghklmnpqrstvxđ]\b\s+[a-zà-ỹđ]{2,}\b", re.IGNORECASE)
+_SPACELESS_JOINED_WORD_PATTERN = re.compile(
+    r"\b("
+    r"không|khong|mình|minh|bạn|ban|giúp|giup|gợi|goi|ý|y|sẵn|san|sàng|sang|menu|món|mon|nhé|nhe|nè|ne"
+    r")(?=[a-zà-ỹđ])",
+    re.IGNORECASE,
+)
+_CONSONANT_CLUSTER_SPLIT_PATTERN = re.compile(
+    r"\b("
+    r"b|c|d|đ|g|h|k|l|m|n|p|q|r|s|t|v|x|"
+    r"ch|gh|gi|kh|ng|nh|ph|qu|th|tr"
+    r")\s+"
+    r"([aeiouyăâêôơưáàảãạấầẩẫậắằẳẵặéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]"
+    r"[a-zà-ỹđ]*)\b",
+    re.IGNORECASE,
+)
 _SAFE_SCENE_REPLIES = {
     "greeting_intro": "Chào mừng bạn. Hôm nay bạn muốn thử món nào?",
     "greeting": "Xin chào. Bạn muốn gọi món gì hôm nay?",
@@ -1759,8 +2074,26 @@ def _looks_like_broken_spacing_text(text: str) -> bool:
     return False
 
 
+def _repair_vietnamese_spacing_text(text: str) -> str:
+    candidate = str(text or "")
+    if not candidate:
+        return ""
+
+    previous = ""
+    repaired = candidate
+    for _ in range(3):
+        if repaired == previous:
+            break
+        previous = repaired
+        repaired = _SPACELESS_JOINED_WORD_PATTERN.sub(r"\1 ", repaired)
+        repaired = _CONSONANT_CLUSTER_SPLIT_PATTERN.sub(r"\1\2", repaired)
+        repaired = re.sub(r"\s+", " ", repaired).strip()
+    return repaired
+
+
 def ensure_frontend_safe_reply(scene: str, value: object) -> str:
     repaired = repair_mojibake_text(value)
+    repaired = _repair_vietnamese_spacing_text(repaired)
     if not repaired.strip():
         return _SAFE_SCENE_REPLIES.get(scene, _SAFE_SCENE_REPLIES["fallback"])
     if any(marker in repaired for marker in _MOJIBAKE_MARKERS):

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import io
+from importlib import metadata as importlib_metadata
 import json
 import logging
 import subprocess
@@ -308,7 +309,7 @@ async def update_tts_config(payload: TTSConfigRequest) -> dict[str, str]:
         settings.tts_vieneu_model_path = normalized_model_path
     if payload.vieneu_mode is not None:
         normalized_mode = payload.vieneu_mode.strip().lower()
-        if normalized_mode in {"standard", "fast", "gpu", "xpu", "remote", "api"}:
+        if normalized_mode in {"turbo", "turbo_gpu", "standard", "fast", "gpu", "xpu", "remote", "api"}:
             if normalized_mode in {"gpu"}:
                 normalized_mode = "fast"
             if normalized_mode != settings.tts_vieneu_mode:
@@ -402,27 +403,113 @@ async def vieneu_diag() -> dict[str, object]:
     }
 
 
+@app.post("/speech/vieneu/prewarm")
+async def prewarm_vieneu() -> dict[str, object]:
+    started_at = time.perf_counter()
+    if not speech_service._is_vieneu_available():
+        logger.warning("vieneu_prewarm status=skip reason=not_installed")
+        raise HTTPException(status_code=400, detail="VieNeu package is not installed.")
+    try:
+        logger.info("vieneu_prewarm status=start")
+        await speech_service.prewarm_vieneu_now()
+        elapsed_ms = int((time.perf_counter() - started_at) * 1000)
+        logger.info("vieneu_prewarm status=ok elapsed_ms=%s", elapsed_ms)
+    except Exception as exc:
+        elapsed_ms = int((time.perf_counter() - started_at) * 1000)
+        logger.exception("vieneu_prewarm status=error elapsed_ms=%s err=%s", elapsed_ms, exc)
+        raise HTTPException(status_code=500, detail=f"Khong the prewarm VieNeu: {exc}") from exc
+    return {
+        "status": "ok",
+        "detail": "VieNeu model prewarmed.",
+        "diag": speech_service.get_vieneu_diagnostics(),
+    }
+
+
 def _run_vieneu_install() -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [sys.executable, "-m", "pip", "install", "vieneu"],
-        capture_output=True,
-        text=True,
-        timeout=VIENEU_INSTALL_TIMEOUT_SECONDS,
-        check=False,
+    llama_cpu_index = "https://pnnbao97.github.io/llama-cpp-python-v0.3.16/cpu/"
+    install_steps: list[list[str]] = [
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--upgrade",
+            "vieneu>=2.1.3",
+            "sea-g2p>=0.7.5",
+            "--extra-index-url",
+            llama_cpu_index,
+        ],
+        [sys.executable, "-m", "pip", "install", "onnxruntime>=1.23.2"],
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "torch",
+            "--index-url",
+            "https://download.pytorch.org/whl/cpu",
+        ],
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "llama-cpp-python==0.3.16",
+            "--extra-index-url",
+            llama_cpu_index,
+        ],
+    ]
+    outputs: list[str] = []
+    for command in install_steps:
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=VIENEU_INSTALL_TIMEOUT_SECONDS,
+            check=False,
+        )
+        outputs.append(
+            "\n".join(
+                [
+                    f"$ {' '.join(command)}",
+                    completed.stdout or "",
+                    completed.stderr or "",
+                ]
+            ).strip()
+        )
+        if completed.returncode != 0:
+            completed.stdout = "\n\n".join(outputs)
+            return completed
+    return subprocess.CompletedProcess(
+        args=install_steps[-1],
+        returncode=0,
+        stdout="\n\n".join(outputs),
+        stderr="",
     )
+
+
+def _collect_cpu_runtime_versions() -> dict[str, str]:
+    package_map = {
+        "onnxruntime": "onnxruntime",
+        "torch": "torch",
+        "llama-cpp-python": "llama-cpp-python",
+        "vieneu": "vieneu",
+    }
+    versions: dict[str, str] = {}
+    for display_name, package_name in package_map.items():
+        try:
+            versions[display_name] = importlib_metadata.version(package_name)
+        except importlib_metadata.PackageNotFoundError:
+            versions[display_name] = "not-installed"
+        except Exception:
+            versions[display_name] = "unknown"
+    return versions
 
 
 @app.post("/speech/vieneu/install")
 async def install_vieneu() -> dict[str, object]:
-    if speech_service._is_vieneu_available():
-        return {
-            "ok": True,
-            "already_installed": True,
-            "vieneu_installed": True,
-            "detail": "VieNeu already installed.",
-        }
-
-    logger.info("Installing VieNeu package via pip using python=%s", sys.executable)
+    already_installed = speech_service._is_vieneu_available()
+    logger.info("Installing VieNeu CPU runtime stack via pip using python=%s", sys.executable)
     try:
         install_result = await asyncio.to_thread(_run_vieneu_install)
     except subprocess.TimeoutExpired as exc:
@@ -443,18 +530,25 @@ async def install_vieneu() -> dict[str, object]:
             detail=f"Cai vieneu that bai (code={install_result.returncode}): {detail}",
         )
 
-    if not speech_service._is_vieneu_available():
+    cpu_versions = _collect_cpu_runtime_versions()
+
+    if cpu_versions.get("vieneu") in {None, "not-installed", "unknown"} or not speech_service._is_vieneu_available():
         raise HTTPException(
             status_code=500,
             detail="Da cai vieneu xong nhung backend chua nhan module. Thu restart AI backend.",
         )
 
     speech_service.reset_vieneu_runtime()
+    missing_cpu = [name for name, version in cpu_versions.items() if version == "not-installed"]
+    detail = "Cai vieneu CPU stack thanh cong."
+    if missing_cpu:
+        detail = f"Cai xong nhung con thieu package: {', '.join(missing_cpu)}."
     return {
         "ok": True,
-        "already_installed": False,
+        "already_installed": already_installed,
         "vieneu_installed": True,
-        "detail": "Cai vieneu thanh cong.",
+        "detail": detail,
+        "cpu_processing": cpu_versions,
         "stdout_tail": stdout_tail,
         "stderr_tail": stderr_tail,
     }
@@ -613,6 +707,16 @@ async def save_session_feedback(session_id: str, payload: FeedbackRequest) -> di
     return {"status": "ok"}
 
 
+@app.get("/feedback/audit")
+async def audit_feedback_log() -> dict[str, object]:
+    return await conversation_engine.audit_feedback_log()
+
+
+@app.post("/feedback/repair")
+async def repair_feedback_log() -> dict[str, object]:
+    return await conversation_engine.repair_feedback_log()
+
+
 @app.post("/speech/synthesize")
 async def synthesize_speech(payload: SpeechSynthesisRequest) -> Response:
     started_at = time.perf_counter()
@@ -647,6 +751,8 @@ async def synthesize_speech_stream(payload: SpeechSynthesisRequest) -> Streaming
     started_at = time.perf_counter()
     vieneu_overrides = build_vieneu_overrides(payload)
     requested_engine = str((vieneu_overrides or {}).get("engine") or "").strip().lower()
+    if not requested_engine:
+        requested_engine = str(settings.tts_engine or "").strip().lower()
     stream_media_type = "audio/wav" if requested_engine == "vieneu" else "audio/mpeg"
     try:
         async def audio_stream():
@@ -1027,15 +1133,22 @@ def decode_pcm16_chunk(chunk: bytes) -> tuple[bytes, int | None]:
         and payload[8:12] == b"WAVE"
     )
     if not is_wav:
+        if len(payload) % 2 == 1:
+            payload = payload[:-1]
         return payload, None
 
     try:
         with wave.open(io.BytesIO(payload), "rb") as wav_reader:
             frames = wav_reader.readframes(wav_reader.getnframes())
+            if len(frames) % 2 == 1:
+                frames = frames[:-1]
             sample_rate = int(wav_reader.getframerate() or 0) or None
             return frames, sample_rate
     except Exception:
         # Fallback for chunks that contain repeated WAV headers plus PCM payload.
         if len(payload) > 44:
-            return payload[44:], None
+            fallback = payload[44:]
+            if len(fallback) % 2 == 1:
+                fallback = fallback[:-1]
+            return fallback, None
         return b"", None

@@ -310,6 +310,11 @@
   font-size: 0.86rem;
 }
 
+.admin-service-card__detail--warning {
+  color: #a15300;
+  font-weight: 600;
+}
+
 .admin-service-card__latency {
   margin: 0;
   font-weight: 700;
@@ -365,6 +370,10 @@
   display: flex;
   gap: 9px;
   flex-wrap: wrap;
+}
+
+.admin-inline-actions--voice {
+  justify-content: flex-end;
 }
 
 .admin-btn {
@@ -482,6 +491,104 @@
   display: flex;
   flex-wrap: wrap;
   gap: 7px;
+}
+
+.admin-voice-status-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(74, 98, 111, 0.2);
+  background: linear-gradient(140deg, rgba(238, 249, 251, 0.9), rgba(255, 255, 255, 0.85));
+}
+
+.admin-vieneu-backend-bar {
+  display: grid;
+  gap: 8px;
+  border-radius: 12px;
+  border: 1px solid rgba(86, 110, 126, 0.24);
+  background: rgba(255, 255, 255, 0.9);
+  padding: 10px;
+}
+
+.admin-voice-form {
+  display: grid;
+  gap: 12px;
+}
+
+.admin-voice-section {
+  border: 1px solid rgba(74, 98, 111, 0.2);
+  border-radius: 14px;
+  padding: 11px;
+  background: rgba(255, 255, 255, 0.88);
+  display: grid;
+  gap: 10px;
+}
+
+.admin-voice-section__head h4 {
+  margin: 0 0 4px;
+  font-size: 0.95rem;
+  letter-spacing: -0.01em;
+  color: #1f2f39;
+}
+
+.admin-voice-section__head p {
+  margin: 0;
+  color: #5f6a77;
+  font-size: 0.82rem;
+}
+
+.admin-service-grid--runtime .admin-service-card {
+  background: linear-gradient(152deg, rgba(255, 255, 255, 0.95), rgba(246, 251, 252, 0.88));
+  border-color: rgba(70, 100, 118, 0.25);
+}
+
+.admin-cpu-dependency-list {
+  display: grid;
+  gap: 8px;
+}
+
+.admin-cpu-dependency-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 11px;
+  border-radius: 10px;
+  border: 1px solid rgba(90, 112, 128, 0.2);
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.admin-cpu-dependency-item .admin-service-card__detail {
+  margin: 0;
+}
+
+.admin-cpu-hint {
+  margin: 0;
+  border-radius: 10px;
+  padding: 10px 11px;
+  border: 1px solid rgba(47, 118, 223, 0.25);
+  background: rgba(47, 118, 223, 0.12);
+  color: #2359a8;
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.admin-onnx-status-block {
+  border: 1px dashed rgba(62, 107, 139, 0.32);
+  border-radius: 10px;
+  padding: 10px;
+  background: rgba(240, 248, 255, 0.55);
+}
+
+.admin-onnx-guide {
+  border: 1px solid rgba(84, 107, 123, 0.2);
+  border-radius: 10px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.92);
+  display: grid;
+  gap: 4px;
 }
 
 .admin-env-preview {
@@ -1111,6 +1218,10 @@
   .admin-subcard__head,
   .admin-panel__head {
     flex-direction: column;
+  }
+
+  .admin-inline-actions--voice {
+    justify-content: flex-start;
   }
 }
 

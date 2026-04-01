@@ -71,7 +71,8 @@
         body.admin-preview-mode .camera-mini-panel,
         body.admin-preview-mode .voice-mini-panel,
         body.admin-preview-mode .order-status-hud,
-        body.admin-preview-mode .cart-mini-panel {
+        body.admin-preview-mode .cart-mini-panel,
+        body.admin-preview-mode .voice-order-hint {
             display: none !important;
         }
         body.admin-preview-mode #stage-container {
@@ -1151,6 +1152,28 @@
         .order-status-hud[hidden] {
             display: none;
         }
+        .voice-order-hint {
+            position: fixed;
+            top: 78px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 140;
+            pointer-events: none;
+            max-width: min(88vw, 560px);
+            padding: 10px 16px;
+            border-radius: 14px;
+            border: 1px solid rgba(255, 255, 255, 0.64);
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(242, 247, 255, 0.93));
+            box-shadow: 0 10px 24px rgba(63, 40, 112, 0.2);
+            color: #3f2f63;
+            font-size: 0.8rem;
+            font-weight: 700;
+            text-align: center;
+            letter-spacing: 0.01em;
+        }
+        .voice-order-hint[hidden] {
+            display: none !important;
+        }
         .order-status-backdrop {
             position: absolute;
             inset: 0;
@@ -2193,6 +2216,13 @@
                 bottom: auto;
             }
 
+            .voice-order-hint {
+                top: 96px;
+                max-width: calc(100vw - 20px);
+                padding: 9px 12px;
+                font-size: 0.76rem;
+            }
+
             .chat-mini-list {
                 max-height: 158px;
             }
@@ -2273,6 +2303,7 @@
 <p class="rating-popup-countdown" id="rating-popup-countdown">Tu dong gui sau 6s</p>
 </article>
 </section>
+<p class="voice-order-hint" id="voice-order-hint" hidden>Nói xác nhận đơn hàng để đặt</p>
 <!-- Top Layers -->
 <div class="fixed top-0 left-1/2 z-[60] pointer-events-none -translate-x-1/2" id="disco-ball">
 <div class="w-0.5 h-32 bg-slate-300 mx-auto"></div>
@@ -2370,6 +2401,7 @@
     const chatMiniList = document.getElementById('chat-mini-list');
     const cartMiniList = document.getElementById('cart-mini-list');
     const cartMiniTotal = document.getElementById('cart-mini-total');
+    const voiceOrderHint = document.getElementById('voice-order-hint');
     const orderStatusHud = document.getElementById('order-status-hud');
     const orderPopupCard = document.getElementById('order-popup-card');
     const orderPopupOrderId = document.getElementById('order-popup-order-id');
@@ -2391,17 +2423,25 @@
     const ROBOT_STUDIO_COMMAND_STORAGE_KEY = 'admin.robot.studio.command.v1';
     const KIOSK_HEARTBEAT_STORAGE_KEY = 'orderrobot.kiosk.heartbeat';
     const CHAT_HISTORY_STORAGE_KEY = 'orderrobot.kiosk.chat-history.v1';
+    const CHAT_CLEAR_ON_NEXT_LOAD_SESSION_KEY = 'orderrobot.kiosk.chat-clear-next-load.v1';
     const CHAT_ARCHIVE_STORAGE_KEY = 'orderrobot.kiosk.chat-archive.v1';
     const CHAT_ARCHIVE_LIMIT = 40;
     const DEFAULT_CHAT_CLEAR_AFTER_ABSENCE_MS = 0;
     const DEFAULT_CHAT_CLEAR_ON_ORDER_COMPLETE = true;
     const DEFAULT_VOICE_ALWAYS_LISTEN = true;
+    const DEFAULT_VOICE_LISTEN_MODE = 'always';
     const DEFAULT_VOICE_TTS_WS_REALTIME = true;
     const AUTO_GREETING_VARIANTS = [
         'Chào mừng bạn. Hôm nay bạn muốn thử món nào để mình tư vấn ngay?',
         'Xin chào bạn. Mình sẵn sàng tư vấn món ngon cho bạn đây.',
         'Hello bạn ơi. Bạn muốn uống gì để mình gợi ý nhanh nha?',
         'Chào bạn. Cần mình gợi ý món dễ uống hay ít ngọt không?',
+        'Hi bạn. Mình là OrderRobot, bạn muốn xem món bán chạy hôm nay không?',
+        'Chào bạn nha. Bạn thích cà phê đậm vị hay trà trái cây mát lạnh?',
+        'Mừng bạn ghé quán. Mình gợi ý nhanh theo khẩu vị để bạn chọn dễ hơn nhé.',
+        'Xin chào. Bạn muốn mình tư vấn combo tiết kiệm hay món signature của quán?',
+        'Hello hello. Bạn gọi mang đi hay dùng tại chỗ để mình gợi ý hợp hơn?',
+        'Chào bạn. Nếu chưa biết chọn gì, mình có thể đề xuất 3 món hợp gu ngay nè.',
     ];
     const FAST_FILLER_VARIANTS = [
         'Để mình kiểm tra nhanh cho bạn nhé.',
@@ -2411,6 +2451,7 @@
     const FAST_FILLER_DELAY_MS = 420;
     const STREAM_EARLY_SPEECH_MIN_CHARS = 42;
     const AUTO_GREETING_COOLDOWN_MS = 25000;
+    const AUTO_GREETING_SUPPRESS_AFTER_USER_MS = 12000;
     const AUTO_GREETING_RETRY_BASE_MS = 900;
     const AUTO_GREETING_MAX_RETRIES = 5;
     const ORDER_POPUP_COUNTDOWN_SEC = 6;
@@ -2424,7 +2465,12 @@
     const DEFAULT_ROBOT_VISUAL_MODE = 'local_glb';
     const DEFAULT_SUBMIT_SILENCE_MS = 1200;
     const BUSY_AUTO_SUBMIT_SUPPRESS_MS = 2400;
-    const DEFAULT_TTS_STREAM_PLAYBACK_RATE = 1.06;
+    const MAX_BACKEND_TURN_WAIT_MS = 22000;
+    const AUTO_STT_NOISE_SINGLE_TOKEN_BLOCKLIST = new Set([
+        'a', 'e', 'em', 'uh', 'um', 'ah', 'oi', 'ha', 'he', 'la', 'na', 'ne',
+        'da', 'dat', 'uhm', 'ok', 'oke',
+    ]);
+    const DEFAULT_TTS_STREAM_PLAYBACK_RATE = 1.15;
     const AI_RUNTIME_FALLBACK_URL = 'http://127.0.0.1:8012';
     const AI_RUNTIME_PROBE_TIMEOUT_MS = 1600;
     const isAdminPreviewMode = new URLSearchParams(window.location.search).get('adminPreview') === '1';
@@ -2459,10 +2505,14 @@
     let voiceInputMode = 'idle';
     let voiceBackendSocket = null;
     let voiceBackendStream = null;
+    let voiceBackendRawStream = null;
+    let voiceBackendAudioContext = null;
+    let voiceBackendAudioNodes = null;
     let voiceBackendRecorder = null;
     let voiceBackendFinalizeTimer = null;
     let voiceBackendForceFinalizeTimer = null;
     let voiceBackendFinalizing = false;
+    let voiceBackendFinalizeIssuedAt = 0;
     let voiceBackendLastFinal = '';
     let voiceBackendLastFinalAt = 0;
     let resolvedAiApiUrl = '';
@@ -2484,6 +2534,7 @@
     let chatClearAfterAbsenceMs = DEFAULT_CHAT_CLEAR_AFTER_ABSENCE_MS;
     let chatClearOnOrderComplete = DEFAULT_CHAT_CLEAR_ON_ORDER_COMPLETE;
     let voiceAlwaysListenMode = DEFAULT_VOICE_ALWAYS_LISTEN;
+    let voiceListenMode = DEFAULT_VOICE_LISTEN_MODE;
     let voiceTtsWsRealtimeEnabled = DEFAULT_VOICE_TTS_WS_REALTIME;
     let lastSpeechActivityAt = 0;
     let kioskHeartbeatTimer = null;
@@ -2504,6 +2555,9 @@
     let voiceAutoRetryTimer = null;
     let voiceBrowserSubmitTimer = null;
     let voiceBrowserPendingInterim = '';
+    let voiceBrowserPendingInterimSince = 0;
+    let voiceLastStatusText = '';
+    let voiceLastStatusThinking = false;
     let greetingWarmupTask = null;
     let lastGreetingVariantIndex = -1;
     let lastFillerVariantIndex = -1;
@@ -2969,6 +3023,97 @@
         };
     }
 
+    function teardownBackendMicProcessing() {
+        if (voiceBackendAudioNodes) {
+            try {
+                const { source, inputGain, highPass, lowPass, compressor, outputGain, destination } = voiceBackendAudioNodes;
+                if (source && inputGain) source.disconnect(inputGain);
+                if (inputGain && highPass) inputGain.disconnect(highPass);
+                if (highPass && lowPass) highPass.disconnect(lowPass);
+                if (lowPass && compressor) lowPass.disconnect(compressor);
+                if (compressor && outputGain) compressor.disconnect(outputGain);
+                if (outputGain && destination) outputGain.disconnect(destination);
+            } catch {}
+            voiceBackendAudioNodes = null;
+        }
+        if (voiceBackendAudioContext) {
+            try {
+                void voiceBackendAudioContext.close();
+            } catch {}
+            voiceBackendAudioContext = null;
+        }
+    }
+
+    async function buildProcessedBackendMicStream(rawStream) {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextClass) {
+            return rawStream;
+        }
+
+        const normalizedStrength = Math.max(0, Math.min(100, Number(micNoiseFilterStrength) || 0));
+        // Very low level means user wants raw mic with minimal intervention.
+        if (normalizedStrength <= 20) {
+            return rawStream;
+        }
+
+        teardownBackendMicProcessing();
+        const audioContext = new AudioContextClass({ sampleRate: 16000, latencyHint: 'interactive' });
+        if (audioContext.state === 'suspended') {
+            await audioContext.resume().catch(() => {});
+        }
+
+        const source = audioContext.createMediaStreamSource(rawStream);
+        const inputGain = audioContext.createGain();
+        const highPass = audioContext.createBiquadFilter();
+        const lowPass = audioContext.createBiquadFilter();
+        const compressor = audioContext.createDynamicsCompressor();
+        const outputGain = audioContext.createGain();
+        const destination = audioContext.createMediaStreamDestination();
+
+        const strength01 = normalizedStrength / 100;
+        highPass.type = 'highpass';
+        highPass.frequency.value = 70 + strength01 * 140; // remove low-frequency hum
+        highPass.Q.value = 0.7 + strength01 * 0.6;
+
+        lowPass.type = 'lowpass';
+        lowPass.frequency.value = 4300 - strength01 * 1100; // reduce high hiss noise
+        lowPass.Q.value = 0.7;
+
+        compressor.threshold.value = -35 + (1 - strength01) * 10;
+        compressor.knee.value = 22;
+        compressor.ratio.value = 4 + strength01 * 8;
+        compressor.attack.value = 0.003;
+        compressor.release.value = 0.14 + (1 - strength01) * 0.1;
+
+        inputGain.gain.value = 0.95;
+        outputGain.gain.value = 1.0 + strength01 * 0.1;
+
+        source.connect(inputGain);
+        inputGain.connect(highPass);
+        highPass.connect(lowPass);
+        lowPass.connect(compressor);
+        compressor.connect(outputGain);
+        outputGain.connect(destination);
+
+        voiceBackendAudioContext = audioContext;
+        voiceBackendAudioNodes = {
+            source,
+            inputGain,
+            highPass,
+            lowPass,
+            compressor,
+            outputGain,
+            destination,
+        };
+
+        const processedTrackCount = destination.stream?.getAudioTracks?.().length || 0;
+        if (processedTrackCount > 0) {
+            return destination.stream;
+        }
+        teardownBackendMicProcessing();
+        return rawStream;
+    }
+
     function markSpeechActivity() {
         lastSpeechActivityAt = Date.now();
     }
@@ -3082,6 +3227,17 @@
         return fallback;
     }
 
+    function normalizeVoiceListenMode(rawValue) {
+        const raw = String(rawValue ?? '').trim().toLowerCase();
+        if (raw === 'sequential' || raw === 'sequence' || raw === 'turn') {
+            return 'sequential';
+        }
+        if (raw === 'always' || raw === 'continuous') {
+            return 'always';
+        }
+        return '';
+    }
+
     function refreshVoiceRuntimeConfigFromAdmin() {
         const env = readAdminEnvFields();
         const configuredFinalizeSilenceMs = toSafeInt(
@@ -3125,7 +3281,15 @@
         ttsStreamPlaybackRate = configuredPlaybackRate ?? DEFAULT_TTS_STREAM_PLAYBACK_RATE;
         chatClearAfterAbsenceMs = configuredChatClearAfterAbsenceMs ?? DEFAULT_CHAT_CLEAR_AFTER_ABSENCE_MS;
         chatClearOnOrderComplete = toSafeBool(env.CHAT_CLEAR_ON_ORDER_COMPLETE, DEFAULT_CHAT_CLEAR_ON_ORDER_COMPLETE);
-        voiceAlwaysListenMode = toSafeBool(env.VOICE_ALWAYS_LISTEN, DEFAULT_VOICE_ALWAYS_LISTEN);
+        const parsedListenMode = normalizeVoiceListenMode(env.VOICE_LISTEN_MODE);
+        if (parsedListenMode) {
+            voiceListenMode = parsedListenMode;
+        } else {
+            voiceListenMode = toSafeBool(env.VOICE_ALWAYS_LISTEN, DEFAULT_VOICE_ALWAYS_LISTEN)
+                ? 'always'
+                : 'sequential';
+        }
+        voiceAlwaysListenMode = voiceListenMode === 'always';
         voiceTtsWsRealtimeEnabled = toSafeBool(env.VOICE_TTS_WS_REALTIME, DEFAULT_VOICE_TTS_WS_REALTIME);
         console.info('[voice-runtime-config]', {
             backendSttChunkMs,
@@ -3135,9 +3299,33 @@
             ttsStreamPlaybackRate,
             chatClearAfterAbsenceMs,
             chatClearOnOrderComplete,
+            voiceListenMode,
             voiceAlwaysListenMode,
             voiceTtsWsRealtimeEnabled,
         });
+    }
+
+    function suspendVoiceCaptureForSequentialTurn() {
+        if (!voiceListening || voiceListenMode !== 'sequential') return;
+        clearBrowserSubmitTimer();
+        voiceBrowserPendingInterim = '';
+        clearVoiceAutoRetryTimer();
+        if (voiceRecognition && voiceInputMode === 'browser') {
+            try {
+                voiceRecognition.stop();
+            } catch {}
+        }
+        if (voiceInputMode === 'backend') {
+            stopBackendSpeechListening({ finalize: false });
+        }
+        voiceInputMode = 'idle';
+    }
+
+    function resumeVoiceCaptureAfterSequentialTurn() {
+        if (!voiceListening || voiceListenMode !== 'sequential') return;
+        if (voiceInputMode !== 'idle') return;
+        setVoiceStatus('Che do nghe tuan tu: san sang luot tiep theo...');
+        setVoiceListening(true, 'system-retry');
     }
 
     function buildSpeechSynthesisPayload(text) {
@@ -3330,8 +3518,14 @@
     function setVoiceStatus(text, options = {}) {
         if (!voiceMiniStatus) return;
         const isThinking = options?.thinking === true;
+        const nextText = String(text || '').trim();
+        if (nextText === voiceLastStatusText && isThinking === voiceLastStatusThinking) {
+            return;
+        }
+        voiceLastStatusText = nextText;
+        voiceLastStatusThinking = isThinking;
         voiceMiniStatus.classList.toggle('is-thinking', isThinking);
-        voiceMiniStatus.textContent = String(text || '').trim();
+        voiceMiniStatus.textContent = nextText;
     }
 
     function showVoiceLatencyStatus(firstTextMs, speechStartMs, turnTotalMs) {
@@ -3670,6 +3864,32 @@
             localStorage.removeItem(CHAT_HISTORY_STORAGE_KEY);
         } catch {}
         renderChatMini();
+    }
+
+    function isPageReloadNavigation() {
+        try {
+            const entries = performance.getEntriesByType('navigation');
+            const navEntry = Array.isArray(entries) && entries.length > 0 ? entries[0] : null;
+            if (navEntry && typeof navEntry.type === 'string') {
+                return navEntry.type === 'reload';
+            }
+        } catch {}
+        try {
+            // Legacy fallback
+            return Number(performance?.navigation?.type) === 1;
+        } catch {}
+        return false;
+    }
+
+    function shouldClearChatOnBoot() {
+        try {
+            const marked = sessionStorage.getItem(CHAT_CLEAR_ON_NEXT_LOAD_SESSION_KEY) === '1';
+            if (marked) {
+                sessionStorage.removeItem(CHAT_CLEAR_ON_NEXT_LOAD_SESSION_KEY);
+                return true;
+            }
+        } catch {}
+        return isPageReloadNavigation();
     }
 
     function archiveChatHistorySnapshot(orderData) {
@@ -4109,6 +4329,9 @@
     function updateMiniCart(cart) {
         cartState = Array.isArray(cart) ? cart : [];
         if (!cartMiniList || !cartMiniTotal) return;
+        if (voiceOrderHint) {
+            voiceOrderHint.hidden = cartState.length !== 1;
+        }
 
         if (cartState.length === 0) {
             cartMiniList.innerHTML = '<p class="cart-mini-empty">Chua co mon nao trong gio.</p>';
@@ -4396,6 +4619,30 @@
             || voiceQueueRunning;
     }
 
+    function shouldIgnoreAutoTranscript(text, source) {
+        if (source === 'manual') return false;
+        const normalized = normalizeTranscriptForDedup(text);
+        if (!normalized) return true;
+
+        const tokens = normalized.split(' ').filter(Boolean);
+        if (tokens.length === 0) return true;
+
+        // Aggressive noise guard: single short/filler token from STT is usually accidental pickup.
+        if (tokens.length === 1) {
+            const token = tokens[0];
+            if (token.length <= 2) return true;
+            if (AUTO_STT_NOISE_SINGLE_TOKEN_BLOCKLIST.has(token)) return true;
+        }
+
+        // Very short two-token fillers are also often noise when auto-listening.
+        if (tokens.length <= 2 && normalized.length <= 6) {
+            if (tokens.every((token) => token.length <= 3)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     function isAbortError(error) {
         if (!error) return false;
         const name = String(error?.name || '').toLowerCase();
@@ -4588,7 +4835,12 @@
             const runtimeTtsEngine = String(resolvedAiApiHealth?.tts_engine || '').trim().toLowerCase();
             const vieneuMode = String(resolvedAiApiHealth?.tts_vieneu_mode || '').trim().toLowerCase();
             if (runtimeTtsEngine !== 'vieneu') return;
-            const allowWarmup = voiceTtsWsRealtimeEnabled || vieneuMode === 'fast' || vieneuMode === 'xpu';
+            const allowWarmup =
+                voiceTtsWsRealtimeEnabled ||
+                vieneuMode === 'fast' ||
+                vieneuMode === 'xpu' ||
+                vieneuMode === 'turbo' ||
+                vieneuMode === 'turbo_gpu';
             if (!allowWarmup) return;
 
             const warmupPayload = buildSpeechSynthesisPayload('Xin chao');
@@ -4707,6 +4959,32 @@
         return float32;
     }
 
+    function resampleFloat32Pcm(samples, fromRate, toRate) {
+        if (!(samples instanceof Float32Array) || samples.length === 0) {
+            return samples;
+        }
+        const inputRate = Number(fromRate);
+        const outputRate = Number(toRate);
+        if (!Number.isFinite(inputRate) || !Number.isFinite(outputRate) || inputRate <= 0 || outputRate <= 0) {
+            return samples;
+        }
+        if (Math.abs(inputRate - outputRate) < 0.5) {
+            return samples;
+        }
+
+        const ratio = outputRate / inputRate;
+        const outputLength = Math.max(1, Math.round(samples.length * ratio));
+        const output = new Float32Array(outputLength);
+        for (let i = 0; i < outputLength; i += 1) {
+            const sourceIndex = i / ratio;
+            const leftIndex = Math.floor(sourceIndex);
+            const rightIndex = Math.min(leftIndex + 1, samples.length - 1);
+            const fraction = sourceIndex - leftIndex;
+            output[i] = samples[leftIndex] * (1 - fraction) + samples[rightIndex] * fraction;
+        }
+        return output;
+    }
+
     async function playVieneuWsRealtime(aiApiUrl, speechPayload, speechAbortController) {
         const AudioContextClass = window.AudioContext || window.webkitAudioContext;
         if (!AudioContextClass) {
@@ -4734,6 +5012,7 @@
         let totalSamples = 0;
         const wsStartedAt = performance.now();
         let firstFrameAt = 0;
+        let sourceSampleRate = 24000;
         const waitDone = new Promise((resolve, reject) => {
             const safeReject = (err) => {
                 if (doneReceived) return;
@@ -4769,24 +5048,38 @@
                         safeReject(new Error(String(message.message || 'TTS WS error')));
                         return;
                     }
+                    if (message?.type === 'meta') {
+                        const metaRate = Number(message.sample_rate);
+                        if (Number.isFinite(metaRate) && metaRate > 0) {
+                            sourceSampleRate = metaRate;
+                        }
+                    }
                     if (message?.type === 'done') {
                         safeResolve();
                     }
                     return;
                 }
                 if (event.data instanceof ArrayBuffer) {
-                    const bytes = new Uint8Array(event.data);
+                    let bytes = new Uint8Array(event.data);
+                    if (looksLikeWavBytes(bytes) && bytes.length >= 44) {
+                        sourceSampleRate = readWavSampleRateFromChunk(bytes);
+                        bytes = bytes.slice(44);
+                    }
                     const floatSamples = pcm16ToFloat32Samples(bytes);
                     if (!floatSamples || floatSamples.length === 0) return;
-                    totalSamples += floatSamples.length;
+                    const playbackSamples = resampleFloat32Pcm(floatSamples, sourceSampleRate, audioCtx.sampleRate);
+                    if (!playbackSamples || playbackSamples.length === 0) return;
+                    totalSamples += playbackSamples.length;
                     if (!firstFrameAt) {
                         firstFrameAt = performance.now();
                         console.info('[voice-tts-ws]', {
                             firstAudioMs: Math.round(firstFrameAt - wsStartedAt),
                             turnId: activeProcessingTurnId || '',
+                            sourceSampleRate,
+                            playbackSampleRate: audioCtx.sampleRate,
                         });
                     }
-                    node.port.postMessage({ type: 'chunk', samples: floatSamples }, [floatSamples.buffer]);
+                    node.port.postMessage({ type: 'chunk', samples: playbackSamples }, [playbackSamples.buffer]);
                 }
             };
             ws.onerror = () => {
@@ -4832,8 +5125,12 @@
                 firstAudioMs: firstFrameAt ? Math.round(firstFrameAt - wsStartedAt) : null,
                 totalSamples,
                 turnId: activeProcessingTurnId || '',
+                sourceSampleRate,
+                playbackSampleRate: audioCtx.sampleRate,
             });
-            const tailMs = totalSamples > 0 ? Math.min(900, Math.max(80, Math.round((totalSamples / 24000) * 1000 * 0.08))) : 120;
+            const tailMs = totalSamples > 0
+                ? Math.min(900, Math.max(80, Math.round((totalSamples / audioCtx.sampleRate) * 1000 * 0.08)))
+                : 120;
             await new Promise((resolve) => window.setTimeout(resolve, tailMs));
         } finally {
             await cleanup();
@@ -4864,11 +5161,11 @@
         if (audioCtx.state !== 'running') {
             throw new Error(`AudioContext is not running (${audioCtx.state})`);
         }
-        const streamPlaybackRate = Math.max(0.75, Math.min(1.1, Number(ttsStreamPlaybackRate) || 1));
+        const streamPlaybackRate = Math.max(0.85, Math.min(1.35, Number(ttsStreamPlaybackRate) || 1));
         let nextPlayTime = audioCtx.currentTime + 0.03;
         let streamSampleRate = 24000;
         let streamHeaderParsed = false;
-        const prebufferChunkCount = 2;
+        const prebufferChunkCount = 1;
         const prebufferQueue = [];
         let playbackStarted = false;
 
@@ -5227,8 +5524,8 @@
             speechPayload.tts_engine = 'vieneu';
         } else if (requestedTtsEngine !== 'local') {
             speechPayload.tts_engine = 'edge';
-            if (!Number.isFinite(Number(speechPayload.rate)) || Number(speechPayload.rate) < 165) {
-                speechPayload.rate = 165;
+            if (!Number.isFinite(Number(speechPayload.rate)) || Number(speechPayload.rate) < 185) {
+                speechPayload.rate = 185;
             }
             delete speechPayload.tts_vieneu_voice_id;
             delete speechPayload.tts_vieneu_ref_audio;
@@ -5351,17 +5648,18 @@
         const cleanText = String(transcript || '').trim();
         if (!cleanText) return;
         const source = String(options?.source || 'auto').trim().toLowerCase();
+        if (shouldIgnoreAutoTranscript(cleanText, source)) {
+            console.info('[voice-dedup] dropped likely STT noise transcript', { transcript: cleanText, source });
+            return;
+        }
         const normalizedTranscript = normalizeTranscriptForDedup(cleanText);
         const now = Date.now();
         if (!normalizedTranscript) return;
         const tokenCount = normalizedTranscript.split(' ').filter(Boolean).length;
         const busy = isConversationTurnBusy();
-        if (source === 'browser-interim' && busy) {
-            console.info('[voice-dedup] dropped interim transcript while turn is busy', { transcript: cleanText });
-            return;
-        }
         if (
             source !== 'manual'
+            && source !== 'browser-interim'
             && busy
             && now - lastAcceptedUserTurnAt < BUSY_AUTO_SUBMIT_SUPPRESS_MS
             && tokenCount <= 6
@@ -5463,6 +5761,7 @@
                     activeProcessingTurnId = '';
                     continue;
                 }
+                suspendVoiceCaptureForSequentialTurn();
                 const cartSnapshotBeforeTurn = normalizeOrderItems(cartState);
 
                 appendChat('user', userText);
@@ -5483,6 +5782,20 @@
 
                 const turnAbortController = new AbortController();
                 activeTurnAbortController = turnAbortController;
+                let turnTimedOut = false;
+                let turnTimeoutTimer = null;
+                const clearTurnTimeout = () => {
+                    if (turnTimeoutTimer) {
+                        window.clearTimeout(turnTimeoutTimer);
+                        turnTimeoutTimer = null;
+                    }
+                };
+                turnTimeoutTimer = window.setTimeout(() => {
+                    turnTimedOut = true;
+                    try {
+                        turnAbortController.abort();
+                    } catch {}
+                }, MAX_BACKEND_TURN_WAIT_MS);
                 const ensureNotStale = () => {
                     if (turnAbortController.signal.aborted) {
                         throw createSupersededTurnError();
@@ -5782,7 +6095,9 @@
                     clearFillerTimer();
                     hideThinkingIndicator(turnId);
                     stopThinkingMotion(turnId);
-                    if (isAbortError(error)) {
+                    if (turnTimedOut) {
+                        setVoiceStatus('Backend dang cham. Thu lai cau ngan gon hon nhe.');
+                    } else if (isAbortError(error)) {
                         setVoiceStatus('Dang uu tien loi noi moi...');
                     } else {
                         console.warn('[voice-turn] failed:', error);
@@ -5803,6 +6118,8 @@
                     if (activeProcessingTurnId === turnId) {
                         activeProcessingTurnId = '';
                     }
+                    clearTurnTimeout();
+                    resumeVoiceCaptureAfterSequentialTurn();
                 }
             }
         } finally {
@@ -5851,41 +6168,128 @@
             window.clearTimeout(voiceBrowserSubmitTimer);
             voiceBrowserSubmitTimer = null;
         }
+        voiceBrowserPendingInterimSince = 0;
     }
 
     function scheduleBrowserInterimSubmit(interimText) {
-        clearBrowserSubmitTimer();
         const stableInterim = String(interimText || '').trim();
         if (!stableInterim) {
-            voiceBrowserPendingInterim = '';
-            return;
-        }
-        voiceBrowserPendingInterim = stableInterim;
-        voiceBrowserSubmitTimer = window.setTimeout(() => {
-            voiceBrowserSubmitTimer = null;
-            if (!voiceListening || voiceInputMode !== 'browser') return;
-            if (isConversationTurnBusy()) {
+            const hasPendingInterim = String(voiceBrowserPendingInterim || '').trim().length > 0;
+            if (!hasPendingInterim) {
+                clearBrowserSubmitTimer();
                 voiceBrowserPendingInterim = '';
                 return;
             }
+            setVoiceStatus('Dang xu ly cau vua noi...');
+            if (!voiceBrowserPendingInterimSince) {
+                voiceBrowserPendingInterimSince = Date.now();
+            }
+            if (voiceBrowserSubmitTimer) {
+                return;
+            }
+        }
+
+        if (!voiceBrowserPendingInterimSince) {
+            voiceBrowserPendingInterimSince = Date.now();
+        }
+        if (stableInterim) {
+            voiceBrowserPendingInterim = stableInterim;
+        }
+
+        if (voiceBrowserSubmitTimer) {
+            return;
+        }
+
+        let busyNoticeShown = false;
+        const checkAndSubmit = () => {
+            voiceBrowserSubmitTimer = null;
+            if (!voiceListening || voiceInputMode !== 'browser') return;
+
             const textToSubmit = String(voiceBrowserPendingInterim || '').trim();
-            if (!textToSubmit) return;
+            if (!textToSubmit) {
+                voiceBrowserPendingInterimSince = 0;
+                return;
+            }
+
+            if (isConversationTurnBusy()) {
+                if (!busyNoticeShown) {
+                    setVoiceStatus('Robot dang phan hoi, da ghi nhan cau tiep theo...');
+                    busyNoticeShown = true;
+                }
+                const waitMs = Math.max(100, Math.min(220, Math.floor(submitSilenceMs * 0.5)));
+                voiceBrowserSubmitTimer = window.setTimeout(checkAndSubmit, waitMs);
+                return;
+            }
+            busyNoticeShown = false;
+
+            const now = Date.now();
+            const silenceElapsedMs = lastSpeechActivityAt > 0
+                ? now - lastSpeechActivityAt
+                : submitSilenceMs;
+            const pendingAgeMs = voiceBrowserPendingInterimSince > 0
+                ? now - voiceBrowserPendingInterimSince
+                : 0;
+            const forcedSubmitAfterMs = Math.max(1200, Math.round(submitSilenceMs * 2.5));
+
+            if (silenceElapsedMs < submitSilenceMs && pendingAgeMs < forcedSubmitAfterMs) {
+                const remainingMs = Math.max(70, Math.min(220, submitSilenceMs - silenceElapsedMs));
+                voiceBrowserSubmitTimer = window.setTimeout(checkAndSubmit, remainingMs);
+                return;
+            }
+
             voiceBrowserPendingInterim = '';
+            voiceBrowserPendingInterimSince = 0;
+            setVoiceStatus('Dang gui len backend...');
             enqueueUserTurn(textToSubmit, { source: 'browser-interim' });
-        }, submitSilenceMs);
+        };
+
+        voiceBrowserSubmitTimer = window.setTimeout(checkAndSubmit, submitSilenceMs);
     }
 
     function scheduleBackendFinalize() {
-        clearBackendFinalizeTimer();
-        voiceBackendFinalizeTimer = window.setTimeout(() => {
+        if (voiceBackendFinalizeTimer) return;
+
+        const checkAndFinalize = () => {
+            voiceBackendFinalizeTimer = null;
             if (!voiceListening || voiceInputMode !== 'backend' || !voiceBackendSocket) return;
             if (voiceBackendSocket.readyState !== WebSocket.OPEN) return;
-            if (voiceBackendFinalizing) return;
+
+            // Recovery: if finalize was sent but backend did not return `final`, unblock after a while.
+            if (voiceBackendFinalizing) {
+                const stuckMs = voiceBackendFinalizeIssuedAt
+                    ? Date.now() - voiceBackendFinalizeIssuedAt
+                    : 0;
+                if (stuckMs > Math.max(1200, backendSttForceFinalizeMs + 200)) {
+                    voiceBackendFinalizing = false;
+                    voiceBackendFinalizeIssuedAt = 0;
+                } else {
+                    voiceBackendFinalizeTimer = window.setTimeout(checkAndFinalize, 120);
+                    return;
+                }
+            }
+
+            const silenceElapsedMs = lastSpeechActivityAt > 0
+                ? Date.now() - lastSpeechActivityAt
+                : 0;
+            const remainingSilenceMs = lastSpeechActivityAt > 0
+                ? backendSttFinalizeSilenceMs - silenceElapsedMs
+                : backendSttFinalizeSilenceMs;
+            if (remainingSilenceMs > 0) {
+                voiceBackendFinalizeTimer = window.setTimeout(
+                    checkAndFinalize,
+                    Math.max(80, remainingSilenceMs),
+                );
+                return;
+            }
+
             try {
                 voiceBackendFinalizing = true;
+                voiceBackendFinalizeIssuedAt = Date.now();
                 voiceBackendSocket.send('finalize');
             } catch {}
-        }, backendSttFinalizeSilenceMs);
+        };
+
+        voiceBackendFinalizeTimer = window.setTimeout(checkAndFinalize, backendSttFinalizeSilenceMs);
     }
 
     function scheduleBackendForceFinalize() {
@@ -5894,9 +6298,19 @@
             voiceBackendForceFinalizeTimer = null;
             if (!voiceListening || voiceInputMode !== 'backend' || !voiceBackendSocket) return;
             if (voiceBackendSocket.readyState !== WebSocket.OPEN) return;
-            if (voiceBackendFinalizing) return;
+            if (voiceBackendFinalizing) {
+                const stuckMs = voiceBackendFinalizeIssuedAt
+                    ? Date.now() - voiceBackendFinalizeIssuedAt
+                    : 0;
+                if (stuckMs <= Math.max(1200, backendSttForceFinalizeMs + 200)) {
+                    return;
+                }
+                voiceBackendFinalizing = false;
+                voiceBackendFinalizeIssuedAt = 0;
+            }
             try {
                 voiceBackendFinalizing = true;
+                voiceBackendFinalizeIssuedAt = Date.now();
                 voiceBackendSocket.send('finalize');
             } catch {}
         }, backendSttForceFinalizeMs);
@@ -5906,10 +6320,17 @@
         if (voiceBackendStream && voiceBackendStream.active) {
             return voiceBackendStream;
         }
-        voiceBackendStream = await navigator.mediaDevices.getUserMedia({
+        voiceBackendRawStream = await navigator.mediaDevices.getUserMedia({
             audio: getMicAudioConstraintsForKiosk(),
             video: false,
         });
+        try {
+            voiceBackendStream = await buildProcessedBackendMicStream(voiceBackendRawStream);
+        } catch (processingError) {
+            console.warn('[backend-stt] mic processing fallback to raw stream:', processingError);
+            teardownBackendMicProcessing();
+            voiceBackendStream = voiceBackendRawStream;
+        }
         return voiceBackendStream;
     }
 
@@ -5964,6 +6385,7 @@
 
             if (payload.type === 'final') {
                 voiceBackendFinalizing = false;
+                voiceBackendFinalizeIssuedAt = 0;
                 clearBackendForceFinalizeTimer();
                 const transcript = String(payload.transcript || '').trim();
                 const status = String(payload.status || '').toLowerCase();
@@ -5999,6 +6421,7 @@
         voiceBackendSocket.onclose = () => {
             voiceBackendSocket = null;
             voiceBackendFinalizing = false;
+            voiceBackendFinalizeIssuedAt = 0;
             if (voiceListening && voiceInputMode === 'backend') {
                 window.setTimeout(() => {
                     if (!voiceListening || voiceInputMode !== 'backend') return;
@@ -6031,6 +6454,7 @@
         clearBackendFinalizeTimer();
         clearBackendForceFinalizeTimer();
         voiceBackendFinalizing = false;
+        voiceBackendFinalizeIssuedAt = 0;
         if (voiceInputMode === 'backend') {
             voiceInputMode = 'idle';
         }
@@ -6057,6 +6481,13 @@
             } catch {}
             voiceBackendStream = null;
         }
+        if (voiceBackendRawStream && voiceBackendRawStream !== voiceBackendStream) {
+            try {
+                voiceBackendRawStream.getTracks().forEach((track) => track.stop());
+            } catch {}
+            voiceBackendRawStream = null;
+        }
+        teardownBackendMicProcessing();
     }
 
     async function startBackendSpeechListening() {
@@ -6075,6 +6506,7 @@
 
         socket.send('start:order:speech.webm');
         voiceBackendFinalizing = false;
+        voiceBackendFinalizeIssuedAt = 0;
         clearBackendForceFinalizeTimer();
 
         voiceBackendRecorder.ondataavailable = (event) => {
@@ -6163,7 +6595,11 @@
             }
 
             if (interim.trim()) {
-                markSpeechActivity();
+                const interimNormalized = normalizeTranscriptForDedup(interim.trim());
+                const pendingNormalized = normalizeTranscriptForDedup(voiceBrowserPendingInterim);
+                if (!pendingNormalized || interimNormalized !== pendingNormalized) {
+                    markSpeechActivity();
+                }
                 if (botSpeechActive) {
                     prioritizeUserSpeech();
                 }
@@ -6366,10 +6802,28 @@
         }, delayMs);
     }
 
+    function hasRecentUserConversationActivity(now = Date.now()) {
+        if (isConversationTurnBusy()) return true;
+        if (lastAcceptedUserTurnAt > 0 && (now - lastAcceptedUserTurnAt) < AUTO_GREETING_SUPPRESS_AFTER_USER_MS) {
+            return true;
+        }
+        const last = chatHistory[chatHistory.length - 1];
+        if (!last) return false;
+        if (String(last.role || '').toLowerCase() !== 'user') return false;
+        const lastAt = Number(last.at || 0);
+        if (!Number.isFinite(lastAt) || lastAt <= 0) return true;
+        return (now - lastAt) < AUTO_GREETING_SUPPRESS_AFTER_USER_MS;
+    }
+
     async function runAutoGreeting() {
         if (autoGreetingInFlight) return;
         const now = Date.now();
         if (now - lastAutoGreetingAt < AUTO_GREETING_COOLDOWN_MS) return;
+        if (hasRecentUserConversationActivity(now)) {
+            lastAutoGreetingAt = now;
+            clearAutoGreetingRetry();
+            return;
+        }
         autoGreetingInFlight = true;
         try {
             suppressNextSessionOpening = true;
@@ -6786,6 +7240,9 @@
         loadCameraPreviewVisible();
     }
     resetRobot();
+    if (shouldClearChatOnBoot()) {
+        clearChatHistory();
+    }
     loadChatHistory();
     renderChatMini();
     hideOrderFlow();
@@ -6889,6 +7346,9 @@
     });
 
     window.addEventListener('beforeunload', () => {
+        try {
+            sessionStorage.setItem(CHAT_CLEAR_ON_NEXT_LOAD_SESSION_KEY, '1');
+        } catch {}
         if (kioskHeartbeatTimer) {
             window.clearInterval(kioskHeartbeatTimer);
             kioskHeartbeatTimer = null;

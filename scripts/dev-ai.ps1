@@ -1,6 +1,7 @@
 param(
   [string]$Port,
-  [switch]$ForceRestart
+  [switch]$ForceRestart,
+  [switch]$ReuseExisting
 )
 
 $ErrorActionPreference = 'Stop'
@@ -21,6 +22,7 @@ $aiPort = if ($Port) {
   '8012'
 }
 $fallbackAiPort = '18012'
+$allowReuseExisting = $ReuseExisting.IsPresent -or ($env:AI_DEV_REUSE_EXISTING -eq '1')
 
 # Force bridge-only defaults for local dev unless user explicitly overrides.
 if (-not $env:LLM_MODE) {
@@ -152,9 +154,12 @@ foreach ($candidatePort in $candidatePorts) {
   Write-Host "[ai] detected existing listener on $candidateUrl (pid=$($listener.ProcessId), process=$($listener.ProcessName))"
   $health = Get-AiHealth -BaseUrl $candidateUrl
   $compatibleBridge = (Test-AiRuntimeCompatible -Health $health) -and ($health.llm_mode -eq 'bridge_only')
-  if ($compatibleBridge) {
+  if ($compatibleBridge -and $allowReuseExisting) {
     Write-Host "[ai] existing ai-backend is compatible (realtime + bridge_only). Reusing current instance."
     exit 0
+  }
+  if ($compatibleBridge -and -not $allowReuseExisting) {
+    Write-Host "[ai] existing ai-backend is compatible but reuse is disabled. restarting to load latest code..."
   }
 
   $shouldAutoRestart = (Test-IsAiBackendProcess -Listener $listener)

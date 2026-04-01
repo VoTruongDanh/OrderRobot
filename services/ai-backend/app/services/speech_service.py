@@ -5,6 +5,7 @@ import concurrent.futures
 import inspect
 import io
 import importlib.util
+from importlib import metadata as importlib_metadata
 import logging
 import os
 import re
@@ -141,7 +142,10 @@ ORDERING_FILLERS = [
 STREAM_SENTENCE_SPLIT_PATTERN = re.compile(r"(?<=[.!?;:])\s+")
 STREAM_CLAUSE_SPLIT_PATTERN = re.compile(r"\s*(?:,|\bva\b|\bvoi\b)\s+", re.IGNORECASE)
 STREAM_SEGMENT_MAX_CHARS = 120
-DEFAULT_VIENEU_CPU_MODEL = "pnnbao-ump/VieNeu-TTS-0.3B-q4-gguf"
+DEFAULT_VIENEU_CPU_MODEL = "pnnbao-ump/VieNeu-TTS-v2-Turbo-GGUF"
+DEFAULT_VIENEU_CPU_TURBO_MODEL = "pnnbao-ump/VieNeu-TTS-v2-Turbo-GGUF"
+DEFAULT_VIENEU_CPU_LEGACY_MODEL = "pnnbao-ump/VieNeu-TTS-0.3B-q4-gguf"
+DEFAULT_VIENEU_CPU_CODEC_REPO = "neuphonic/neucodec-onnx-decoder-int8"
 
 
 class SpeechNotHeardError(ValueError):
@@ -177,6 +181,10 @@ class SpeechService:
         self._vieneu_stream_guard = threading.Lock()
         self._vieneu_active_stream_cancel: threading.Event | None = None
         self._vieneu_stream_last_realtime_factor: float = 0.0
+        self._vieneu_effective_model_path: str = ""
+        self._vieneu_effective_codec_repo: str = ""
+        self._vieneu_compat_warning: str = ""
+        self._vieneu_version: str = ""
 
     async def synthesize(
         self,
@@ -297,27 +305,57 @@ class SpeechService:
             self._vieneu_last_error = f"{type(exc).__name__}: {exc}"
             logger.exception("tts_prewarm_failed engine=vieneu")
 
+    async def prewarm_vieneu_now(self) -> None:
+        if not self._is_vieneu_available():
+            raise RuntimeError("VieNeu package is not installed.")
+        started_at = time.perf_counter()
+        await anyio.to_thread.run_sync(self._preload_vieneu_sync)
+        self._vieneu_prewarm_ms = int((time.perf_counter() - started_at) * 1000)
+        self._vieneu_prewarmed_at = time.time()
+
+    def _normalize_vieneu_mode(self, raw_mode: str | None) -> str:
+        mode = (raw_mode or "turbo").strip().lower()
+        if mode == "gpu":
+            return "fast"
+        if mode == "api":
+            return "remote"
+        if mode in {"turbo", "turbo_gpu", "standard", "fast", "xpu", "remote"}:
+            return mode
+        return "turbo"
+
     def get_vieneu_diagnostics(self) -> dict[str, object]:
-        configured_mode = (self.settings.tts_vieneu_mode or "standard").strip().lower()
-        if configured_mode == "gpu":
-            configured_mode = "fast"
-        if configured_mode == "api":
-            configured_mode = "remote"
+        configured_mode = self._normalize_vieneu_mode(self.settings.tts_vieneu_mode)
+        configured_model_path = self.settings.tts_vieneu_model_path.strip() or DEFAULT_VIENEU_CPU_MODEL
+        configured_codec_repo = self.settings.tts_vieneu_codec_repo.strip()
+        configured_backbone_device = (self.settings.tts_vieneu_backbone_device or "cpu").strip().lower() or "cpu"
+        configured_codec_device = (self.settings.tts_vieneu_codec_device or "cpu").strip().lower() or "cpu"
+        effective_model_path, effective_codec_repo, compat_warning, vieneu_version = self._resolve_vieneu_runtime_compat(
+            configured_model_path=configured_model_path,
+            configured_codec_repo=configured_codec_repo,
+            mode=configured_mode,
+            backbone_device=configured_backbone_device,
+            codec_device=configured_codec_device,
+        )
         return {
             "available": self._is_vieneu_available(),
             "engine": self.settings.tts_engine,
             "mode": configured_mode,
-            "model_path": self.settings.tts_vieneu_model_path.strip() or DEFAULT_VIENEU_CPU_MODEL,
-            "backbone_device": self.settings.tts_vieneu_backbone_device,
-            "codec_repo": self.settings.tts_vieneu_codec_repo,
-            "codec_device": self.settings.tts_vieneu_codec_device,
+            "configured_model_path": configured_model_path,
+            "model_path": self._vieneu_effective_model_path or effective_model_path,
+            "backbone_device": configured_backbone_device,
+            "configured_codec_repo": configured_codec_repo,
+            "codec_repo": self._vieneu_effective_codec_repo or effective_codec_repo,
+            "codec_device": configured_codec_device,
             "remote_api_base": self.settings.tts_vieneu_remote_api_base,
             "instance_ready": self._vieneu_instance is not None,
             "last_init_ms": self._vieneu_last_init_ms,
             "prewarm_ms": self._vieneu_prewarm_ms,
             "prewarmed_at_unix": self._vieneu_prewarmed_at or 0,
             "last_error": self._vieneu_last_error,
+            "compat_warning": self._vieneu_compat_warning or compat_warning,
+            "vieneu_version": self._vieneu_version or vieneu_version,
             "stream_realtime_factor": round(self._vieneu_stream_last_realtime_factor, 4),
+            "cpu_processing": self._collect_cpu_runtime_versions(),
             "stream_cfg": {
                 "frames_per_chunk": self.settings.tts_vieneu_stream_frames_per_chunk,
                 "lookforward": self.settings.tts_vieneu_stream_lookforward,
@@ -325,6 +363,89 @@ class SpeechService:
                 "overlap_frames": self.settings.tts_vieneu_stream_overlap_frames,
             },
         }
+
+    def _collect_cpu_runtime_versions(self) -> dict[str, str]:
+        package_map = {
+            "onnxruntime": "onnxruntime",
+            "torch": "torch",
+            "llama-cpp-python": "llama-cpp-python",
+            "vieneu": "vieneu",
+        }
+        versions: dict[str, str] = {}
+        for display_name, package_name in package_map.items():
+            try:
+                versions[display_name] = importlib_metadata.version(package_name)
+            except importlib_metadata.PackageNotFoundError:
+                versions[display_name] = "not-installed"
+            except Exception:
+                versions[display_name] = "unknown"
+        return versions
+
+    def _resolve_vieneu_runtime_compat(
+        self,
+        *,
+        configured_model_path: str,
+        configured_codec_repo: str,
+        mode: str,
+        backbone_device: str,
+        codec_device: str,
+    ) -> tuple[str, str, str, str]:
+        model_path = configured_model_path.strip() or DEFAULT_VIENEU_CPU_MODEL
+        codec_repo = configured_codec_repo.strip()
+        warnings: list[str] = []
+
+        try:
+            vieneu_version = importlib_metadata.version("vieneu")
+        except Exception:
+            vieneu_version = ""
+
+        major_version = 0
+        if vieneu_version:
+            try:
+                major_version = int(vieneu_version.split(".", maxsplit=1)[0])
+            except (TypeError, ValueError):
+                major_version = 0
+
+        normalized_model_path = model_path.lower()
+        normalized_codec_repo = codec_repo.lower()
+        is_turbo_model = "vieneu-tts-v2-turbo-gguf" in normalized_model_path
+        is_legacy_cpu_model = "vieneu-tts-0.3b" in normalized_model_path
+
+        if "vieneu" in normalized_model_path and "0.2b" in normalized_model_path:
+            model_path = DEFAULT_VIENEU_CPU_TURBO_MODEL
+            warnings.append(
+                "Hien chua co model VieNeu 0.2B chinh thuc; da fallback sang VieNeu-TTS-v2-Turbo-GGUF."
+            )
+            normalized_model_path = model_path.lower()
+            is_turbo_model = True
+            is_legacy_cpu_model = False
+
+        if is_turbo_model and major_version and major_version < 2:
+            model_path = DEFAULT_VIENEU_CPU_LEGACY_MODEL
+            warnings.append(
+                f"VieNeu {vieneu_version} chua toi uu cho v2-Turbo-GGUF; "
+                f"tam dung dung model {DEFAULT_VIENEU_CPU_LEGACY_MODEL}. "
+                "Nen nang cap vieneu>=2.1.3."
+            )
+            normalized_model_path = model_path.lower()
+            is_turbo_model = False
+            is_legacy_cpu_model = "vieneu-tts-0.3b" in normalized_model_path
+
+        # Turbo should rely on SDK-default codec; forcing legacy ONNX codec causes noisy output.
+        if is_turbo_model and normalized_codec_repo:
+            codec_repo = ""
+            warnings.append("Turbo model dung codec/decoder mac dinh cua SDK; bo qua codec_repo tu cau hinh.")
+
+        if (
+            not codec_repo
+            and mode == "standard"
+            and backbone_device == "cpu"
+            and codec_device == "cpu"
+            and is_legacy_cpu_model
+        ):
+            codec_repo = DEFAULT_VIENEU_CPU_CODEC_REPO
+
+        return model_path, codec_repo, " ".join(warnings).strip(), vieneu_version
 
     def _preload_vieneu_sync(self) -> None:
         self._get_vieneu_instance()
@@ -413,19 +534,34 @@ class SpeechService:
 
             from vieneu import Vieneu  # type: ignore[import-not-found]
 
-            requested_mode = (self.settings.tts_vieneu_mode or "standard").strip().lower()
-            if requested_mode == "gpu":
-                requested_mode = "fast"
-            elif requested_mode == "api":
-                requested_mode = "remote"
-            vieneu_mode = requested_mode if requested_mode in {"standard", "fast", "xpu", "remote"} else "standard"
+            requested_mode = self._normalize_vieneu_mode(self.settings.tts_vieneu_mode)
+            vieneu_mode = requested_mode
 
             configured_model_path = self.settings.tts_vieneu_model_path.strip()
-            model_path = configured_model_path or DEFAULT_VIENEU_CPU_MODEL
             backbone_device = (self.settings.tts_vieneu_backbone_device or "cpu").strip().lower() or "cpu"
-            codec_repo = (self.settings.tts_vieneu_codec_repo or "").strip()
             codec_device = (self.settings.tts_vieneu_codec_device or "cpu").strip().lower() or "cpu"
             remote_api_base = (self.settings.tts_vieneu_remote_api_base or "http://localhost:23333/v1").strip()
+            model_path, codec_repo, compat_warning, vieneu_version = self._resolve_vieneu_runtime_compat(
+                configured_model_path=configured_model_path,
+                configured_codec_repo=(self.settings.tts_vieneu_codec_repo or "").strip(),
+                mode=vieneu_mode,
+                backbone_device=backbone_device,
+                codec_device=codec_device,
+            )
+            normalized_model_path = (model_path or "").strip().lower()
+            is_turbo_model = "vieneu-tts-v2-turbo-gguf" in normalized_model_path
+            if is_turbo_model and vieneu_mode not in {"turbo", "turbo_gpu", "remote"}:
+                preferred_mode = "turbo_gpu" if backbone_device in {"cuda", "gpu"} else "turbo"
+                compat_warning = (
+                    f"{compat_warning} Auto switch mode '{vieneu_mode}' -> '{preferred_mode}' for Turbo GGUF."
+                ).strip()
+                vieneu_mode = preferred_mode
+            self._vieneu_effective_model_path = model_path
+            self._vieneu_effective_codec_repo = codec_repo
+            self._vieneu_compat_warning = compat_warning
+            self._vieneu_version = vieneu_version
+            if compat_warning:
+                logger.warning("vieneu_compat_fallback %s", compat_warning)
 
             init_attempts: list[dict[str, object]] = []
             if vieneu_mode in {"standard", "fast", "xpu"}:
@@ -454,6 +590,12 @@ class SpeechService:
                     fallback_kwargs = dict(primary_kwargs)
                     fallback_kwargs.pop("codec_repo", None)
                     init_attempts.append(fallback_kwargs)
+            elif vieneu_mode in {"turbo", "turbo_gpu"}:
+                primary_kwargs = {
+                    "backbone_repo": model_path,
+                    "device": backbone_device,
+                }
+                init_attempts.append(primary_kwargs)
 
             init_attempts.append({})
 
@@ -532,10 +674,12 @@ class SpeechService:
                 raise last_error
 
             logger.info(
-                "vieneu_ready mode=%s requested=%s effective=%s init_ms=%s",
+                "vieneu_ready mode=%s requested=%s effective=%s codec_repo=%s version=%s init_ms=%s",
                 vieneu_mode,
                 configured_model_path or "default",
                 model_path or "default",
+                codec_repo or "default",
+                vieneu_version or "unknown",
                 self._vieneu_last_init_ms,
             )
             return self._vieneu_instance
@@ -591,6 +735,9 @@ class SpeechService:
         with self._vieneu_lock:
             stale_instance = self._vieneu_instance
             self._vieneu_instance = None
+            self._vieneu_effective_model_path = ""
+            self._vieneu_effective_codec_repo = ""
+            self._vieneu_compat_warning = ""
 
         if stale_instance is None:
             return
@@ -743,28 +890,33 @@ class SpeechService:
         )
         sample_rate = self._resolve_vieneu_sample_rate(engine)
         yielded_any = False
+        header = self._build_wav_stream_header(sample_rate)
+        header_sent = False
 
         with self._vieneu_lock:
             stream_result = call_with_supported_kwargs(infer_stream_fn, infer_kwargs)
 
             if isinstance(stream_result, (bytes, bytearray)):
-                payload = bytes(stream_result)
+                payload = self._normalize_vieneu_stream_pcm_bytes(stream_result)
                 if payload:
+                    if header and not header_sent:
+                        header_sent = True
+                        yielded_any = True
+                        yield header
                     yielded_any = True
                     yield payload
             elif isinstance(stream_result, np.ndarray):
                 if cancel_event is not None and cancel_event.is_set():
                     return
-                header = self._build_wav_stream_header(sample_rate)
-                payload = self._to_pcm16_chunk_bytes(stream_result)
-                if header:
-                    yielded_any = True
-                    yield header
+                payload = self._normalize_vieneu_stream_pcm_bytes(stream_result)
                 if payload:
+                    if header and not header_sent:
+                        header_sent = True
+                        yielded_any = True
+                        yield header
                     yielded_any = True
                     yield payload
             elif stream_result is not None:
-                header_sent = False
                 for item in stream_result:
                     if cancel_event is not None and cancel_event.is_set():
                         close_fn = getattr(stream_result, "close", None)
@@ -775,17 +927,12 @@ class SpeechService:
                                 logger.debug("Ignored VieNeu stream close error.", exc_info=True)
                         break
 
-                    if isinstance(item, np.ndarray):
-                        if not header_sent:
-                            header = self._build_wav_stream_header(sample_rate)
-                            if header:
-                                yielded_any = True
-                                header_sent = True
-                                yield header
-                        payload = self._to_pcm16_chunk_bytes(item)
-                    else:
-                        payload = self._to_wav_chunk_bytes(item, sample_rate)
+                    payload = self._normalize_vieneu_stream_pcm_bytes(item)
                     if payload:
+                        if header and not header_sent:
+                            yielded_any = True
+                            header_sent = True
+                            yield header
                         yielded_any = True
                         yield payload
 
@@ -892,17 +1039,133 @@ class SpeechService:
         elif ref_audio and not ref_text:
             logger.warning("Ignoring VieNeu ref_audio because ref_text is empty.")
 
+        active_model = (
+            self._vieneu_effective_model_path
+            or self.settings.tts_vieneu_model_path.strip()
+            or DEFAULT_VIENEU_CPU_MODEL
+        )
+        if (
+            "vieneu-tts-v2-turbo-gguf" in active_model.lower()
+            and "ref_audio" in infer_kwargs
+        ):
+            # VieNeu Turbo model card currently flags cloning as not supported.
+            infer_kwargs.pop("ref_audio", None)
+            infer_kwargs.pop("ref_text", None)
+            logger.warning(
+                "VieNeu Turbo currently does not support ref_audio cloning; fallback to preset/default voice."
+            )
+
+        is_turbo_runtime = "vieneu-tts-v2-turbo-gguf" in active_model.lower()
+        if not is_turbo_runtime:
+            engine_name = type(engine).__name__.lower()
+            is_turbo_runtime = "turbo" in engine_name
+
+        def apply_voice_payload(voice_payload: object, selected_voice_id: str) -> None:
+            # Turbo runtime uses `voice` for infer(...) and `ref_codes` for infer_stream(...).
+            # Set both to keep preset voice consistent across sync + stream endpoints.
+            if is_turbo_runtime:
+                infer_kwargs["voice"] = voice_payload
+                infer_kwargs["ref_codes"] = voice_payload
+            else:
+                infer_kwargs["voice"] = voice_payload
+            logger.info(
+                "vieneu_voice_selected id=%s turbo=%s",
+                selected_voice_id,
+                is_turbo_runtime,
+            )
+
         if "ref_audio" not in infer_kwargs and voice_id:
             get_voice_fn = getattr(engine, "get_preset_voice", None)
             if callable(get_voice_fn):
                 try:
-                    infer_kwargs["voice"] = get_voice_fn(voice_id)
+                    voice_payload = get_voice_fn(voice_id)
+                    apply_voice_payload(voice_payload, voice_id)
                 except Exception:
-                    logger.warning("VieNeu preset voice '%s' not found. Falling back to default voice.", voice_id)
+                    resolved_voice_id = self._resolve_vieneu_voice_alias(engine, voice_id)
+                    if resolved_voice_id and resolved_voice_id != voice_id:
+                        try:
+                            voice_payload = get_voice_fn(resolved_voice_id)
+                            apply_voice_payload(voice_payload, resolved_voice_id)
+                            logger.info(
+                                "VieNeu preset voice alias mapped: '%s' -> '%s'.",
+                                voice_id,
+                                resolved_voice_id,
+                            )
+                        except Exception:
+                            logger.warning(
+                                "VieNeu preset voice '%s' (alias '%s') not found. Falling back to default voice.",
+                                voice_id,
+                                resolved_voice_id,
+                            )
+                    else:
+                        logger.warning("VieNeu preset voice '%s' not found. Falling back to default voice.", voice_id)
             else:
                 logger.debug("VieNeu engine does not support preset voice lookup.")
 
         return infer_kwargs
+
+    def _resolve_vieneu_voice_alias(self, engine: object, voice_id: str) -> str | None:
+        alias_raw = str(voice_id or "").strip()
+        if not alias_raw:
+            return None
+
+        alias_norm = normalize_vietnamese_text(alias_raw)
+        if not alias_norm:
+            return None
+
+        list_fn = getattr(engine, "list_preset_voices", None)
+        if not callable(list_fn):
+            return None
+
+        try:
+            raw_voices = list_fn()
+        except Exception:
+            return None
+
+        if not isinstance(raw_voices, (list, tuple, set)):
+            return None
+
+        best_id = None
+        best_score = 0.0
+        for item in raw_voices:
+            description = ""
+            candidate_id = ""
+            if isinstance(item, (tuple, list)) and len(item) >= 2:
+                description = str(item[0] or "").strip()
+                candidate_id = str(item[1] or "").strip()
+            else:
+                description = str(item or "").strip()
+                candidate_id = description
+            if not candidate_id:
+                continue
+
+            candidate_norm = normalize_vietnamese_text(candidate_id)
+            description_norm = normalize_vietnamese_text(description)
+            if not candidate_norm and not description_norm:
+                continue
+
+            score = 0.0
+            if alias_norm == candidate_norm:
+                score = 1.0
+            elif alias_norm == description_norm:
+                score = 0.99
+            elif alias_norm and candidate_norm and (alias_norm in candidate_norm or candidate_norm in alias_norm):
+                score = 0.95
+            elif alias_norm and description_norm and (alias_norm in description_norm or description_norm in alias_norm):
+                score = 0.92
+            else:
+                score = max(
+                    SequenceMatcher(None, alias_norm, candidate_norm).ratio() if candidate_norm else 0.0,
+                    SequenceMatcher(None, alias_norm, description_norm).ratio() if description_norm else 0.0,
+                )
+
+            if score > best_score:
+                best_score = score
+                best_id = candidate_id
+
+        if best_id and best_score >= 0.6:
+            return best_id
+        return None
 
     def _resolve_vieneu_sample_rate(self, engine: object) -> int:
         raw_rate = getattr(engine, "sample_rate", 24000)
@@ -943,7 +1206,11 @@ class SpeechService:
             waveform = waveform.reshape(-1)
 
         if np.issubdtype(waveform.dtype, np.floating):
-            pcm16 = np.clip(waveform.astype(np.float32), -1.0, 1.0)
+            float_waveform = waveform.astype(np.float32, copy=False)
+            peak = float(np.max(np.abs(float_waveform))) if float_waveform.size else 0.0
+            if peak > 1.0:
+                float_waveform = float_waveform / max(peak, 1e-6)
+            pcm16 = np.clip(float_waveform, -1.0, 1.0)
             pcm16 = (pcm16 * 32767.0).astype(np.int16)
         elif np.issubdtype(waveform.dtype, np.integer):
             if waveform.dtype == np.int16:
@@ -956,6 +1223,37 @@ class SpeechService:
         if pcm16.size == 0:
             return b""
         return np.ascontiguousarray(pcm16).tobytes()
+
+    def _normalize_vieneu_stream_pcm_bytes(self, chunk: object) -> bytes:
+        if chunk is None:
+            return b""
+
+        if isinstance(chunk, (bytes, bytearray)):
+            payload = bytes(chunk)
+            if not payload:
+                return b""
+
+            is_wav = (
+                len(payload) >= 12
+                and payload[0:4] == b"RIFF"
+                and payload[8:12] == b"WAVE"
+            )
+            if is_wav:
+                try:
+                    with wave.open(io.BytesIO(payload), "rb") as wav_reader:
+                        payload = wav_reader.readframes(wav_reader.getnframes())
+                except Exception:
+                    if len(payload) > 44:
+                        payload = payload[44:]
+                    else:
+                        return b""
+
+            # Keep 16-bit alignment for downstream Int16 decoding.
+            if len(payload) % 2 == 1:
+                payload = payload[:-1]
+            return payload
+
+        return self._to_pcm16_chunk_bytes(chunk)
 
     def _to_wav_chunk_bytes(self, chunk: object, sample_rate: int) -> bytes:
         if chunk is None:

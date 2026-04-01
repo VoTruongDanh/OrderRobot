@@ -9,7 +9,8 @@ from dotenv import load_dotenv
 
 ROOT_DIR = Path(__file__).resolve().parents[3]
 load_dotenv(ROOT_DIR / ".env")
-DEFAULT_VIENEU_CPU_MODEL = "pnnbao-ump/VieNeu-TTS-0.3B-q4-gguf"
+DEFAULT_VIENEU_CPU_MODEL = "pnnbao-ump/VieNeu-TTS-v2-Turbo-GGUF"
+DEFAULT_VIENEU_CPU_CODEC_REPO = ""
 
 
 @dataclass(slots=True)
@@ -34,9 +35,9 @@ class Settings:
     voice_style: str = "cute_friendly"
     tts_engine: str = "auto"  # auto | vieneu | edge | local
     tts_vieneu_model_path: str = DEFAULT_VIENEU_CPU_MODEL
-    tts_vieneu_mode: str = "standard"  # standard | fast | xpu | remote
+    tts_vieneu_mode: str = "turbo"  # turbo | turbo_gpu | standard | fast | xpu | remote
     tts_vieneu_backbone_device: str = "cpu"
-    tts_vieneu_codec_repo: str = ""
+    tts_vieneu_codec_repo: str = DEFAULT_VIENEU_CPU_CODEC_REPO
     tts_vieneu_codec_device: str = "cpu"
     tts_vieneu_remote_api_base: str = "http://localhost:23333/v1"
     tts_vieneu_voice_id: str = ""
@@ -46,12 +47,12 @@ class Settings:
     tts_vieneu_top_k: int = 50
     tts_vieneu_max_chars: int = 256
     tts_vieneu_stream_frames_per_chunk: int = 25
-    tts_vieneu_stream_lookforward: int = 4
-    tts_vieneu_stream_lookback: int = 48
+    tts_vieneu_stream_lookforward: int = 10
+    tts_vieneu_stream_lookback: int = 100
     tts_vieneu_stream_overlap_frames: int = 1
     tts_preload: bool = True
     tts_voice: str = "vietnam"
-    tts_rate: str = "165"
+    tts_rate: str = "185"
     stt_model: str = "small"
     stt_device: str = "auto"
     stt_compute_type: str = "auto"
@@ -107,10 +108,16 @@ def get_settings() -> Settings:
         voice_lang=os.getenv("VOICE_LANG", "vi-VN").strip(),
         voice_style=os.getenv("VOICE_STYLE", "cute_friendly").strip(),
         tts_engine=os.getenv("TTS_ENGINE", "auto").strip().lower() or "auto",
-        tts_vieneu_model_path=os.getenv("TTS_VIENEU_MODEL_PATH", DEFAULT_VIENEU_CPU_MODEL).strip(),
-        tts_vieneu_mode=os.getenv("TTS_VIENEU_MODE", "standard").strip().lower() or "standard",
+        tts_vieneu_model_path=(
+            os.getenv("TTS_VIENEU_MODEL_PATH", DEFAULT_VIENEU_CPU_MODEL).strip()
+            or DEFAULT_VIENEU_CPU_MODEL
+        ),
+        tts_vieneu_mode=os.getenv("TTS_VIENEU_MODE", "turbo").strip().lower() or "turbo",
         tts_vieneu_backbone_device=os.getenv("TTS_VIENEU_BACKBONE_DEVICE", "cpu").strip().lower() or "cpu",
-        tts_vieneu_codec_repo=os.getenv("TTS_VIENEU_CODEC_REPO", "").strip(),
+        tts_vieneu_codec_repo=(
+            os.getenv("TTS_VIENEU_CODEC_REPO", DEFAULT_VIENEU_CPU_CODEC_REPO).strip()
+            or DEFAULT_VIENEU_CPU_CODEC_REPO
+        ),
         tts_vieneu_codec_device=os.getenv("TTS_VIENEU_CODEC_DEVICE", "cpu").strip().lower() or "cpu",
         tts_vieneu_remote_api_base=os.getenv("TTS_VIENEU_REMOTE_API_BASE", "http://localhost:23333/v1").strip(),
         tts_vieneu_voice_id=os.getenv("TTS_VIENEU_VOICE_ID", "").strip(),
@@ -120,12 +127,12 @@ def get_settings() -> Settings:
         tts_vieneu_top_k=max(1, min(200, int(os.getenv("TTS_VIENEU_TOP_K", "50")))),
         tts_vieneu_max_chars=max(32, min(512, int(os.getenv("TTS_VIENEU_MAX_CHARS", "256")))),
         tts_vieneu_stream_frames_per_chunk=max(8, min(64, int(os.getenv("TTS_VIENEU_STREAM_FRAMES_PER_CHUNK", "25")))),
-        tts_vieneu_stream_lookforward=max(0, min(32, int(os.getenv("TTS_VIENEU_STREAM_LOOKFORWARD", "4")))),
-        tts_vieneu_stream_lookback=max(8, min(256, int(os.getenv("TTS_VIENEU_STREAM_LOOKBACK", "48")))),
+        tts_vieneu_stream_lookforward=max(0, min(32, int(os.getenv("TTS_VIENEU_STREAM_LOOKFORWARD", "10")))),
+        tts_vieneu_stream_lookback=max(8, min(256, int(os.getenv("TTS_VIENEU_STREAM_LOOKBACK", "100")))),
         tts_vieneu_stream_overlap_frames=max(1, min(8, int(os.getenv("TTS_VIENEU_STREAM_OVERLAP_FRAMES", "1")))),
         tts_preload=os.getenv("TTS_PRELOAD", "true").strip().lower() not in {"0", "false", "no"},
         tts_voice=os.getenv("TTS_VOICE", "vietnam").strip(),
-        tts_rate=os.getenv("TTS_RATE", "165").strip(),
+        tts_rate=os.getenv("TTS_RATE", "185").strip(),
         stt_model=os.getenv("STT_MODEL", "small").strip(),
         stt_device=os.getenv("STT_DEVICE", "auto").strip(),
         stt_compute_type=os.getenv("STT_COMPUTE_TYPE", "auto").strip(),
