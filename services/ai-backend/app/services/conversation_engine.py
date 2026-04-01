@@ -1182,6 +1182,99 @@ class ConversationEngine:
                 "backup_path": str(backup_path),
             }
 
+    async def triage_feedback_log(self, *, only_new: bool = True) -> dict[str, object]:
+        async with self.lock:
+            log_path = self._feedback_log_path()
+            if not log_path.exists():
+                return {
+                    "path": str(log_path),
+                    "total_rows": 0,
+                    "triaged_rows": 0,
+                    "skipped_rows": 0,
+                    "backup_path": "",
+                }
+
+            raw_lines = log_path.read_text(encoding="utf-8").splitlines()
+            triaged_rows = 0
+            skipped_rows = 0
+            next_lines: list[str] = []
+
+            for raw_line in raw_lines:
+                if not raw_line.strip():
+                    continue
+                try:
+                    entry = json.loads(raw_line)
+                except json.JSONDecodeError:
+                    # Keep malformed rows untouched so we never destroy original evidence.
+                    skipped_rows += 1
+                    next_lines.append(raw_line)
+                    continue
+                if not isinstance(entry, dict):
+                    skipped_rows += 1
+                    next_lines.append(raw_line)
+                    continue
+
+                current_status = self._normalize_feedback_review_status(str(entry.get("review_status", "new")))
+                if only_new and current_status != "new":
+                    skipped_rows += 1
+                    next_lines.append(json.dumps(entry, ensure_ascii=False))
+                    continue
+
+                rating = int(entry.get("rating", 5) or 5)
+                comment = repair_mojibake_text(str(entry.get("comment", "") or "")).strip() or None
+                transcript_history = self._normalize_feedback_transcript_history(
+                    [
+                        str(item)
+                        for item in (entry.get("transcript_history") or [])
+                        if isinstance(item, str) or item is not None
+                    ],
+                )
+                auto_tags, auto_notes = self._analyze_feedback_issues(
+                    rating=rating,
+                    comment=comment,
+                    transcript_history=transcript_history,
+                )
+                manual_tags = [
+                    normalize_text(tag).replace(" ", "_")
+                    for tag in (entry.get("improvement_tags") or [])
+                    if isinstance(tag, str) and tag.strip()
+                ]
+                merged_tags = sorted(set(auto_tags + manual_tags))
+
+                repaired_entry = dict(entry)
+                repaired_entry["comment"] = comment
+                repaired_entry["transcript_history"] = transcript_history
+                repaired_entry["improvement_tags"] = merged_tags
+                repaired_entry["needs_improvement"] = bool(repaired_entry.get("needs_improvement")) or bool(merged_tags)
+                repaired_entry["review_status"] = "triaged"
+                repaired_entry["analysis_notes"] = auto_notes
+                repaired_entry["analysis_version"] = max(3, int(repaired_entry.get("analysis_version", 1) or 1))
+                repaired_entry["triaged_at"] = datetime.now(UTC).isoformat()
+                if not repaired_entry.get("created_at"):
+                    repaired_entry["created_at"] = datetime.now(UTC).isoformat()
+
+                triaged_rows += 1
+                next_lines.append(json.dumps(repaired_entry, ensure_ascii=False))
+
+            backup_path = log_path.with_suffix(".jsonl.triage-latest.bak")
+            backup_path.write_text(
+                "\n".join(raw_lines) + ("\n" if raw_lines else ""),
+                encoding="utf-8",
+            )
+            log_path.write_text(
+                "\n".join(next_lines) + ("\n" if next_lines else ""),
+                encoding="utf-8",
+            )
+
+            return {
+                "path": str(log_path),
+                "total_rows": len(raw_lines),
+                "triaged_rows": triaged_rows,
+                "skipped_rows": skipped_rows,
+                "only_new": only_new,
+                "backup_path": str(backup_path),
+            }
+
     @staticmethod
     def _feedback_log_path() -> Path:
         backend_root = Path(__file__).resolve().parents[2]
@@ -1227,9 +1320,12 @@ class ConversationEngine:
 
         user_messages = self._extract_role_messages(transcript_history, "user")
         user_counter = Counter(user_messages)
+        parsed_lines = self._extract_feedback_lines_raw(transcript_history)
 
         mismatch_count = 0
         ack_loop_count = 0
+        repeated_unclear_count = 0
+        corrupted_text_count = 0
 
         for user_text, assistant_text in self._iter_user_assistant_pairs(transcript_history):
             user_normalized = normalize_text(user_text)
@@ -1249,6 +1345,29 @@ class ConversationEngine:
             ):
                 ack_loop_count += 1
 
+        # Detect repeated "I can't hear/understand" loops.
+        for line in parsed_lines:
+            if line["role"] != "assistant":
+                continue
+            assistant_normalized = normalize_text(str(line.get("content") or ""))
+            if (
+                "nghe chua ro" in assistant_normalized
+                or "chua hieu y ban" in assistant_normalized
+                or "thu noi ten mon" in assistant_normalized
+            ):
+                repeated_unclear_count += 1
+
+        # Detect text rendering/spacing corruption in assistant lines.
+        for line in parsed_lines:
+            if line["role"] != "assistant":
+                continue
+            content = str(line.get("content") or "").strip()
+            if not content:
+                continue
+            repaired = _repair_vietnamese_spacing_text(content)
+            if repaired and repaired != content:
+                corrupted_text_count += 1
+
         if mismatch_count > 0:
             tags.add("intent_action_mismatch")
             notes.append(f"found {mismatch_count} add/remove mismatched turn(s)")
@@ -1265,6 +1384,19 @@ class ConversationEngine:
         if ack_loop_count >= 2:
             tags.add("conversation_loop")
             notes.append("multiple short-acknowledgement loops detected")
+
+        if repeated_unclear_count >= 2:
+            tags.add("repeated_unclear_response")
+            notes.append(f"assistant repeated unclear-response {repeated_unclear_count} times")
+
+        if corrupted_text_count > 0:
+            tags.add("text_render_corruption")
+            notes.append(f"found {corrupted_text_count} corrupted assistant line(s)")
+
+        # Consecutive assistant lines at the beginning usually indicate duplicate auto-greeting.
+        if len(parsed_lines) >= 2 and parsed_lines[0]["role"] == "assistant" and parsed_lines[1]["role"] == "assistant":
+            tags.add("duplicate_greeting")
+            notes.append("detected consecutive assistant greetings at session start")
 
         return sorted(tags), notes
 
@@ -1290,6 +1422,16 @@ class ConversationEngine:
                 pairs.append((pending_user, content))
                 pending_user = None
         return pairs
+
+    @staticmethod
+    def _extract_feedback_lines_raw(transcript_history: list[str]) -> list[dict[str, str]]:
+        lines: list[dict[str, str]] = []
+        for raw in transcript_history:
+            role, content = split_feedback_line_raw(raw)
+            if not role or not content:
+                continue
+            lines.append({"role": role, "content": content})
+        return lines
 
     async def active_session_count(self) -> int:
         async with self.lock:
@@ -1687,6 +1829,22 @@ def split_feedback_line(raw_line: str) -> tuple[str, str]:
         role = "assistant"
 
     return role, normalize_text(content)
+
+
+def split_feedback_line_raw(raw_line: str) -> tuple[str, str]:
+    line = str(raw_line or "").strip()
+    if ":" not in line:
+        return "", repair_mojibake_text(line).strip()
+
+    role_text, content = line.split(":", 1)
+    normalized_role = normalize_text(role_text)
+    role = ""
+    if normalized_role in {"user", "khach", "customer"}:
+        role = "user"
+    elif normalized_role in {"assistant", "robot", "bot"}:
+        role = "assistant"
+
+    return role, repair_mojibake_text(content).strip()
 
 
 def normalize_text(text: str) -> str:

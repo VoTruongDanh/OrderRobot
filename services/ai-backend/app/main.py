@@ -717,6 +717,11 @@ async def repair_feedback_log() -> dict[str, object]:
     return await conversation_engine.repair_feedback_log()
 
 
+@app.post("/feedback/triage-new")
+async def triage_new_feedback() -> dict[str, object]:
+    return await conversation_engine.triage_feedback_log(only_new=True)
+
+
 @app.post("/speech/synthesize")
 async def synthesize_speech(payload: SpeechSynthesisRequest) -> Response:
     started_at = time.perf_counter()
