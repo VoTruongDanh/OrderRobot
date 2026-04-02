@@ -7,7 +7,13 @@ from pathlib import Path
 import pytest
 
 from app.config import Settings, get_settings
-from app.models import CreateOrderResponse, MenuItem, TTSConfigRequest, TurnRequest
+from app.models import (
+    CreateOrderResponse,
+    MenuItem,
+    MenuItemSizeOption,
+    TTSConfigRequest,
+    TurnRequest,
+)
 from app.services.conversation_engine import (
     ConversationEngine,
     ensure_frontend_safe_reply,
@@ -19,7 +25,7 @@ from app.services.provider_client import append_stream_content, split_completed_
 
 class FakeCoreBackendClient:
     def __init__(self) -> None:
-        self.created_orders: list[tuple[str, list[dict[str, int]]]] = []
+        self.created_orders: list[tuple[str, list[dict[str, object]]]] = []
 
     async def list_menu(self) -> list[MenuItem]:
         return [
@@ -51,6 +57,9 @@ class FakeCoreBackendClient:
             )
         )
         return CreateOrderResponse(order_id="ORD-TEST")
+
+    async def get_item_sizes(self, item_id: str) -> list[MenuItemSizeOption]:
+        return []
 
 
 class FakeSpeechService:
@@ -97,6 +106,38 @@ class CappuccinoCoreBackendClient(FakeCoreBackendClient):
             )
         )
         return base
+
+
+class SizeAwareCoreBackendClient(FakeCoreBackendClient):
+    async def get_item_sizes(self, item_id: str) -> list[MenuItemSizeOption]:
+        if item_id != "tra-dao":
+            return []
+        return [
+            MenuItemSizeOption(
+                item_id="tra-dao",
+                product_id=101,
+                size_id=1,
+                size_name="S",
+                price=Decimal("45000"),
+                is_default=True,
+            ),
+            MenuItemSizeOption(
+                item_id="tra-dao",
+                product_id=101,
+                size_id=2,
+                size_name="M",
+                price=Decimal("48000"),
+                is_default=False,
+            ),
+            MenuItemSizeOption(
+                item_id="tra-dao",
+                product_id=101,
+                size_id=3,
+                size_name="L",
+                price=Decimal("52000"),
+                is_default=False,
+            ),
+        ]
 
 
 class MenuRemovesTraDaoAfterFirstFetchCoreBackendClient(FakeCoreBackendClient):
@@ -252,6 +293,74 @@ async def test_conversation_engine_can_recommend_and_create_order() -> None:
     created = await engine.handle_turn(start.session_id, "xac nhan")
     assert created.order_created is True
     assert created.order_id == "ORD-TEST"
+
+
+@pytest.mark.anyio
+async def test_conversation_engine_requires_size_before_adding_item() -> None:
+    settings = Settings(
+        ai_base_url="",
+        ai_api_key="",
+        ai_model="",
+        core_backend_url="http://127.0.0.1:8001",
+        voice_lang="vi-VN",
+        voice_style="cute_friendly",
+        tts_voice="vietnam",
+        tts_rate="165",
+        stt_model="small",
+        stt_device="cpu",
+        stt_compute_type="int8",
+    )
+    core_client = SizeAwareCoreBackendClient()
+    engine = ConversationEngine(settings, core_client)
+
+    start = await engine.start_session()
+    ask_size = await engine.handle_turn(start.session_id, "cho minh 1 tra dao cam sa")
+    assert ask_size.scene == "clarify_size"
+    assert ask_size.cart == []
+
+    added = await engine.handle_turn(start.session_id, "size l")
+    assert added.scene == "cart_updated"
+    assert len(added.cart) == 1
+    assert added.cart[0].item_id == "tra-dao"
+    assert added.cart[0].size_name == "L"
+    assert added.cart[0].unit_price == Decimal("52000")
+
+
+@pytest.mark.anyio
+async def test_conversation_engine_sends_selected_size_to_order_payload() -> None:
+    settings = Settings(
+        ai_base_url="",
+        ai_api_key="",
+        ai_model="",
+        core_backend_url="http://127.0.0.1:8001",
+        voice_lang="vi-VN",
+        voice_style="cute_friendly",
+        tts_voice="vietnam",
+        tts_rate="165",
+        stt_model="small",
+        stt_device="cpu",
+        stt_compute_type="int8",
+    )
+    core_client = SizeAwareCoreBackendClient()
+    engine = ConversationEngine(settings, core_client)
+
+    start = await engine.start_session()
+    await engine.handle_turn(start.session_id, "cho minh 1 tra dao cam sa")
+    await engine.handle_turn(start.session_id, "size m")
+    await engine.handle_turn(start.session_id, "xac nhan")
+    created = await engine.handle_turn(start.session_id, "xac nhan")
+
+    assert created.order_created is True
+    assert core_client.created_orders
+    _session_id, items_payload = core_client.created_orders[-1]
+    assert items_payload == [
+        {
+            "item_id": "tra-dao",
+            "quantity": 1,
+            "size_name": "M",
+            "size_id": 2,
+        }
+    ]
 
 
 @pytest.mark.anyio
@@ -484,7 +593,7 @@ async def test_save_feedback_writes_to_backend_data_dir() -> None:
         assert payload["needs_improvement"] is False
         assert payload["improvement_tags"] == []
         assert payload["review_status"] == "new"
-        assert payload["analysis_version"] == 1
+        assert payload["analysis_version"] == 2
     finally:
         if existing is None:
             if log_path.exists():

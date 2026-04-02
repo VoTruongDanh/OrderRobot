@@ -27,6 +27,7 @@ from app.models import (
     CreateOrderRequest,
     Decision,
     MenuItem,
+    MenuItemSizeOption,
     SessionState,
 )
 from app.services.core_backend_client import CoreBackendClient
@@ -92,6 +93,30 @@ CHECKOUT_KEYWORDS = {
     "tra tien", "xong di", "oke dat hang", "ok dat hang",
 }
 SEGMENT_SPLIT_PATTERN = re.compile(r"\s*(?:,|\bva\b|\bvoi\b|\bcung\b|\bthem\b)\s*")
+SIZE_ALIAS_MAP = {
+    "s": "S",
+    "small": "S",
+    "nho": "S",
+    "size s": "S",
+    "c nho": "S",
+    "co nho": "S",
+    "m": "M",
+    "medium": "M",
+    "vua": "M",
+    "size m": "M",
+    "c vua": "M",
+    "co vua": "M",
+    "l": "L",
+    "large": "L",
+    "lon": "L",
+    "size l": "L",
+    "c lon": "L",
+    "co lon": "L",
+    "xl": "XL",
+    "x l": "XL",
+    "extra large": "XL",
+    "size xl": "XL",
+}
 
 # Chitchat / non-ordering keywords â€” respond naturally instead of trying to match menu
 _CHITCHAT_PATTERNS = [
@@ -293,6 +318,7 @@ class ConversationEngine:
         self._menu_cache_at: float = 0.0
         self._quick_reply_cache: dict[str, tuple[float, str, str]] = {}
         self._local_only_turn_ids: set[str] = set()
+        self._size_options_cache: dict[str, tuple[float, list[MenuItemSizeOption]]] = {}
 
     async def _get_menu(self) -> list[MenuItem]:
         """Get menu with caching (TTL=60s) to avoid HTTP round-trip every turn."""
@@ -302,6 +328,75 @@ class ConversationEngine:
         self._menu_cache = await self.core_client.list_menu()
         self._menu_cache_at = now
         return self._menu_cache
+
+    async def _get_item_size_options(self, item_id: str) -> list[MenuItemSizeOption]:
+        now = time.monotonic()
+        cached = self._size_options_cache.get(item_id)
+        if cached and (now - cached[0]) < MENU_CACHE_TTL:
+            return cached[1]
+        get_item_sizes = getattr(self.core_client, "get_item_sizes", None)
+        if not callable(get_item_sizes):
+            # Backward compatibility for old/mock core client without size endpoint.
+            self._size_options_cache[item_id] = (now, [])
+            return []
+        try:
+            options = await get_item_sizes(item_id)
+        except Exception as exc:
+            logger.warning("get_item_sizes_failed item_id=%s error=%s", item_id, exc)
+            options = []
+        options_sorted = sorted(options, key=lambda opt: (not opt.is_default, opt.size_name))
+        self._size_options_cache[item_id] = (now, options_sorted)
+        return options_sorted
+
+    @staticmethod
+    def _normalize_size_token(value: str) -> str:
+        token = normalize_text(str(value or "")).strip().replace("-", " ")
+        token = re.sub(r"\s+", " ", token)
+        if token in SIZE_ALIAS_MAP:
+            return SIZE_ALIAS_MAP[token]
+        if token.startswith("size "):
+            token = token.split(" ", 1)[1].strip()
+        compact = token.replace(" ", "").upper()
+        if compact in {"S", "M", "L", "XL", "XXL"}:
+            return compact
+        return str(value or "").strip().upper()
+
+    def _find_size_in_text(self, normalized_text: str, options: list[MenuItemSizeOption]) -> MenuItemSizeOption | None:
+        if not options:
+            return None
+        option_map: dict[str, MenuItemSizeOption] = {}
+        for option in options:
+            normalized_name = self._normalize_size_token(option.size_name)
+            option_map[normalized_name] = option
+            option_map[normalize_text(option.size_name).upper()] = option
+
+        text = f" {normalized_text.strip()} "
+        for alias, normalized_size in SIZE_ALIAS_MAP.items():
+            if f" {alias} " in text and normalized_size in option_map:
+                return option_map[normalized_size]
+
+        explicit_match = re.search(r"\bsize\s*([a-z0-9]+)\b", normalized_text)
+        if explicit_match:
+            normalized_size = self._normalize_size_token(explicit_match.group(1))
+            if normalized_size in option_map:
+                return option_map[normalized_size]
+
+        for normalized_size, option in option_map.items():
+            if len(normalized_size) <= 4 and f" {normalized_size.lower()} " in text:
+                return option
+        return None
+
+    @staticmethod
+    def _format_size_options(options: list[MenuItemSizeOption]) -> str:
+        names = [str(option.size_name).strip() for option in options if str(option.size_name).strip()]
+        return ", ".join(names[:8])
+
+    @staticmethod
+    def _clear_pending_size(state: SessionState) -> None:
+        state.pending_size_item_id = None
+        state.pending_size_item_name = None
+        state.pending_size_quantity = 1
+        state.pending_size_options.clear()
 
     async def start_session(self) -> ConversationResponse:
         session_id = f"SES-{uuid4().hex[:10]}"
@@ -323,6 +418,10 @@ class ConversationEngine:
             state = self.sessions.setdefault(session_id, SessionState(session_id=session_id))
             self._touch_state(state)
             state.cart.clear()
+            state.cart_unit_price_by_item.clear()
+            state.cart_size_by_item.clear()
+            state.cart_size_id_by_item.clear()
+            self._clear_pending_size(state)
             state.history.clear()
             state.awaiting_confirmation = False
 
@@ -351,14 +450,87 @@ class ConversationEngine:
         normalized_raw = normalize_text(transcript)
         normalized = _apply_stt_aliases(normalized_raw)
 
-        if state.cart and contains_any(normalized, RESET_KEYWORDS):
+        if (state.cart or state.pending_size_item_id) and contains_any(normalized, RESET_KEYWORDS):
             state.cart.clear()
+            state.cart_unit_price_by_item.clear()
+            state.cart_size_by_item.clear()
+            state.cart_size_id_by_item.clear()
+            self._clear_pending_size(state)
             state.awaiting_confirmation = False
             return await self._build_response(
                 session_id,
                 Decision(
                     scene="reset",
                     reply_seed="Mình đã xoá giỏ hàng cũ rồi. Bạn muốn mình gợi ý món nào tiếp không?",
+                ),
+                menu,
+            )
+
+        if state.pending_size_item_id:
+            pending_item_id = state.pending_size_item_id
+            pending_item_name = state.pending_size_item_name or "món đang chọn"
+            pending_quantity = max(1, int(state.pending_size_quantity or 1))
+            if contains_any(normalized, REMOVE_KEYWORDS):
+                self._clear_pending_size(state)
+                return await self._build_response(
+                    session_id,
+                    Decision(
+                        scene="remove_item",
+                        reply_seed=f"Mình đã bỏ yêu cầu thêm {pending_item_name}. Bạn muốn chọn món khác không?",
+                    ),
+                    menu,
+                )
+            options = await self._get_item_size_options(pending_item_id)
+            selected = self._find_size_in_text(normalized, options)
+            if selected is not None:
+                state.cart[pending_item_id] = state.cart.get(pending_item_id, 0) + pending_quantity
+                state.cart_unit_price_by_item[pending_item_id] = selected.price
+                state.cart_size_by_item[pending_item_id] = selected.size_name
+                if selected.size_id is not None:
+                    state.cart_size_id_by_item[pending_item_id] = int(selected.size_id)
+                self._clear_pending_size(state)
+                state.awaiting_confirmation = contains_any(normalized, CHECKOUT_KEYWORDS)
+                scene = "ask_confirmation" if state.awaiting_confirmation else "cart_updated"
+                seed = (
+                    f"Mình đã thêm {pending_quantity} {pending_item_name} size {selected.size_name} vào giỏ hàng."
+                    if not state.awaiting_confirmation
+                    else (
+                        f"Mình đã thêm {pending_quantity} {pending_item_name} size {selected.size_name}. "
+                        "Mình đọc lại giỏ hàng để bạn xác nhận nhé."
+                    )
+                )
+                return await self._build_response(
+                    session_id,
+                    Decision(
+                        scene=scene,
+                        reply_seed=seed,
+                        needs_confirmation=state.awaiting_confirmation,
+                        recommended_item_ids=[pending_item_id],
+                    ),
+                    menu,
+                )
+
+            fallback_options = options
+            if not fallback_options and state.pending_size_options:
+                fallback_options = [
+                    MenuItemSizeOption(
+                        item_id=pending_item_id,
+                        size_name=size_name,
+                        price=Decimal("0"),
+                        is_default=False,
+                    )
+                    for size_name in state.pending_size_options
+                ]
+            options_text = self._format_size_options(fallback_options) or "S, M, L"
+            return await self._build_response(
+                session_id,
+                Decision(
+                    scene="clarify_size",
+                    reply_seed=(
+                        f"Món {pending_item_name} có các size: {options_text}. "
+                        "Bạn chọn size nào để mình thêm vào giỏ?"
+                    ),
+                    recommended_item_ids=[pending_item_id],
                 ),
                 menu,
             )
@@ -400,17 +572,57 @@ class ConversationEngine:
                 )
 
             if state.awaiting_confirmation:
+                for item_id, quantity in list(state.cart.items()):
+                    if item_id in state.cart_size_by_item:
+                        continue
+                    size_options = await self._get_item_size_options(item_id)
+                    if len(size_options) > 1:
+                        menu_item = next((item for item in menu if item.item_id == item_id), None)
+                        item_name = menu_item.name if menu_item is not None else "món đã chọn"
+                        self._clear_pending_size(state)
+                        state.pending_size_item_id = item_id
+                        state.pending_size_item_name = item_name
+                        state.pending_size_quantity = quantity
+                        state.pending_size_options = [opt.size_name for opt in size_options]
+                        options_text = self._format_size_options(size_options)
+                        return await self._build_response(
+                            session_id,
+                            Decision(
+                                scene="clarify_size",
+                                reply_seed=(
+                                    f"Món {item_name} có nhiều size: {options_text}. "
+                                    "Bạn chọn size trước rồi mình mới lên đơn nhé."
+                                ),
+                                recommended_item_ids=[item_id],
+                            ),
+                            menu,
+                        )
+                    if len(size_options) == 1:
+                        state.cart_unit_price_by_item[item_id] = size_options[0].price
+                        state.cart_size_by_item[item_id] = size_options[0].size_name
+                        if size_options[0].size_id is not None:
+                            state.cart_size_id_by_item[item_id] = int(size_options[0].size_id)
+
                 order = await self.core_client.create_order(
                     CreateOrderRequest(
                         session_id=session_id,
                         customer_text=transcript,
                         items=[
-                            CreateOrderLineItem(item_id=item_id, quantity=quantity)
+                            CreateOrderLineItem(
+                                item_id=item_id,
+                                quantity=quantity,
+                                size_name=state.cart_size_by_item.get(item_id),
+                                size_id=state.cart_size_id_by_item.get(item_id),
+                            )
                             for item_id, quantity in state.cart.items()
                         ],
                     )
                 )
                 state.cart.clear()
+                state.cart_unit_price_by_item.clear()
+                state.cart_size_by_item.clear()
+                state.cart_size_id_by_item.clear()
+                self._clear_pending_size(state)
                 state.awaiting_confirmation = False
                 return await self._build_response(
                     session_id,
@@ -419,6 +631,13 @@ class ConversationEngine:
                         reply_seed=f"Đã xong. Mình đã lên đơn thành công với mã {order.order_id}. Cảm ơn bạn nhé.",
                         order_created=True,
                         order_id=order.order_id,
+                        payment_status=order.payment_status,
+                        payment_qr_content=order.payment_qr_content,
+                        payment_qr_image_url=order.payment_qr_image_url,
+                        payment_amount=order.payment_amount,
+                        payment_expires_at=order.payment_expires_at,
+                        sync_error_code=order.sync_error_code,
+                        sync_error_detail=order.sync_error_detail,
                     ),
                     menu,
                 )
@@ -530,9 +749,49 @@ class ConversationEngine:
         if segment_matches:
             state.awaiting_confirmation = contains_any(normalized, CHECKOUT_KEYWORDS)
             for item, quantity in segment_matches:
+                size_options = await self._get_item_size_options(item.item_id)
+                selected_size = self._find_size_in_text(normalized, size_options)
+                if len(size_options) > 1 and selected_size is None:
+                    self._clear_pending_size(state)
+                    state.pending_size_item_id = item.item_id
+                    state.pending_size_item_name = item.name
+                    state.pending_size_quantity = quantity
+                    state.pending_size_options = [opt.size_name for opt in size_options]
+                    options_text = self._format_size_options(size_options)
+                    return await self._build_response(
+                        session_id,
+                        Decision(
+                            scene="clarify_size",
+                            reply_seed=(
+                                f"Món {item.name} có nhiều size: {options_text}. "
+                                "Bạn chọn size nào rồi mình mới thêm vào giỏ nhé."
+                            ),
+                            recommended_item_ids=[item.item_id],
+                        ),
+                        menu,
+                    )
+                if selected_size is not None:
+                    state.cart_unit_price_by_item[item.item_id] = selected_size.price
+                    state.cart_size_by_item[item.item_id] = selected_size.size_name
+                    if selected_size.size_id is not None:
+                        state.cart_size_id_by_item[item.item_id] = int(selected_size.size_id)
+                elif len(size_options) == 1:
+                    state.cart_unit_price_by_item[item.item_id] = size_options[0].price
+                    state.cart_size_by_item[item.item_id] = size_options[0].size_name
+                    if size_options[0].size_id is not None:
+                        state.cart_size_id_by_item[item.item_id] = int(size_options[0].size_id)
+
+            for item, quantity in segment_matches:
                 state.cart[item.item_id] = state.cart.get(item.item_id, 0) + quantity
 
-            added_summary = ", ".join(f"{quantity} {item.name}" for item, quantity in segment_matches)
+            added_summary = ", ".join(
+                (
+                    f"{quantity} {item.name} size {state.cart_size_by_item[item.item_id]}"
+                    if state.cart_size_by_item.get(item.item_id)
+                    else f"{quantity} {item.name}"
+                )
+                for item, quantity in segment_matches
+            )
             scene = "ask_confirmation" if state.awaiting_confirmation else "cart_updated"
             seed = (
                 f"Mình đã thêm {added_summary} vào giỏ hàng."
@@ -577,13 +836,53 @@ class ConversationEngine:
                 # Single high-confidence match or one clearly dominates -> auto-add
                 item = best_match
                 quantity = extract_quantity(normalized, item_name=normalize_text(item.name))
+                size_options = await self._get_item_size_options(item.item_id)
+                selected_size = self._find_size_in_text(normalized, size_options)
+                if len(size_options) > 1 and selected_size is None:
+                    self._clear_pending_size(state)
+                    state.pending_size_item_id = item.item_id
+                    state.pending_size_item_name = item.name
+                    state.pending_size_quantity = quantity
+                    state.pending_size_options = [opt.size_name for opt in size_options]
+                    options_text = self._format_size_options(size_options)
+                    return await self._build_response(
+                        session_id,
+                        Decision(
+                            scene="clarify_size",
+                            reply_seed=(
+                                f"Món {item.name} có các size: {options_text}. "
+                                "Bạn chọn size nào để mình thêm vào giỏ?"
+                            ),
+                            recommended_item_ids=[item.item_id],
+                        ),
+                        menu,
+                    )
+
                 state.cart[item.item_id] = state.cart.get(item.item_id, 0) + quantity
+                if selected_size is not None:
+                    state.cart_unit_price_by_item[item.item_id] = selected_size.price
+                    state.cart_size_by_item[item.item_id] = selected_size.size_name
+                    if selected_size.size_id is not None:
+                        state.cart_size_id_by_item[item.item_id] = int(selected_size.size_id)
+                elif len(size_options) == 1:
+                    state.cart_unit_price_by_item[item.item_id] = size_options[0].price
+                    state.cart_size_by_item[item.item_id] = size_options[0].size_name
+                    if size_options[0].size_id is not None:
+                        state.cart_size_id_by_item[item.item_id] = int(size_options[0].size_id)
                 state.awaiting_confirmation = contains_any(normalized, CHECKOUT_KEYWORDS)
                 scene = "ask_confirmation" if state.awaiting_confirmation else "cart_updated"
                 seed = (
-                    f"Mình đã thêm {quantity} {item.name} vào giỏ hàng."
+                    (
+                        f"Mình đã thêm {quantity} {item.name} size {state.cart_size_by_item[item.item_id]} vào giỏ hàng."
+                        if state.cart_size_by_item.get(item.item_id)
+                        else f"Mình đã thêm {quantity} {item.name} vào giỏ hàng."
+                    )
                     if not state.awaiting_confirmation
-                    else f"Mình đã thêm {quantity} {item.name}. Mình đọc lại giỏ hàng để bạn xác nhận nhé."
+                    else (
+                        f"Mình đã thêm {quantity} {item.name}"
+                        f"{' size ' + state.cart_size_by_item[item.item_id] if state.cart_size_by_item.get(item.item_id) else ''}. "
+                        "Mình đọc lại giỏ hàng để bạn xác nhận nhé."
+                    )
                 )
                 return await self._build_response(
                     session_id,
@@ -795,6 +1094,9 @@ class ConversationEngine:
                     state.cart[item.item_id] = remaining
                 else:
                     del state.cart[item.item_id]
+                    state.cart_unit_price_by_item.pop(item.item_id, None)
+                    state.cart_size_by_item.pop(item.item_id, None)
+                    state.cart_size_id_by_item.pop(item.item_id, None)
                 state.awaiting_confirmation = False
                 if quantity_to_remove > 1:
                     return f"{quantity_to_remove} {item.name}"
@@ -811,6 +1113,9 @@ class ConversationEngine:
                 state.cart[last_item_id] = remaining
             else:
                 del state.cart[last_item_id]
+                state.cart_unit_price_by_item.pop(last_item_id, None)
+                state.cart_size_by_item.pop(last_item_id, None)
+                state.cart_size_id_by_item.pop(last_item_id, None)
             state.awaiting_confirmation = False
             if quantity_to_remove > 1:
                 return f"{quantity_to_remove} {item_name}"
@@ -825,10 +1130,16 @@ class ConversationEngine:
             if menu_item is None:
                 removed.append(item_id.replace("-", " "))
                 del state.cart[item_id]
+                state.cart_unit_price_by_item.pop(item_id, None)
+                state.cart_size_by_item.pop(item_id, None)
+                state.cart_size_id_by_item.pop(item_id, None)
                 continue
             if not menu_item.available:
                 removed.append(menu_item.name)
                 del state.cart[item_id]
+                state.cart_unit_price_by_item.pop(item_id, None)
+                state.cart_size_by_item.pop(item_id, None)
+                state.cart_size_id_by_item.pop(item_id, None)
         if removed:
             state.awaiting_confirmation = False
         return removed
@@ -932,6 +1243,13 @@ class ConversationEngine:
             "action_hints": list(response.action_hints),
             "order_created": response.order_created,
             "order_id": response.order_id,
+            "payment_status": response.payment_status,
+            "payment_qr_content": response.payment_qr_content,
+            "payment_qr_image_url": response.payment_qr_image_url,
+            "payment_amount": str(response.payment_amount) if response.payment_amount is not None else None,
+            "payment_expires_at": response.payment_expires_at.isoformat() if response.payment_expires_at else None,
+            "sync_error_code": response.sync_error_code,
+            "sync_error_detail": response.sync_error_detail,
         }
 
         # Stream audio with the shared service so we keep runtime caches warm.
@@ -1606,6 +1924,7 @@ class ConversationEngine:
             "order_created": "excited",
             "recommendation": "focused",
             "clarify_item": "focused",
+            "clarify_size": "focused",
             "remove_item": "neutral",
             "reset": "neutral",
             "fallback": "neutral",
@@ -1623,6 +1942,7 @@ class ConversationEngine:
             "order_created": ["confettiBurst", "pixelHeartStorm", "peacePose"],
             "recommendation": ["scan", "lightPulse", "animeStarTrail"],
             "clarify_item": ["scan"],
+            "clarify_size": ["scan", "nodYes"],
             "remove_item": ["nodYes"],
             "reset": ["bowElegant"],
             "fallback": ["blushShy"],
@@ -1640,7 +1960,13 @@ class ConversationEngine:
         state = self.sessions[session_id]
         if menu is None:
             menu = await self._get_menu()
-        cart = build_cart_items(state.cart, menu)
+        cart = build_cart_items(
+            state.cart,
+            menu,
+            cart_unit_price_by_item=state.cart_unit_price_by_item,
+            cart_size_by_item=state.cart_size_by_item,
+            cart_size_id_by_item=state.cart_size_id_by_item,
+        )
         seed_text = ensure_frontend_safe_reply(decision.scene, decision.reply_seed)
         prompt_payload = {
             "scene": decision.scene,
@@ -1772,6 +2098,13 @@ class ConversationEngine:
             needs_confirmation=decision.needs_confirmation,
             order_created=decision.order_created,
             order_id=decision.order_id,
+            payment_status=decision.payment_status,
+            payment_qr_content=decision.payment_qr_content,
+            payment_qr_image_url=decision.payment_qr_image_url,
+            payment_amount=decision.payment_amount,
+            payment_expires_at=decision.payment_expires_at,
+            sync_error_code=decision.sync_error_code,
+            sync_error_detail=decision.sync_error_detail,
             voice_style=voice_style,
             scene=decision.scene,
             emotion_hint=self._map_scene_to_emotion(decision.scene),
@@ -1779,20 +2112,36 @@ class ConversationEngine:
         )
 
 
-def build_cart_items(cart: dict[str, int], menu: list[MenuItem]) -> list[CartItem]:
+def build_cart_items(
+    cart: dict[str, int],
+    menu: list[MenuItem],
+    *,
+    cart_unit_price_by_item: dict[str, Decimal] | None = None,
+    cart_size_by_item: dict[str, str] | None = None,
+    cart_size_id_by_item: dict[str, int] | None = None,
+) -> list[CartItem]:
     menu_map = {item.item_id: item for item in menu}
+    unit_price_by_item = cart_unit_price_by_item or {}
+    size_by_item = cart_size_by_item or {}
+    size_id_by_item = cart_size_id_by_item or {}
     cart_items: list[CartItem] = []
     for item_id, quantity in cart.items():
         if item_id not in menu_map:
             continue
         item = menu_map[item_id]
-        line_total = item.price * quantity
+        unit_price = unit_price_by_item.get(item_id, item.price)
+        line_total = unit_price * quantity
+        size_name = size_by_item.get(item_id)
+        size_id = size_id_by_item.get(item_id)
+        display_name = f"{item.name} ({size_name})" if size_name else item.name
         cart_items.append(
             CartItem(
                 item_id=item.item_id,
-                name=item.name,
+                name=display_name,
                 quantity=quantity,
-                unit_price=item.price,
+                size_name=size_name,
+                size_id=size_id,
+                unit_price=unit_price,
                 line_total=line_total,
             )
         )
@@ -2181,6 +2530,7 @@ _SAFE_SCENE_REPLIES = {
     "order_created": "Đơn của bạn đã tạo thành công. Cảm ơn bạn.",
     "recommendation": "Mình có vài gợi ý để uống. Bạn muốn thử món nào?",
     "clarify_item": "Mình thấy có vài món gần giống. Bạn muốn món nào?",
+    "clarify_size": "Món này có nhiều size. Bạn chọn size S, M, L hoặc XL giúp mình nhé.",
     "remove_item": "Mình đã cập nhật giỏ hàng theo yêu cầu.",
     "reset": "Mình đã làm mới giỏ hàng. Bạn muốn gọi món nào tiếp?",
     "fallback": "Mình chưa nghe rõ. Bạn nói tên món hoặc yêu cầu ngắn gọn giúp mình nhé.",
@@ -2291,6 +2641,8 @@ def render_fallback_reply(payload: dict[str, object]) -> str:
             names = ", ".join(item["name"] for item in recommended_items[:3])
             return repair_mojibake_text(f"Mình thấy có mấy món gần giống: {names}. Bạn muốn gọi món nào?")
         return repair_mojibake_text(f"{seed} Bạn nói rõ tên món giúp mình nhé.")
+    if scene == "clarify_size":
+        return repair_mojibake_text(f"{seed} Ví dụ: size M hoặc size L.")
     if scene == "recommendation":
         if recommended_items:
             lines = []
@@ -2305,11 +2657,17 @@ def render_fallback_reply(payload: dict[str, object]) -> str:
         return repair_mojibake_text(f"{seed} Bạn muốn mình gợi ý thêm không?")
     if scene == "ask_confirmation":
         if cart_summary:
+            def _to_int_amount(value: object) -> int:
+                try:
+                    return int(Decimal(str(value)))
+                except Exception:
+                    return 0
+
             details = ", ".join(
-                f"{item['quantity']} {item['name']} ({item['line_total']}d)"
+                f"{item['quantity']} {item['name']} ({_to_int_amount(item.get('line_total'))}d)"
                 for item in cart_summary
             )
-            total = sum(int(item['line_total']) for item in cart_summary)
+            total = sum(_to_int_amount(item.get("line_total")) for item in cart_summary)
             return repair_mojibake_text(
                 f"Mình đọc lại giỏ hàng nhé: {details}. "
                 f"Tổng cộng {total:,}đ. "

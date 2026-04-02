@@ -10,9 +10,12 @@ import {
   getMicAudioConstraints,
   getMicNoiseFilterLevelFromStrength,
   getMicNoiseFilterStrength,
+  getProductDefaultSizeName,
+  getProductSizeApiUrl,
   getRobotScalePercent,
   getMenuApiUrl,
   getOrdersApiUrl,
+  resolveBrowserSafeMenuApiUrl,
   normalizeEnvValue,
   saveAdminEnvConfig,
   setCameraPreviewVisible as persistCameraPreviewVisible,
@@ -39,6 +42,12 @@ type NoticeTone = 'info' | 'success' | 'warning' | 'error'
 type Notice = {
   tone: NoticeTone
   text: string
+}
+
+type EnvSyncState = {
+  status: 'idle' | 'saving' | 'ok' | 'error'
+  detail: string
+  apiBase: string
 }
 
 type VieneuRealtimeProfile = {
@@ -162,6 +171,7 @@ const ESSENTIAL_ENV_KEYS = new Set([
   'VITE_CORE_API_URL',
   'VITE_AI_API_URL',
   'VITE_MENU_API_URL',
+  'VITE_PRODUCT_SIZE_API_URL',
   'VITE_ORDERS_API_URL',
   'AI_MODEL',
   'CORE_BACKEND_URL',
@@ -171,6 +181,20 @@ const ESSENTIAL_ENV_KEYS = new Set([
   'VOICE_LANG',
   'SESSION_TIMEOUT_MINUTES',
   'VOICE_LISTEN_MODE',
+  'POS_API_BASE_URL',
+  'POS_API_TOKEN',
+  'POS_API_USERNAME',
+  'POS_API_PASSWORD',
+  'POS_AUTH_LOGIN_URL',
+  'POS_AUTH_REFRESH_URL',
+  'POS_STORE_ID',
+  'POS_ORDER_TYPE',
+  'POS_PAYMENT_METHOD',
+  'POS_TAG_NUMBER',
+  'POS_MENU_SOURCE_MODE',
+  'POS_MENU_SOURCE_URL',
+  'POS_SIZE_SOURCE_URL',
+  'POS_DEFAULT_SIZE_NAME',
 ])
 
 const VIENEU_CODEC_REPO_DISTILL = 'neuphonic/distill-neucodec'
@@ -181,6 +205,20 @@ const ENV_TEMPLATE: EnvField[] = [
   { key: 'AI_API_KEY', label: 'AI API Key', value: '' },
   { key: 'AI_MODEL', label: 'AI Model', value: 'gpt-4o-mini' },
   { key: 'CORE_BACKEND_URL', label: 'Core Backend URL', value: getCoreApiUrl() },
+  { key: 'POS_API_BASE_URL', label: 'POS API Base URL', value: 'http://cnxvn.ddns.net:8080/api/v1' },
+  { key: 'POS_API_TOKEN', label: 'POS API Token (Bearer)', value: '' },
+  { key: 'POS_API_USERNAME', label: 'POS API Username', value: '' },
+  { key: 'POS_API_PASSWORD', label: 'POS API Password', value: '' },
+  { key: 'POS_AUTH_LOGIN_URL', label: 'POS Auth Login URL', value: 'http://cnxvn.ddns.net:8080/api/v1/auth/login' },
+  { key: 'POS_AUTH_REFRESH_URL', label: 'POS Auth Refresh URL', value: 'http://cnxvn.ddns.net:8080/api/v1/auth/refresh' },
+  { key: 'POS_STORE_ID', label: 'POS Store ID', value: '9' },
+  { key: 'POS_ORDER_TYPE', label: 'POS Order Type', value: 'POS' },
+  { key: 'POS_PAYMENT_METHOD', label: 'POS Payment Method', value: 'ONLINE_PAYMENT' },
+  { key: 'POS_TAG_NUMBER', label: 'POS Tag Number', value: '1' },
+  { key: 'POS_MENU_SOURCE_MODE', label: 'POS Menu Source Mode', value: 'remote_strict' },
+  { key: 'POS_MENU_SOURCE_URL', label: 'POS Menu Source URL', value: 'http://cnxvn.ddns.net:8080/api/v1/product-availability/filter?storeId=9&page=0&size=1000&sort=' },
+  { key: 'POS_SIZE_SOURCE_URL', label: 'POS Size Source URL', value: 'http://cnxvn.ddns.net:8080/api/v1/product-size/filter?productId={productId}&page=0&size=10&sort=' },
+  { key: 'POS_DEFAULT_SIZE_NAME', label: 'POS Default Size Name', value: 'M' },
   { key: 'LLM_MODE', label: 'LLM Mode', value: 'bridge_only' },
   { key: 'BRIDGE_BASE_URL', label: 'Bridge Base URL', value: 'http://127.0.0.1:1122' },
   { key: 'BRIDGE_TIMEOUT_SECONDS', label: 'Bridge Timeout Seconds', value: '8' },
@@ -231,6 +269,8 @@ const ENV_TEMPLATE: EnvField[] = [
   { key: 'VITE_CORE_API_URL', label: 'VITE Core URL', value: getCoreApiUrl() },
   { key: 'VITE_AI_API_URL', label: 'VITE AI URL', value: getAiApiUrl() },
   { key: 'VITE_MENU_API_URL', label: 'VITE Menu API URL', value: getMenuApiUrl() },
+  { key: 'VITE_PRODUCT_SIZE_API_URL', label: 'VITE Product Size API URL', value: getProductSizeApiUrl() },
+  { key: 'VITE_PRODUCT_DEFAULT_SIZE_NAME', label: 'VITE Product Default Size Name', value: getProductDefaultSizeName() },
   { key: 'VITE_ORDERS_API_URL', label: 'VITE Orders API URL', value: getOrdersApiUrl() },
 ]
 
@@ -304,6 +344,11 @@ const VOICE_LISTEN_MODE_OPTIONS: Array<{
       en: 'Turn-by-turn: user speaks -> robot replies -> microphone opens again for next turn.',
     },
   },
+]
+
+const POS_MENU_SOURCE_MODE_OPTIONS = [
+  { value: 'remote_strict', label: 'Remote Strict (Live POS)' },
+  { value: 'local', label: 'Local CSV (Offline)' },
 ]
 
 const CPU_DEPENDENCY_LABELS: Record<string, string> = {
@@ -427,6 +472,56 @@ function getAiApiCandidates(preferredUrl: string): string[] {
     unique.add(url)
   }
   return Array.from(unique)
+}
+
+function isTruthyValue(value: string): boolean {
+  return String(value || '').trim().length > 0
+}
+
+function validateLivePosConfig(fields: EnvField[]): string | null {
+  const get = (key: string, fallback = '') => getFieldValue(fields, key, fallback).trim()
+  const mode = get('POS_MENU_SOURCE_MODE', 'remote_strict').toLowerCase()
+  if (mode !== 'remote_strict') {
+    return null
+  }
+
+  const requiredFields = [
+    'POS_API_BASE_URL',
+    'POS_MENU_SOURCE_URL',
+    'POS_SIZE_SOURCE_URL',
+    'POS_ORDER_TYPE',
+    'POS_PAYMENT_METHOD',
+    'POS_TAG_NUMBER',
+  ]
+  const missing = requiredFields.filter((key) => !isTruthyValue(get(key)))
+  const hasToken = isTruthyValue(get('POS_API_TOKEN'))
+  const hasCredentialLogin =
+    isTruthyValue(get('POS_API_USERNAME')) &&
+    isTruthyValue(get('POS_API_PASSWORD')) &&
+    isTruthyValue(get('POS_AUTH_LOGIN_URL'))
+  if (!hasToken && !hasCredentialLogin) {
+    missing.push('POS_API_TOKEN or POS_API_USERNAME/POS_API_PASSWORD/POS_AUTH_LOGIN_URL')
+  }
+  if (missing.length > 0) {
+    return `Live POS mode missing required config: ${missing.join(', ')}`
+  }
+  return null
+}
+
+function normalizeFieldsForPersistence(fields: EnvField[]): EnvField[] {
+  const mode = getFieldValue(fields, 'POS_MENU_SOURCE_MODE', 'remote_strict').trim().toLowerCase()
+  const coreApi = normalizeApiBaseUrl(getFieldValue(fields, 'VITE_CORE_API_URL', getCoreApiUrl()))
+  const canonicalMenuUrl = `${coreApi}/menu`
+  return fields.map((field) => {
+    if (field.key === 'POS_MENU_SOURCE_MODE') {
+      const nextMode = mode === 'local' ? 'local' : 'remote_strict'
+      return field.value === nextMode ? field : { ...field, value: nextMode }
+    }
+    if (field.key === 'VITE_MENU_API_URL' && mode === 'remote_strict' && canonicalMenuUrl) {
+      return field.value === canonicalMenuUrl ? field : { ...field, value: canonicalMenuUrl }
+    }
+    return field
+  })
 }
 
 function formatSyncTime(updatedAt: number | null, uiLanguage: UiLanguage): string {
@@ -565,6 +660,11 @@ export default function AdminPage() {
   const [showAdvancedVoiceTools, setShowAdvancedVoiceTools] = useState(false)
   const [copied, setCopied] = useState(false)
   const [notice, setNotice] = useState<Notice | null>(null)
+  const [envSyncState, setEnvSyncState] = useState<EnvSyncState>({
+    status: 'idle',
+    detail: '',
+    apiBase: '',
+  })
   const [lastSyncAt, setLastSyncAt] = useState<number | null>(() => getAdminConfigUpdatedAt())
   const [micState, setMicState] = useState<'idle' | 'checking' | 'ok' | 'error'>('idle')
   const [micDetail, setMicDetail] = useState(() =>
@@ -649,6 +749,7 @@ export default function AdminPage() {
   const [ttsTestStatus, setTtsTestStatus] = useState<'idle' | 'playing' | 'error'>('idle')
   const [ttsApplyStatus, setTtsApplyStatus] = useState<TtsApplyStatus>('idle')
   const hasHydratedEnvRef = useRef(false)
+  const hasLoadedEnvFileRef = useRef(false)
   const envAutoSaveTimerRef = useRef<number | null>(null)
   const speechLang = uiLanguage === 'vi' ? 'vi-VN' : 'en-US'
   const t = useCallback(
@@ -665,16 +766,29 @@ export default function AdminPage() {
   const currentCoreApiUrl = envFieldMap.VITE_CORE_API_URL || getCoreApiUrl()
   const currentAiApiUrl = envFieldMap.VITE_AI_API_URL || getAiApiUrl()
   const currentMenuApiUrl = envFieldMap.VITE_MENU_API_URL || getMenuApiUrl()
+  const browserSafeMenuApiUrl = resolveBrowserSafeMenuApiUrl(currentMenuApiUrl, currentCoreApiUrl)
   const currentOrdersApiUrl = envFieldMap.VITE_ORDERS_API_URL || getOrdersApiUrl()
+  const livePosMode = (envFieldMap.POS_MENU_SOURCE_MODE || 'remote_strict').trim().toLowerCase()
+  const livePosEnabled = livePosMode === 'remote_strict'
+  const livePosAuthConfigured = Boolean(
+    (envFieldMap.POS_API_TOKEN || '').trim() ||
+      (
+        (envFieldMap.POS_API_USERNAME || '').trim() &&
+        (envFieldMap.POS_API_PASSWORD || '').trim() &&
+        (envFieldMap.POS_AUTH_LOGIN_URL || '').trim()
+      ),
+  )
+  const livePosValidationError = useMemo(() => validateLivePosConfig(envFields), [envFields])
 
   const serviceTargets = useMemo(
     () => [
       { name: 'Core Backend', url: `${currentCoreApiUrl}/health` },
       { name: 'AI Backend', url: `${currentAiApiUrl}/health` },
-      { name: 'Menu API', url: currentMenuApiUrl },
+      { name: 'Menu API', url: browserSafeMenuApiUrl },
       { name: 'Orders API', url: `${currentOrdersApiUrl}?limit=1` },
+      { name: 'POS Contract', url: `${currentCoreApiUrl}/pos/contract-check` },
     ],
-    [currentAiApiUrl, currentCoreApiUrl, currentMenuApiUrl, currentOrdersApiUrl],
+    [browserSafeMenuApiUrl, currentAiApiUrl, currentCoreApiUrl, currentOrdersApiUrl],
   )
 
   const [services, setServices] = useState<ServiceStatus[]>(
@@ -864,11 +978,24 @@ export default function AdminPage() {
       hasHydratedEnvRef.current = true
       return
     }
+    if (livePosValidationError) {
+      return
+    }
     if (envAutoSaveTimerRef.current) {
       window.clearTimeout(envAutoSaveTimerRef.current)
     }
     envAutoSaveTimerRef.current = window.setTimeout(() => {
-      saveAdminEnvConfig(toEnvPayload(envFields))
+      const normalizedFields = normalizeFieldsForPersistence(envFields)
+      const changed =
+        normalizedFields.length !== envFields.length ||
+        normalizedFields.some((field, index) => {
+          const current = envFields[index]
+          return !current || current.key !== field.key || current.value !== field.value
+        })
+      if (changed) {
+        setEnvFields(normalizedFields)
+      }
+      saveAdminEnvConfig(toEnvPayload(normalizedFields))
       setLastSyncAt(getAdminConfigUpdatedAt())
       envAutoSaveTimerRef.current = null
     }, 260)
@@ -879,7 +1006,7 @@ export default function AdminPage() {
         envAutoSaveTimerRef.current = null
       }
     }
-  }, [envFields])
+  }, [envFields, livePosValidationError])
 
   useEffect(() => {
     setServices((current) =>
@@ -939,6 +1066,33 @@ export default function AdminPage() {
           </select>
         )
       }
+      if (field.key === 'POS_MENU_SOURCE_MODE') {
+        const modeValue = field.value === 'local' ? 'local' : 'remote_strict'
+        return (
+          <select
+            value={modeValue}
+            onChange={(event) => {
+              const nextMode = event.target.value === 'local' ? 'local' : 'remote_strict'
+              setFieldValue('POS_MENU_SOURCE_MODE', nextMode)
+              if (nextMode === 'remote_strict') {
+                const normalizedCoreUrl = normalizeApiBaseUrl(
+                  getFieldValue(envFields, 'VITE_CORE_API_URL', getCoreApiUrl()),
+                )
+                if (normalizedCoreUrl) {
+                  setFieldValue('VITE_MENU_API_URL', `${normalizedCoreUrl}/menu`)
+                }
+              }
+            }}
+            onBlur={onFieldBlur}
+          >
+            {POS_MENU_SOURCE_MODE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        )
+      }
       if (field.key === 'STT_MODEL') {
         const hasKnownOption = STT_MODEL_OPTIONS.some((option) => option.value === field.value)
         return (
@@ -970,7 +1124,7 @@ export default function AdminPage() {
         />
       )
     },
-    [setFieldValue, uiLanguage],
+    [envFields, setFieldValue, uiLanguage],
   )
 
   const applyVieneuRealtimeProfile = useCallback(
@@ -1047,14 +1201,52 @@ export default function AdminPage() {
     try {
       const response = await fetch(service.url, { method: 'GET' })
       const latencyMs = Math.round(performance.now() - startedAt)
+      let responsePayload: unknown = null
+      let responseMessage = ''
+      try {
+        responsePayload = await response.json()
+      } catch {
+        responsePayload = null
+      }
+      if (
+        responsePayload &&
+        typeof responsePayload === 'object' &&
+        'ok' in responsePayload &&
+        (responsePayload as { ok?: boolean }).ok === false
+      ) {
+        const detail = (responsePayload as { detail?: string }).detail || ''
+        throw new Error(detail || 'contract-check-failed')
+      }
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`)
+        if (responsePayload && typeof responsePayload === 'object') {
+          const detailField = (responsePayload as { detail?: unknown }).detail
+          if (typeof detailField === 'string' && detailField.trim()) {
+            responseMessage = detailField.trim()
+          } else if (detailField && typeof detailField === 'object') {
+            const detailObj = detailField as { message?: string; checks?: unknown }
+            if (typeof detailObj.message === 'string' && detailObj.message.trim()) {
+              responseMessage = detailObj.message.trim()
+            } else if (detailObj.checks && typeof detailObj.checks === 'object') {
+              const checksText = Object.entries(detailObj.checks as Record<string, { detail?: string; ok?: boolean }>)
+                .filter(([, value]) => value?.ok === false)
+                .map(([key, value]) => `${key}: ${String(value?.detail || 'failed')}`)
+                .join(' | ')
+              responseMessage = checksText
+            }
+          }
+        }
+        throw new Error(responseMessage || `HTTP ${response.status}`)
       }
       return {
         ...service,
         status: 'ok',
         latencyMs,
-        detail: uiLanguage === 'vi' ? 'Online' : 'Online',
+        detail:
+          responsePayload && typeof responsePayload === 'object' && 'checks' in responsePayload
+            ? (uiLanguage === 'vi' ? 'Contract hợp lệ' : 'Contract valid')
+            : uiLanguage === 'vi'
+              ? 'Online'
+              : 'Online',
       }
     } catch (error) {
       const latencyMs = Math.round(performance.now() - startedAt)
@@ -1078,20 +1270,144 @@ export default function AdminPage() {
     setServices(checked)
   }, [checkService, services, uiLanguage])
 
+  const loadEnvFromFile = useCallback(async () => {
+    const keys = ENV_TEMPLATE.map((field) => field.key)
+    const candidates = getAiApiCandidates(currentAiApiUrl)
+    let lastError = ''
+
+    for (const apiBase of candidates) {
+      try {
+        const response = await fetch(`${apiBase}/config/env/load`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ keys }),
+        })
+        const payload = (await response.json().catch(() => null)) as
+          | { detail?: unknown; fields?: Record<string, string> }
+          | null
+        if (!response.ok) {
+          const detail = typeof payload?.detail === 'string' ? payload.detail.trim() : ''
+          throw new Error(detail || `HTTP ${response.status}`)
+        }
+        const loadedFields = payload?.fields && typeof payload.fields === 'object' ? payload.fields : {}
+        setEnvFields((current) => {
+          const nextFields = current.map((field) => {
+            if (!(field.key in loadedFields)) {
+              return field
+            }
+            const nextValue = normalizeEnvValue(field.key, String(loadedFields[field.key] ?? ''))
+            return nextValue === field.value ? field : { ...field, value: nextValue }
+          })
+          saveAdminEnvConfig(toEnvPayload(nextFields))
+          return nextFields
+        })
+        setLastSyncAt(getAdminConfigUpdatedAt())
+        setNotice({
+          tone: 'info',
+          text: t('Da nap cau hinh tu file .env', 'Loaded configuration from .env'),
+        })
+        return
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : 'unknown'
+      }
+    }
+
+    setNotice({
+      tone: 'warning',
+      text: t(
+        `Khong the nap .env tu backend: ${lastError || 'unknown error'}`,
+        `Cannot load .env from backend: ${lastError || 'unknown error'}`,
+      ),
+    })
+  }, [currentAiApiUrl, t])
+
+  useEffect(() => {
+    if (hasLoadedEnvFileRef.current) {
+      return
+    }
+    hasLoadedEnvFileRef.current = true
+    void loadEnvFromFile()
+  }, [loadEnvFromFile])
+
   const saveAndSyncConfig = useCallback(
-    (fields: EnvField[], successText: string) => {
-      saveAdminEnvConfig(toEnvPayload(fields))
+    async (fields: EnvField[], successText: string) => {
+      const validationError = validateLivePosConfig(fields)
+      if (validationError) {
+        setNotice({
+          tone: 'warning',
+          text: validationError,
+        })
+        return
+      }
+
+      const normalizedFields = normalizeFieldsForPersistence(fields)
+      const envPayload = toEnvPayload(normalizedFields)
+      saveAdminEnvConfig(envPayload)
+      setEnvFields(normalizedFields)
       setLastSyncAt(getAdminConfigUpdatedAt())
+
+      const preferredAiUrl = getFieldValue(normalizedFields, 'VITE_AI_API_URL', currentAiApiUrl)
+      const candidates = getAiApiCandidates(preferredAiUrl)
+      setEnvSyncState({
+        status: 'saving',
+        detail: t('Dang ghi file .env...', 'Persisting .env file...'),
+        apiBase: candidates[0] || '',
+      })
+
+      let syncedApiBase = ''
+      let syncErrorMessage = ''
+      for (const apiBase of candidates) {
+        try {
+          const response = await fetch(`${apiBase}/config/env/sync`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fields: envPayload }),
+          })
+          const payload = (await response.json().catch(() => null)) as
+            | { detail?: unknown; env_path?: string }
+            | null
+          if (!response.ok) {
+            const detail = typeof payload?.detail === 'string' ? payload.detail.trim() : ''
+            throw new Error(detail || `HTTP ${response.status}`)
+          }
+          syncedApiBase = apiBase
+          setEnvSyncState({
+            status: 'ok',
+            detail: t('Da ghi .env thanh cong.', '.env persisted successfully.'),
+            apiBase,
+          })
+          break
+        } catch (error) {
+          syncErrorMessage = error instanceof Error ? error.message : 'unknown'
+        }
+      }
+
+      if (!syncedApiBase) {
+        setEnvSyncState({
+          status: 'error',
+          detail: syncErrorMessage || t('Khong the ghi .env', 'Cannot persist .env'),
+          apiBase: '',
+        })
+        setNotice({
+          tone: 'warning',
+          text: t(
+            `Da dong bo index ngay, nhung chua ghi duoc .env: ${syncErrorMessage || 'unknown error'}`,
+            `Index synced immediately, but failed to persist .env: ${syncErrorMessage || 'unknown error'}`,
+          ),
+        })
+        return
+      }
+
       setNotice({
         tone: 'success',
-        text: successText,
+        text: `${successText} ${t(`(.env da ghi qua ${syncedApiBase})`, `(.env persisted via ${syncedApiBase})`)}`,
       })
     },
-    [],
+    [currentAiApiUrl, t],
   )
 
-  const handleSaveConfig = useCallback(() => {
-    saveAndSyncConfig(
+  const handleSaveConfig = useCallback(async () => {
+    await saveAndSyncConfig(
       envFields,
       t(
         'Ðã luu c?u hình. Trang kiosk index s? nh?n ngay.',
@@ -2108,7 +2424,7 @@ export default function AdminPage() {
         field.key in nextValues ? { ...field, value: nextValues[field.key] } : field,
       )
       setEnvFields(nextFields)
-      saveAndSyncConfig(
+      await saveAndSyncConfig(
         nextFields,
         t(
           `Ðã áp d?ng TTS vào ${successCount} backend và d?ng b? vào kiosk.`,
@@ -3066,8 +3382,14 @@ export default function AdminPage() {
                 </p>
               </div>
               <div className="admin-inline-actions">
-                <button className="admin-btn admin-btn--ghost" type="button" onClick={handleSaveConfig}>
+                <button className="admin-btn admin-btn--ghost" type="button" onClick={() => void handleSaveConfig()}>
                   {t('Luu và d?ng b?', 'Save And Sync')}
+                </button>
+                <button className="admin-btn admin-btn--ghost" type="button" onClick={() => void runHealthChecks()}>
+                  {t('Ki?m tra contract Live POS', 'Check Live POS Contract')}
+                </button>
+                <button className="admin-btn admin-btn--ghost" type="button" onClick={() => void loadEnvFromFile()}>
+                  {t('Nap lai .env', 'Reload .env')}
                 </button>
                 <button className="admin-btn" type="button" onClick={() => void handleCopyEnv()}>
                   {copied ? t('Ðã copy', 'Copied') : 'Copy .env'}
@@ -3078,6 +3400,39 @@ export default function AdminPage() {
             <p className="admin-service-card__detail">
               {t('L?n d?ng b? g?n nh?t', 'Last synced')}:{' '}
               {formatSyncTime(lastSyncAt, uiLanguage)}
+            </p>
+            <div className="admin-chip-list">
+              <p className={`admin-chip admin-chip--${livePosEnabled ? 'warning' : 'ok'}`}>
+                {livePosEnabled ? t('Live POS: Remote Strict', 'Live POS: Remote Strict') : t('Menu mode: Local', 'Menu mode: Local')}
+              </p>
+              <p className={`admin-chip admin-chip--${livePosAuthConfigured ? 'ok' : 'warning'}`}>
+                {livePosAuthConfigured ? t('Auth s?n sàng', 'Auth ready') : t('Auth chua d? c?u hình', 'Auth not configured')}
+              </p>
+              <p className={`admin-chip admin-chip--${envSyncState.status === 'ok' ? 'ok' : envSyncState.status === 'error' ? 'error' : 'warning'}`}>
+                {envSyncState.status === 'ok'
+                  ? t('ENV dã ghi', 'ENV persisted')
+                  : envSyncState.status === 'error'
+                    ? t('ENV ghi l?i', 'ENV persist failed')
+                    : envSyncState.status === 'saving'
+                      ? t('Dang ghi ENV', 'Persisting ENV')
+                      : t('ENV chua d?ng b?', 'ENV not synced yet')}
+              </p>
+            </div>
+            {envSyncState.detail ? (
+              <p className="admin-service-card__detail">
+                {envSyncState.apiBase
+                  ? `${envSyncState.detail} (${envSyncState.apiBase})`
+                  : envSyncState.detail}
+              </p>
+            ) : null}
+            {livePosValidationError ? (
+              <p className="admin-chip admin-chip--error">{livePosValidationError}</p>
+            ) : null}
+            <p className="admin-service-card__detail">
+              {t(
+                'Luu y: VITE Core/AI URL co the la local khi chay dev. Menu/gia/dat don van la live POS neu POS Menu Source Mode = Remote Strict.',
+                'Note: VITE Core/AI URLs can be local in dev mode. Menu/price/order are still live POS when POS Menu Source Mode = Remote Strict.',
+              )}
             </p>
 
             <div className="admin-fields-grid">

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -28,6 +28,14 @@ ORDER_HEADERS = [
     "items_json",
     "total_amount",
     "status",
+    "payment_provider",
+    "payment_status",
+    "payment_qr_content",
+    "payment_qr_image_url",
+    "payment_amount",
+    "payment_expires_at",
+    "sync_error_code",
+    "sync_error_detail",
 ]
 
 
@@ -145,6 +153,36 @@ class CsvOrderRepository:
             with self.csv_path.open("w", newline="", encoding="utf-8") as handle:
                 writer = csv.DictWriter(handle, fieldnames=ORDER_HEADERS)
                 writer.writeheader()
+        else:
+            self._ensure_order_schema()
+
+    def _ensure_order_schema(self) -> None:
+        with self.csv_path.open("r", newline="", encoding="utf-8-sig") as handle:
+            reader = csv.DictReader(handle)
+            fieldnames = [str(name).strip() for name in (reader.fieldnames or []) if name is not None]
+            rows: list[dict[str, str]] = []
+            for row in reader:
+                if not isinstance(row, dict):
+                    continue
+                normalized_row: dict[str, str] = {}
+                for key, value in row.items():
+                    if key is None:
+                        continue
+                    normalized_row[str(key).strip()] = "" if value is None else str(value)
+                if not normalized_row:
+                    continue
+                rows.append(normalized_row)
+
+        # Already newest schema.
+        if fieldnames == ORDER_HEADERS:
+            return
+
+        # Rewrite with canonical header while preserving known values.
+        with self.csv_path.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=ORDER_HEADERS)
+            writer.writeheader()
+            for row in rows:
+                writer.writerow({header: row.get(header, "") for header in ORDER_HEADERS})
 
     def create_order(self, record: OrderRecord) -> OrderRecord:
         items_json = json.dumps(
@@ -159,6 +197,14 @@ class CsvOrderRepository:
             "items_json": items_json,
             "total_amount": str(record.total_amount),
             "status": record.status,
+            "payment_provider": record.payment_provider or "",
+            "payment_status": record.payment_status or "",
+            "payment_qr_content": record.payment_qr_content or "",
+            "payment_qr_image_url": record.payment_qr_image_url or "",
+            "payment_amount": "" if record.payment_amount is None else str(record.payment_amount),
+            "payment_expires_at": "" if record.payment_expires_at is None else record.payment_expires_at.isoformat(),
+            "sync_error_code": record.sync_error_code or "",
+            "sync_error_detail": record.sync_error_detail or "",
         }
 
         with self.csv_path.open("a", newline="", encoding="utf-8") as handle:
@@ -167,7 +213,7 @@ class CsvOrderRepository:
         return record
 
     def get_order(self, order_id: str) -> OrderRecord | None:
-        with self.csv_path.open("r", newline="", encoding="utf-8") as handle:
+        with self.csv_path.open("r", newline="", encoding="utf-8-sig") as handle:
             reader = csv.DictReader(handle)
             for row in reader:
                 if row.get("order_id") != order_id:
@@ -177,7 +223,7 @@ class CsvOrderRepository:
 
     def list_orders(self, *, session_id: str | None = None, limit: int = 100) -> list[OrderRecord]:
         records: list[OrderRecord] = []
-        with self.csv_path.open("r", newline="", encoding="utf-8") as handle:
+        with self.csv_path.open("r", newline="", encoding="utf-8-sig") as handle:
             reader = csv.DictReader(handle)
             for row in reader:
                 if session_id and row.get("session_id") != session_id:
@@ -189,7 +235,10 @@ class CsvOrderRepository:
 
     @staticmethod
     def _row_to_order_record(row: dict[str, str]) -> OrderRecord:
-        raw_items = json.loads(row.get("items_json", "[]"))
+        try:
+            raw_items = json.loads(row.get("items_json", "[]"))
+        except json.JSONDecodeError:
+            raw_items = []
         items = [
             OrderLineItem(
                 item_id=item["item_id"],
@@ -200,12 +249,33 @@ class CsvOrderRepository:
             )
             for item in raw_items
         ]
+        created_at_raw = str(row.get("created_at") or "").strip()
+        try:
+            created_at_value = datetime.fromisoformat(created_at_raw) if created_at_raw else datetime.now(UTC)
+        except ValueError:
+            created_at_value = datetime.now(UTC)
         return OrderRecord(
             order_id=row["order_id"],
             session_id=row["session_id"],
-            created_at=datetime.fromisoformat(row["created_at"]),
+            created_at=created_at_value,
             customer_text=row.get("customer_text", ""),
             items=items,
             total_amount=Decimal(row["total_amount"]),
             status=row.get("status", "confirmed"),
+            payment_provider=(row.get("payment_provider") or "").strip() or None,
+            payment_status=(row.get("payment_status") or "").strip() or None,
+            payment_qr_content=(row.get("payment_qr_content") or "").strip() or None,
+            payment_qr_image_url=(row.get("payment_qr_image_url") or "").strip() or None,
+            payment_amount=(
+                Decimal(str(row.get("payment_amount")))
+                if (row.get("payment_amount") or "").strip()
+                else None
+            ),
+            payment_expires_at=(
+                datetime.fromisoformat(str(row.get("payment_expires_at")))
+                if (row.get("payment_expires_at") or "").strip()
+                else None
+            ),
+            sync_error_code=(row.get("sync_error_code") or "").strip() or None,
+            sync_error_detail=(row.get("sync_error_detail") or "").strip() or None,
         )

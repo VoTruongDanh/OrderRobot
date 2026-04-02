@@ -18,10 +18,21 @@ class MenuItem(BaseModel):
     tags: list[str] = Field(default_factory=list)
 
 
+class MenuItemSizeOption(BaseModel):
+    item_id: str
+    product_id: int | None = None
+    size_id: int | None = None
+    size_name: str
+    price: Decimal = Field(ge=0)
+    is_default: bool = False
+
+
 class CartItem(BaseModel):
     item_id: str
     name: str
     quantity: int = Field(gt=0)
+    size_name: str | None = None
+    size_id: int | None = None
     unit_price: Decimal = Field(ge=0)
     line_total: Decimal = Field(ge=0)
     
@@ -125,6 +136,29 @@ class TTSConfigRequest(BaseModel):
         return payload
 
 
+class EnvSyncRequest(BaseModel):
+    fields: dict[str, str] = Field(default_factory=dict)
+
+
+class EnvSyncResponse(BaseModel):
+    status: Literal["ok"]
+    env_path: str
+    updated_keys: int = Field(ge=0)
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class EnvLoadRequest(BaseModel):
+    keys: list[str] = Field(default_factory=list)
+
+
+class EnvLoadResponse(BaseModel):
+    status: Literal["ok"]
+    env_path: str
+    fields: dict[str, str] = Field(default_factory=dict)
+    loaded_keys: int = Field(ge=0)
+    loaded_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
 class SpeechSynthesisRequest(BaseModel):
     text: str = Field(min_length=1, max_length=1200)
     voice: str | None = None
@@ -174,6 +208,13 @@ class ConversationResponse(BaseModel):
     needs_confirmation: bool = False
     order_created: bool = False
     order_id: str | None = None
+    payment_status: str | None = None
+    payment_qr_content: str | None = None
+    payment_qr_image_url: str | None = None
+    payment_amount: Decimal | None = None
+    payment_expires_at: datetime | None = None
+    sync_error_code: str | None = None
+    sync_error_detail: str | None = None
     voice_style: str
     scene: str | None = None
     emotion_hint: Literal["neutral", "happy", "cute", "excited", "focused"] | None = None
@@ -183,6 +224,8 @@ class ConversationResponse(BaseModel):
 class CreateOrderLineItem(BaseModel):
     item_id: str
     quantity: int = Field(gt=0)
+    size_name: str | None = None
+    size_id: int | None = None
 
 
 class CreateOrderRequest(BaseModel):
@@ -193,12 +236,26 @@ class CreateOrderRequest(BaseModel):
 
 class CreateOrderResponse(BaseModel):
     order_id: str
+    payment_status: str | None = None
+    payment_qr_content: str | None = None
+    payment_qr_image_url: str | None = None
+    payment_amount: Decimal | None = None
+    payment_expires_at: datetime | None = None
+    sync_error_code: str | None = None
+    sync_error_detail: str | None = None
 
 
 @dataclass(slots=True)
 class SessionState:
     session_id: str
     cart: dict[str, int] = field(default_factory=dict)
+    cart_unit_price_by_item: dict[str, Decimal] = field(default_factory=dict)
+    cart_size_by_item: dict[str, str] = field(default_factory=dict)
+    cart_size_id_by_item: dict[str, int] = field(default_factory=dict)
+    pending_size_item_id: str | None = None
+    pending_size_item_name: str | None = None
+    pending_size_quantity: int = 1
+    pending_size_options: list[str] = field(default_factory=list)
     history: list[str] = field(default_factory=list)
     awaiting_confirmation: bool = False
     greeted: bool = False
@@ -214,5 +271,12 @@ class Decision:
     needs_confirmation: bool = False
     order_created: bool = False
     order_id: str | None = None
+    payment_status: str | None = None
+    payment_qr_content: str | None = None
+    payment_qr_image_url: str | None = None
+    payment_amount: Decimal | None = None
+    payment_expires_at: datetime | None = None
+    sync_error_code: str | None = None
+    sync_error_detail: str | None = None
     user_text: str | None = None
 

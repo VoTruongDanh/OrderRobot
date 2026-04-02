@@ -3,6 +3,8 @@ import react from '@vitejs/plugin-react'
 
 // https://vite.dev/config/
 export default defineConfig({
+  // Read env from monorepo root so Admin fallback uses the same .env as backends.
+  envDir: '../..',
   plugins: [react()],
   server: {
     proxy: {

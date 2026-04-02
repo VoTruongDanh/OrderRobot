@@ -1,8 +1,9 @@
-﻿const LEGACY_ENV_VALUE_MIGRATIONS: Record<string, Record<string, string>> = {
+const LEGACY_ENV_VALUE_MIGRATIONS: Record<string, Record<string, string>> = {
   VITE_CORE_API_URL: { 'http://127.0.0.1:8001': 'http://127.0.0.1:8011' },
   VITE_AI_API_URL: { 'http://127.0.0.1:8002': 'http://127.0.0.1:8012' },
   VITE_MENU_API_URL: { 'http://127.0.0.1:8001/menu': 'http://127.0.0.1:8011/menu' },
   VITE_ORDERS_API_URL: { 'http://127.0.0.1:8001/orders': 'http://127.0.0.1:8011/orders' },
+  VITE_PRODUCT_SIZE_API_URL: { 'http://127.0.0.1:8001/product-size/filter': 'http://127.0.0.1:8011/product-size/filter' },
 }
 
 export const ADMIN_ENV_STORAGE_KEY = 'admin.env.fields'
@@ -643,13 +644,55 @@ export function getAiApiUrl(): string {
   return getEnvConfig('VITE_AI_API_URL', 'http://127.0.0.1:8012')
 }
 
+function isLocalLikeHost(hostname: string): boolean {
+  const host = String(hostname || '').trim().toLowerCase()
+  return host === 'localhost' || host === '127.0.0.1' || host === '::1'
+}
+
+export function resolveBrowserSafeMenuApiUrl(menuApiUrl: string, coreApiUrl: string): string {
+  const rawMenuApi = String(menuApiUrl || '').trim()
+  if (!rawMenuApi) {
+    return `${String(coreApiUrl || '').replace(/\/$/, '')}/menu`
+  }
+  if (rawMenuApi.startsWith('/')) {
+    return rawMenuApi
+  }
+  try {
+    const href = typeof window !== 'undefined' ? window.location.href : 'http://localhost/'
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost'
+    const parsed = new URL(rawMenuApi, href)
+    const sameOrigin = parsed.origin === origin
+    if (sameOrigin || isLocalLikeHost(parsed.hostname)) {
+      return parsed.toString()
+    }
+    const safeCore = String(coreApiUrl || '').trim().replace(/\/$/, '')
+    if (!safeCore) return parsed.toString()
+    return `${safeCore}/menu/proxy?source=${encodeURIComponent(parsed.toString())}`
+  } catch {
+    return rawMenuApi
+  }
+}
+
 export function getMenuApiUrl(): string {
-  return getEnvConfig('VITE_MENU_API_URL', `${getCoreApiUrl()}/menu`)
+  const coreApiUrl = getCoreApiUrl()
+  const configured = getEnvConfig('VITE_MENU_API_URL', `${coreApiUrl}/menu`)
+  return resolveBrowserSafeMenuApiUrl(configured, coreApiUrl)
 }
 
 export function getOrdersApiUrl(): string {
   return getEnvConfig('VITE_ORDERS_API_URL', `${getCoreApiUrl()}/orders`)
 }
+export function getProductSizeApiUrl(): string {
+  return getEnvConfig(
+    'VITE_PRODUCT_SIZE_API_URL',
+    'http://cnxvn.ddns.net:8080/api/v1/product-size/filter?productId={productId}&page=0&size=10&sort=',
+  )
+}
+
+export function getProductDefaultSizeName(): string {
+  return getEnvConfig('VITE_PRODUCT_DEFAULT_SIZE_NAME', 'M').trim()
+}
+
 export function getMicNoiseFilterLevel(): MicNoiseFilterLevel {
   const strength = getMicNoiseFilterStrength()
   return getMicNoiseFilterLevelFromStrength(strength)

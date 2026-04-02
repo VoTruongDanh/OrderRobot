@@ -953,6 +953,12 @@
             display: grid;
             gap: 9px;
             box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
+            cursor: pointer;
+            transition: transform 0.18s ease, box-shadow 0.18s ease;
+        }
+        .menu-item-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 12px 22px rgba(15, 23, 42, 0.12);
         }
         .menu-item-media {
             width: 100%;
@@ -977,6 +983,12 @@
             -webkit-box-orient: vertical;
         }
         .menu-item-price { margin: 0; font-size: 1rem; font-weight: 800; color: #0057bf; }
+        .menu-item-sizes {
+            margin: -2px 0 0;
+            font-size: 0.72rem;
+            color: #5b5f8a;
+            line-height: 1.32;
+        }
         .menu-item-state {
             justify-self: start;
             padding: 3px 8px;
@@ -1246,10 +1258,18 @@
             border: 1px solid rgba(15, 23, 42, 0.2);
             background: #fff;
             padding: 8px;
+            overflow: hidden;
+        }
+        .order-popup-qr--virtual {
             display: grid;
             grid-template-columns: repeat(21, 1fr);
             grid-template-rows: repeat(21, 1fr);
             gap: 1px;
+        }
+        .order-popup-qr--image {
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
         .order-popup-qr-cell {
             border-radius: 1px;
@@ -1257,6 +1277,13 @@
         }
         .order-popup-qr-cell.on {
             background: #0f172a;
+        }
+        .order-popup-qr-image {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            border-radius: 8px;
+            display: block;
         }
         .order-popup-countdown {
             margin: 0;
@@ -2547,6 +2574,7 @@
     let latestIssuedTurnId = '';
     let activeProcessingTurnId = '';
     let lastQueuedUserTranscriptNorm = '';
+    let lastQueuedUserTranscriptRaw = '';
     let lastQueuedUserTranscriptAt = 0;
     let lastAcceptedUserTurnAt = 0;
     let lastRobotSpokenNorm = '';
@@ -2571,6 +2599,7 @@
     let thinkingMotionTurnId = '';
     const chatHistory = [];
     let cartState = [];
+    const menuSizeOptionsCache = new Map();
     const MENU_IMAGE_BY_ID = {
         'ts-tranchau': 'https://images.unsplash.com/photo-1558857563-b371033873b8?auto=format&fit=crop&w=1000&q=80',
         'ts-oolong': 'https://images.unsplash.com/photo-1525385133512-2f3bdd039054?auto=format&fit=crop&w=1000&q=80',
@@ -3203,6 +3232,15 @@
         } catch {
             return {};
         }
+    }
+
+    function resolveCoreApiBaseUrl() {
+        const env = readAdminEnvFields();
+        const configured = String(env.VITE_CORE_API_URL || '').trim()
+            .replace('://127.0.0.1:8001', '://127.0.0.1:8011')
+            .replace('://localhost:8001', '://localhost:8011')
+            .replace(/\/$/, '');
+        return configured || 'http://127.0.0.1:8011';
     }
 
     function toSafeInt(value, min, max) {
@@ -3951,6 +3989,55 @@
         }
     }
 
+    async function fetchOrderPaymentStatus(orderId) {
+        const safeOrderId = String(orderId || '').trim();
+        if (!safeOrderId) {
+            return { paid: false, status: '', error: 'missing-order-id' };
+        }
+        try {
+            const coreApiBase = resolveCoreApiBaseUrl();
+            const response = await fetch(`${coreApiBase}/orders/${encodeURIComponent(safeOrderId)}`, {
+                method: 'GET',
+            });
+            if (!response.ok) {
+                let detail = `HTTP ${response.status}`;
+                try {
+                    const payload = await response.json();
+                    const responseDetail = payload?.detail;
+                    if (typeof responseDetail === 'string' && responseDetail.trim()) {
+                        detail = responseDetail.trim();
+                    } else if (responseDetail && typeof responseDetail === 'object') {
+                        if (typeof responseDetail.sync_error_detail === 'string' && responseDetail.sync_error_detail.trim()) {
+                            detail = responseDetail.sync_error_detail.trim();
+                        } else if (typeof responseDetail.message === 'string' && responseDetail.message.trim()) {
+                            detail = responseDetail.message.trim();
+                        }
+                    }
+                } catch {}
+                return { paid: false, status: '', error: detail };
+            }
+            const payload = await response.json();
+            const rawStatus = String(payload?.payment_status || payload?.status || '').trim().toUpperCase();
+            const syncErrorCode = String(payload?.sync_error_code || '').trim().toUpperCase();
+            const syncErrorDetail = String(payload?.sync_error_detail || '').trim();
+            if (syncErrorCode || rawStatus === 'SYNC_ERROR' || rawStatus.startsWith('UNKNOWN_')) {
+                return {
+                    paid: false,
+                    status: rawStatus || 'SYNC_ERROR',
+                    error: syncErrorDetail || syncErrorCode || 'sync-error',
+                };
+            }
+            const paid = rawStatus === 'PAID' || rawStatus === 'COMPLETED' || rawStatus === 'CONFIRMED';
+            return { paid, status: rawStatus, error: '' };
+        } catch (error) {
+            return {
+                paid: false,
+                status: '',
+                error: String(error?.message || 'network-error'),
+            };
+        }
+    }
+
     function hashTextForQr(value) {
         const text = String(value || '');
         let hash = 2166136261;
@@ -3963,6 +4050,8 @@
 
     function buildVirtualQrCells(seedText) {
         if (!orderPopupQr) return;
+        orderPopupQr.classList.remove('order-popup-qr--image');
+        orderPopupQr.classList.add('order-popup-qr--virtual');
         const size = 21;
         const cells = new Array(size * size).fill(0);
 
@@ -4004,6 +4093,110 @@
         orderPopupQr.innerHTML = cells.map((on) =>
             `<span class="order-popup-qr-cell ${on ? 'on' : ''}"></span>`
         ).join('');
+    }
+
+    function buildQrImageUrlFromContent(qrContent) {
+        const value = String(qrContent || '').trim();
+        if (!value) return '';
+        // Fallback renderer when POS does not return qrImageUrl.
+        return `https://api.qrserver.com/v1/create-qr-code/?size=320x320&margin=8&data=${encodeURIComponent(value)}`;
+    }
+
+    function canLoadQrImage(url, timeoutMs = 3500) {
+        const src = String(url || '').trim();
+        if (!src) return Promise.resolve(false);
+        return new Promise((resolve) => {
+            let settled = false;
+            const finish = (ok) => {
+                if (settled) return;
+                settled = true;
+                resolve(Boolean(ok));
+            };
+            const img = new Image();
+            const timer = window.setTimeout(() => finish(false), timeoutMs);
+            img.onload = () => {
+                window.clearTimeout(timer);
+                finish(true);
+            };
+            img.onerror = () => {
+                window.clearTimeout(timer);
+                finish(false);
+            };
+            img.src = src;
+        });
+    }
+
+    async function renderOrderPopupQrImage(orderId, qrSeed, paymentQrImageUrl, paymentQrContent) {
+        if (!orderPopupQr) return false;
+        orderPopupQr.classList.remove('order-popup-qr--virtual');
+        orderPopupQr.classList.add('order-popup-qr--image');
+        orderPopupQr.innerHTML = '';
+        const candidates = [];
+        const direct = String(paymentQrImageUrl || '').trim();
+        const byContent = buildQrImageUrlFromContent(paymentQrContent);
+        if (direct) candidates.push(direct);
+        if (byContent && !candidates.includes(byContent)) candidates.push(byContent);
+        console.info('[order-qr] render start', {
+            orderId: String(orderId || ''),
+            hasDirect: Boolean(direct),
+            hasContent: Boolean(String(paymentQrContent || '').trim()),
+            candidates,
+        });
+
+        for (const candidate of candidates) {
+            // Validate load before injecting to avoid broken-icon blank frame.
+            const ok = await canLoadQrImage(candidate);
+            console.info('[order-qr] candidate check', {
+                orderId: String(orderId || ''),
+                candidate,
+                ok,
+            });
+            if (!ok) continue;
+            orderPopupQr.innerHTML = `<img class="order-popup-qr-image" src="${toSafeText(candidate)}" alt="QR thanh toan don ${toSafeText(orderId)}" loading="lazy">`;
+            console.info('[order-qr] rendered image', {
+                orderId: String(orderId || ''),
+                candidate,
+            });
+            return true;
+        }
+
+        // Live-payment mode: if POS returned QR hints but image failed to load,
+        // do not fake a virtual QR to avoid misleading users.
+        if (direct || String(paymentQrContent || '').trim()) {
+            orderPopupQr.innerHTML = '';
+            console.warn('[order-qr] image unavailable; keep empty frame with fallback text', {
+                orderId: String(orderId || ''),
+                direct,
+                paymentQrContent: String(paymentQrContent || '').trim(),
+            });
+            return false;
+        }
+
+        orderPopupQr.classList.remove('order-popup-qr--image');
+        orderPopupQr.classList.add('order-popup-qr--virtual');
+        buildVirtualQrCells(qrSeed);
+        console.info('[order-qr] rendered virtual placeholder', {
+            orderId: String(orderId || ''),
+            qrSeed: String(qrSeed || ''),
+        });
+        return false;
+    }
+
+    async function fetchOrderSnapshot(orderId) {
+        const safeOrderId = String(orderId || '').trim();
+        if (!safeOrderId) return null;
+        try {
+            const coreApiBase = resolveCoreApiBaseUrl();
+            const response = await fetch(`${coreApiBase}/orders/${encodeURIComponent(safeOrderId)}`, {
+                method: 'GET',
+            });
+            if (!response.ok) return null;
+            const payload = await response.json();
+            if (!payload || typeof payload !== 'object') return null;
+            return payload;
+        } catch {
+            return null;
+        }
     }
 
     function toFeedbackHistoryPayload() {
@@ -4168,12 +4361,35 @@
     async function showOrderPopupStep(orderData, flowToken) {
         if (!orderStatusHud || !orderPopupCard) return;
 
-        const items = normalizeOrderItems(orderData.items);
+        const orderId = String(orderData.orderId || '--');
+        const snapshot = await fetchOrderSnapshot(orderId);
+        const mergedOrder = snapshot ? { ...orderData, ...snapshot } : { ...orderData };
+        const items = normalizeOrderItems(mergedOrder.items);
         if (items.length === 0) return;
 
-        const orderId = String(orderData.orderId || '--');
-        const total = items.reduce((sum, item) => sum + Number(item.line_total || 0), 0);
+        const fallbackTotal = items.reduce((sum, item) => sum + Number(item.line_total || 0), 0);
+        const remotePaymentAmount = Number(
+            mergedOrder?.paymentAmount ?? mergedOrder?.payment_amount ?? 0,
+        );
+        const total = Number.isFinite(remotePaymentAmount) && remotePaymentAmount > 0
+            ? remotePaymentAmount
+            : fallbackTotal;
         const qrSeed = `${orderId}|${Math.round(total)}|${items.length}`;
+        const paymentQrContent = String(
+            mergedOrder?.paymentQrContent ?? mergedOrder?.payment_qr_content ?? '',
+        ).trim();
+        const paymentQrImageUrl = String(
+            mergedOrder?.paymentQrImageUrl ?? mergedOrder?.payment_qr_image_url ?? '',
+        ).trim();
+        const hasQrHint = paymentQrImageUrl.length > 0 || paymentQrContent.length > 0;
+        const isPaymentMode = hasQrHint;
+        console.info('[order-qr] popup payload', {
+            orderId,
+            fromSnapshot: Boolean(snapshot),
+            paymentQrImageUrl,
+            paymentQrContent,
+            paymentAmount: remotePaymentAmount,
+        });
 
         orderStatusHud.hidden = false;
         orderPopupCard.hidden = false;
@@ -4197,29 +4413,85 @@
             orderPopupTotal.textContent = `Tong thanh toan: ${formatCurrencyVnd(total)}`;
         }
         if (orderPopupQrLabel) {
-            orderPopupQrLabel.textContent = `QR ao cho don ${orderId}`;
+            if (paymentQrImageUrl) {
+                orderPopupQrLabel.textContent = `QR ngan hang cho don ${orderId}`;
+            } else if (isPaymentMode) {
+                orderPopupQrLabel.textContent = `QR thanh toan cho don ${orderId}`;
+            } else {
+                orderPopupQrLabel.textContent = `QR ao cho don ${orderId}`;
+            }
         }
-        buildVirtualQrCells(qrSeed);
+        const qrImageRendered = await renderOrderPopupQrImage(orderId, qrSeed, paymentQrImageUrl, paymentQrContent);
+        if (!qrImageRendered && orderPopupQrLabel && paymentQrContent) {
+            orderPopupQrLabel.textContent = `Khong tai duoc anh QR. Ma thanh toan: ${paymentQrContent}`;
+        }
 
         await new Promise((resolve) => {
-            let remaining = ORDER_POPUP_COUNTDOWN_SEC;
+            const maxSeconds = isPaymentMode ? 90 : ORDER_POPUP_COUNTDOWN_SEC;
+            let remaining = maxSeconds;
+            let checkInFlight = false;
+            let resolved = false;
+            const finish = () => {
+                if (resolved) return;
+                resolved = true;
+                clearOrderFlowTimers();
+                resolve();
+            };
             if (orderPopupCountdown) {
-                orderPopupCountdown.textContent = `Popup thong tin don tu dong dong sau ${remaining}s`;
+                orderPopupCountdown.textContent = isPaymentMode
+                    ? `Dang cho thanh toan... con ${remaining}s`
+                    : `Popup thong tin don tu dong dong sau ${remaining}s`;
             }
             clearOrderFlowTimers();
             orderPopupTimer = window.setInterval(() => {
                 if (flowToken !== activeOrderFlowToken) {
-                    clearOrderFlowTimers();
-                    resolve();
+                    finish();
                     return;
                 }
                 remaining -= 1;
                 if (orderPopupCountdown) {
-                    orderPopupCountdown.textContent = `Popup thong tin don tu dong dong sau ${Math.max(0, remaining)}s`;
+                    orderPopupCountdown.textContent = isPaymentMode
+                        ? `Dang cho thanh toan... con ${Math.max(0, remaining)}s`
+                        : `Popup thong tin don tu dong dong sau ${Math.max(0, remaining)}s`;
+                }
+                if (isPaymentMode && !checkInFlight && remaining % 2 === 0) {
+                    checkInFlight = true;
+                    void fetchOrderPaymentStatus(orderId)
+                        .then((paymentSnapshot) => {
+                            if (flowToken !== activeOrderFlowToken || resolved) return;
+                            const statusText = String(paymentSnapshot?.status || '').trim();
+                            const errorText = String(paymentSnapshot?.error || '').trim();
+                            if (errorText && orderPopupCountdown) {
+                                orderPopupCountdown.textContent = `Dong bo thanh toan loi: ${errorText}`;
+                                window.setTimeout(() => {
+                                    finish();
+                                }, 1200);
+                                return;
+                            }
+                            if (statusText && orderPopupCountdown && !paymentSnapshot?.paid) {
+                                orderPopupCountdown.textContent = `Trang thai: ${statusText}. Con ${Math.max(0, remaining)}s`;
+                                if (statusText === 'CANCELLED' || statusText === 'REFUNDED') {
+                                    window.setTimeout(() => {
+                                        finish();
+                                    }, 900);
+                                    return;
+                                }
+                            }
+                            if (paymentSnapshot?.paid) {
+                                if (orderPopupCountdown) {
+                                    orderPopupCountdown.textContent = 'Da xac nhan thanh toan thanh cong.';
+                                }
+                                window.setTimeout(() => {
+                                    finish();
+                                }, 900);
+                            }
+                        })
+                        .finally(() => {
+                            checkInFlight = false;
+                        });
                 }
                 if (remaining <= 0) {
-                    clearOrderFlowTimers();
-                    resolve();
+                    finish();
                 }
             }, 1000);
         });
@@ -4617,6 +4889,16 @@
             || Boolean(activeTurnAbortController)
             || pendingUserTurns.length > 0
             || voiceQueueRunning;
+    }
+
+    function hasActiveConversationTurn() {
+        return Boolean(activeProcessingTurnId) || Boolean(activeTurnAbortController);
+    }
+
+    function isLikelyCheckoutConfirm(text) {
+        const normalized = normalizeTranscriptForDedup(text);
+        if (!normalized) return false;
+        return /(xac nhan|xac nhan don|dat hang|len don|chot don|thanh toan)/i.test(normalized);
     }
 
     function shouldIgnoreAutoTranscript(text, source) {
@@ -5648,51 +5930,76 @@
         const cleanText = String(transcript || '').trim();
         if (!cleanText) return;
         const source = String(options?.source || 'auto').trim().toLowerCase();
-        if (shouldIgnoreAutoTranscript(cleanText, source)) {
+        let finalText = cleanText;
+        if (source === 'browser-interim' && lastQueuedUserTranscriptRaw) {
+            const trimmedCarryOver = removeSpokenPrefixText(cleanText, lastQueuedUserTranscriptRaw);
+            const trimmedNorm = normalizeTranscriptForDedup(trimmedCarryOver);
+            const cleanNorm = normalizeTranscriptForDedup(cleanText);
+            if (trimmedNorm && trimmedNorm.length >= 3 && trimmedNorm !== cleanNorm) {
+                finalText = trimmedCarryOver;
+                console.info('[voice-dedup] trimmed carry-over transcript', {
+                    source,
+                    before: cleanText,
+                    after: finalText,
+                });
+            }
+        }
+        if (shouldIgnoreAutoTranscript(finalText, source)) {
             console.info('[voice-dedup] dropped likely STT noise transcript', { transcript: cleanText, source });
             return;
         }
-        const normalizedTranscript = normalizeTranscriptForDedup(cleanText);
+        const normalizedTranscript = normalizeTranscriptForDedup(finalText);
         const now = Date.now();
         if (!normalizedTranscript) return;
         const tokenCount = normalizedTranscript.split(' ').filter(Boolean).length;
         const busy = isConversationTurnBusy();
+        const criticalConfirmIntent = isLikelyCheckoutConfirm(finalText);
         if (
             source !== 'manual'
             && source !== 'browser-interim'
+            && source !== 'browser-final'
+            && source !== 'backend-final'
+            && !criticalConfirmIntent
             && busy
             && now - lastAcceptedUserTurnAt < BUSY_AUTO_SUBMIT_SUPPRESS_MS
             && tokenCount <= 6
         ) {
             console.info('[voice-dedup] dropped rapid transcript while turn is busy', {
-                transcript: cleanText,
+                transcript: finalText,
                 source,
             });
             return;
         }
         if (
+            !criticalConfirmIntent
+            &&
             normalizedTranscript === lastQueuedUserTranscriptNorm
             && now - lastQueuedUserTranscriptAt < 4500
         ) {
-            console.info('[voice-dedup] dropped duplicated transcript', { transcript: cleanText });
+            console.info('[voice-dedup] dropped duplicated transcript', { transcript: finalText });
             return;
         }
         if (
+            !criticalConfirmIntent
+            &&
             areTranscriptsLikelySame(normalizedTranscript, lastQueuedUserTranscriptNorm)
             && now - lastQueuedUserTranscriptAt < 6500
         ) {
-            console.info('[voice-dedup] dropped near-duplicate transcript', { transcript: cleanText });
+            console.info('[voice-dedup] dropped near-duplicate transcript', { transcript: finalText });
             return;
         }
         if (
+            !criticalConfirmIntent
+            &&
             lastRobotSpokenNorm
             && areTranscriptsLikelySame(normalizedTranscript, lastRobotSpokenNorm)
             && now - lastRobotSpokenAt < 12000
         ) {
-            console.info('[voice-dedup] dropped likely echo transcript', { transcript: cleanText });
+            console.info('[voice-dedup] dropped likely echo transcript', { transcript: finalText });
             return;
         }
         lastQueuedUserTranscriptNorm = normalizedTranscript;
+        lastQueuedUserTranscriptRaw = finalText;
         lastQueuedUserTranscriptAt = now;
         lastAcceptedUserTurnAt = now;
         const turnId = createTurnId();
@@ -5702,7 +6009,7 @@
         pendingUserTurns.length = 0;
         pendingUserTurns.push({
             turnId,
-            text: cleanText,
+            text: finalText,
             queuedAt: Date.now(),
         });
         if (!voiceQueueRunning) {
@@ -6024,6 +6331,11 @@
                             sessionId: finishedSessionId,
                             orderId: finishedOrderId,
                             items: orderItemsForPopup,
+                            paymentStatus: String(replyPayload?.payment_status || '').trim(),
+                            paymentQrContent: String(replyPayload?.payment_qr_content || '').trim(),
+                            paymentQrImageUrl: String(replyPayload?.payment_qr_image_url || '').trim(),
+                            paymentAmount: Number(replyPayload?.payment_amount || 0),
+                            paymentExpiresAt: String(replyPayload?.payment_expires_at || '').trim(),
                         });
                     }
                     hideThinkingIndicator(turnId);
@@ -6374,7 +6686,7 @@
                 const partialText = String(payload.transcript || '').trim();
                 if (partialText) {
                     markSpeechActivity();
-                    if (botSpeechActive) {
+                    if (botSpeechActive || hasActiveConversationTurn()) {
                         prioritizeUserSpeech();
                     }
                     // Avoid showing low-confidence partial text to users.
@@ -6393,7 +6705,7 @@
 
                 if (status === 'ok' && transcript) {
                     markSpeechActivity();
-                    if (botSpeechActive) {
+                    if (botSpeechActive || hasActiveConversationTurn()) {
                         prioritizeUserSpeech();
                     }
                     if (transcript === voiceBackendLastFinal && now - voiceBackendLastFinalAt < 1800) {
@@ -6600,7 +6912,7 @@
                 if (!pendingNormalized || interimNormalized !== pendingNormalized) {
                     markSpeechActivity();
                 }
-                if (botSpeechActive) {
+                if (botSpeechActive || hasActiveConversationTurn()) {
                     prioritizeUserSpeech();
                 }
                 setVoiceStatus(`Dang nghe: ${interim.trim()}`);
@@ -6615,7 +6927,7 @@
             finals.forEach((text) => {
                 clearBrowserSubmitTimer();
                 voiceBrowserPendingInterim = '';
-                if (botSpeechActive) {
+                if (botSpeechActive || hasActiveConversationTurn()) {
                     prioritizeUserSpeech();
                 }
                 enqueueUserTurn(text, { source: 'browser-final' });
@@ -6702,6 +7014,9 @@
             pendingUserTurns.length = 0;
             latestIssuedTurnId = '';
             activeProcessingTurnId = '';
+            lastQueuedUserTranscriptNorm = '';
+            lastQueuedUserTranscriptRaw = '';
+            lastQueuedUserTranscriptAt = 0;
             lastAcceptedUserTurnAt = 0;
             try {
                 if (voiceRecognition) {
@@ -7106,25 +7421,312 @@
             return;
         }
 
-        menuItemsGrid.innerHTML = visibleItems.map((item) => {
+        menuItemsGrid.innerHTML = visibleItems.map((item, index) => {
             const name = item.name || 'Mon';
             const category = item._category || 'Menu';
             const stateClass = item.available ? 'ok' : 'off';
             const stateText = item.available ? 'Dang phuc vu' : 'Tam het';
             const image = getItemImage(item, name, category);
             const description = item.description || 'Khong co mo ta.';
+            const sizeHint = buildMenuSizeSummary(item);
+            const displayPrice = formatMenuDisplayPrice(item);
             return `
-                <article class="menu-item-card animate-item">
+                <article class="menu-item-card animate-item" data-menu-index="${index}" role="button" tabindex="0" aria-label="Chon mon ${toSafeText(name)}">
                     <img class="menu-item-media" src="${toSafeText(image)}" alt="${toSafeText(name)}" loading="lazy">
                     <p class="menu-item-meta">${toSafeText(category)}</p>
                     <h4 class="menu-item-name">${toSafeText(name)}</h4>
                     <p class="menu-item-desc">${toSafeText(description)}</p>
-                    <p class="menu-item-price">${formatCurrencyVnd(item.price)}</p>
+                    <p class="menu-item-price">${toSafeText(displayPrice)}</p>
+                    ${sizeHint ? `<p class="menu-item-sizes">${toSafeText(sizeHint)}</p>` : ''}
                     <span class="menu-item-state ${stateClass}">${stateText}</span>
                 </article>
             `;
         }).join('');
+        menuItemsGrid.querySelectorAll('.menu-item-card').forEach((card) => {
+            const rawIndex = card.getAttribute('data-menu-index') || '-1';
+            const itemIndex = Number.parseInt(rawIndex, 10);
+            if (!Number.isFinite(itemIndex) || itemIndex < 0 || itemIndex >= visibleItems.length) return;
+            const item = visibleItems[itemIndex];
+            const onSelect = () => {
+                void handleMenuCardSelect(item);
+            };
+            card.addEventListener('click', onSelect);
+            card.addEventListener('keydown', (event) => {
+                if (event.key !== 'Enter' && event.key !== ' ') return;
+                event.preventDefault();
+                onSelect();
+            });
+        });
         updateMenuPanelHeight(visibleItems.length);
+    }
+
+    function formatMenuDisplayPrice(item) {
+        const options = Array.isArray(item?.size_options) ? item.size_options : [];
+        const prices = options
+            .map((option) => parseMenuNumber(option?.price, NaN))
+            .filter((value) => Number.isFinite(value) && value >= 0);
+        if (prices.length >= 2) {
+            const minPrice = Math.min(...prices);
+            const maxPrice = Math.max(...prices);
+            if (Math.abs(maxPrice - minPrice) >= 1) {
+                return `Tu ${formatCurrencyVnd(minPrice)} - ${formatCurrencyVnd(maxPrice)}`;
+            }
+        }
+        return formatCurrencyVnd(parseMenuNumber(item?.price, 0));
+    }
+
+    function buildMenuSizeSummary(item) {
+        const options = Array.isArray(item?.size_options) ? item.size_options : [];
+        if (options.length <= 1) return '';
+        const labels = options
+            .slice(0, 4)
+            .map((option) => {
+                const sizeName = normalizeSizeLabel(option?.size_name || '');
+                const price = parseMenuNumber(option?.price, NaN);
+                if (!sizeName) return '';
+                if (Number.isFinite(price) && price >= 0) {
+                    return `${sizeName}: ${formatCurrencyVnd(price)}`;
+                }
+                return sizeName;
+            })
+            .filter(Boolean);
+        return labels.join(' | ');
+    }
+
+    function normalizeSizeLabel(value) {
+        const raw = String(value || '').trim();
+        if (!raw) return '';
+        const noTone = normalizeNoToneKey(raw).replace(/\s+/g, ' ').trim();
+        const aliases = {
+            s: 'S',
+            m: 'M',
+            l: 'L',
+            xl: 'XL',
+            'x l': 'XL',
+            small: 'S',
+            medium: 'M',
+            large: 'L',
+            nho: 'S',
+            vua: 'M',
+            lon: 'L',
+            'size s': 'S',
+            'size m': 'M',
+            'size l': 'L',
+            'size xl': 'XL',
+        };
+        return aliases[noTone] || raw.toUpperCase();
+    }
+
+    async function fetchMenuItemSizes(item) {
+        const itemId = String(item?.item_id || item?.id || '').trim();
+        if (!itemId) return [];
+        const cached = menuSizeOptionsCache.get(itemId);
+        if (Array.isArray(cached)) return cached;
+        try {
+            const coreApi = resolveCoreApiBaseUrl();
+            const response = await fetch(`${coreApi}/menu/${encodeURIComponent(itemId)}/sizes`, { method: 'GET' });
+            if (!response.ok) {
+                menuSizeOptionsCache.set(itemId, []);
+                return [];
+            }
+            const payload = await response.json();
+            const options = Array.isArray(payload)
+                ? payload
+                    .map((entry) => ({
+                        size_name: String(entry?.size_name || '').trim(),
+                        size_id: entry?.size_id ?? null,
+                        is_default: Boolean(entry?.is_default),
+                        price: parseMenuNumber(entry?.price, NaN),
+                    }))
+                    .filter((entry) => entry.size_name.length > 0)
+                : [];
+            menuSizeOptionsCache.set(itemId, options);
+            return options;
+        } catch {
+            menuSizeOptionsCache.set(itemId, []);
+            return [];
+        }
+    }
+
+    async function enrichMenuItemsWithSizeData(items) {
+        if (!Array.isArray(items) || items.length === 0) return;
+        await Promise.all(items.map(async (item) => {
+            const options = await fetchMenuItemSizes(item);
+            if (!Array.isArray(options) || options.length === 0) return;
+            item.size_options = options;
+            const defaultOption = options.find((option) => option.is_default) || options[0];
+            const defaultPrice = parseMenuNumber(defaultOption?.price, NaN);
+            if (Number.isFinite(defaultPrice) && defaultPrice >= 0) {
+                item.price = defaultPrice;
+            }
+        }));
+    }
+
+    function pickSizeFromPrompt(itemName, options) {
+        if (!Array.isArray(options) || options.length === 0) return '';
+        const sizeList = options.map((opt) => String(opt.size_name || '')).filter(Boolean);
+        if (sizeList.length === 0) return '';
+        const defaultOption = options.find((opt) => opt.is_default) || options[0];
+        const defaultValue = String(defaultOption?.size_name || '').trim();
+        const input = window.prompt(`Chon size cho ${itemName}: ${sizeList.join(', ')}`, defaultValue);
+        if (!input) return '';
+        const normalizedInput = normalizeSizeLabel(input);
+        const matched = options.find((opt) => normalizeSizeLabel(opt.size_name) === normalizedInput);
+        return matched ? String(matched.size_name || '').trim() : '';
+    }
+
+    async function handleMenuCardSelect(item) {
+        if (!item || !item.available) {
+            setVoiceStatus('Mon nay tam het. Ban chon mon khac nhe.');
+            return;
+        }
+        const itemName = String(item.name || 'mon').trim();
+        const sizeOptions = await fetchMenuItemSizes(item);
+        let selectedSize = '';
+        if (sizeOptions.length > 1) {
+            selectedSize = pickSizeFromPrompt(itemName, sizeOptions);
+            if (!selectedSize) {
+                setVoiceStatus('Chua chon size, da huy them mon.');
+                return;
+            }
+        } else if (sizeOptions.length === 1) {
+            selectedSize = String(sizeOptions[0].size_name || '').trim();
+        }
+
+        const requestText = selectedSize
+            ? `cho minh 1 ${itemName} size ${selectedSize}`
+            : `cho minh 1 ${itemName}`;
+        enqueueUserTurn(requestText, { source: 'manual' });
+    }
+
+    function parseMenuNumber(value, fallback = 0) {
+        const numeric = Number(value);
+        return Number.isFinite(numeric) ? numeric : fallback;
+    }
+
+    function parseMenuBoolean(value, fallback = true) {
+        if (typeof value === 'boolean') return value;
+        if (typeof value === 'number') return value !== 0;
+        if (typeof value === 'string') {
+            const normalized = value.trim().toLowerCase();
+            if (['1', 'true', 'yes', 'y', 'on', 'available'].includes(normalized)) return true;
+            if (['0', 'false', 'no', 'n', 'off', 'unavailable'].includes(normalized)) return false;
+        }
+        return fallback;
+    }
+
+    function extractMenuRecords(payload) {
+        if (Array.isArray(payload)) return payload;
+        const candidates = [
+            payload?.items,
+            payload?.data?.items,
+            payload?.data?.content,
+            payload?.data,
+            payload?.content,
+            payload?.results,
+            payload?.records,
+            payload?.rows,
+            payload?.list,
+        ];
+        for (const candidate of candidates) {
+            if (Array.isArray(candidate)) {
+                return candidate;
+            }
+        }
+        return [];
+    }
+
+    function normalizeMenuRecord(raw, index = 0) {
+        if (!raw || typeof raw !== 'object') {
+            return null;
+        }
+        const product = raw.product && typeof raw.product === 'object' ? raw.product : {};
+        const productCategory = product.category && typeof product.category === 'object' ? product.category : {};
+        const itemId = String(
+            raw.item_id
+            || raw.productId
+            || raw.product_id
+            || product.productId
+            || product.product_id
+            || raw.id
+            || raw.itemId
+            || `item-${index}`
+        ).trim();
+        const name = String(
+            raw.name
+            || raw.item_name
+            || raw.itemName
+            || raw.productName
+            || raw.product_name
+            || product.productName
+            || product.product_name
+            || raw.title
+            || ''
+        ).trim();
+        if (!name) return null;
+        const category = String(
+            raw.category
+            || raw.categoryName
+            || product.categoryName
+            || productCategory.categoryName
+            || raw.group
+            || raw.type
+            || raw.kind
+            || 'Khac'
+        ).trim();
+        const description = String(
+            raw.description
+            || raw.productDescription
+            || raw.product_description
+            || product.description
+            || ''
+        ).trim();
+        const imageUrl = String(
+            raw.image_url
+            || raw.image
+            || raw.thumbnail
+            || raw.photo
+            || raw.productImageUrl
+            || raw.product_image_url
+            || product.imageUrl
+            || ''
+        ).trim();
+        const price = parseMenuNumber(
+            raw.price
+            ?? raw.sellingPrice
+            ?? raw.basePrice
+            ?? raw.productPrice
+            ?? raw.amount
+            ?? product.price
+            ?? 0,
+            0
+        );
+        const hasAvailability = raw.isAvailable !== undefined
+            || raw.available !== undefined
+            || raw.inStock !== undefined
+            || raw.productIsActive !== undefined
+            || product.isActive !== undefined;
+        const available = hasAvailability
+            ? parseMenuBoolean(
+                raw.isAvailable
+                ?? raw.available
+                ?? raw.inStock
+                ?? raw.productIsActive
+                ?? product.isActive,
+                true
+            )
+            : true;
+
+        return {
+            item_id: itemId,
+            id: itemId,
+            name,
+            category,
+            description,
+            price,
+            available,
+            image_url: imageUrl,
+        };
     }
 
     function readMenuApiCandidates() {
@@ -7135,6 +7737,26 @@
             'http://127.0.0.1:18011/menu',
             'http://localhost:18011/menu',
         ];
+        const isLocalLikeHost = (hostname) => {
+            const host = String(hostname || '').trim().toLowerCase();
+            return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+        };
+        const toBrowserSafeMenuUrl = (menuUrl, coreApiUrl) => {
+            const raw = String(menuUrl || '').trim();
+            if (!raw) return '';
+            if (raw.startsWith('/')) return raw;
+            try {
+                const parsed = new URL(raw, window.location.href);
+                if (parsed.origin === window.location.origin || isLocalLikeHost(parsed.hostname)) {
+                    return parsed.toString();
+                }
+                const safeCore = String(coreApiUrl || '').trim().replace(/\/$/, '');
+                if (!safeCore) return parsed.toString();
+                return `${safeCore}/menu/proxy?source=${encodeURIComponent(parsed.toString())}`;
+            } catch {
+                return raw;
+            }
+        };
         try {
             const raw = localStorage.getItem(ADMIN_ENV_STORAGE_KEY);
             if (!raw) return defaults;
@@ -7146,7 +7768,11 @@
             const coreApi = String(parsed.VITE_CORE_API_URL || '').trim()
                 .replace('://127.0.0.1:8001', '://127.0.0.1:8011')
                 .replace('://localhost:8001', '://localhost:8011');
-            if (menuApi) configured.push(menuApi);
+            const safeMenuApi = toBrowserSafeMenuUrl(menuApi, coreApi);
+            if (safeMenuApi) {
+                // When operator explicitly sets menu URL, do not silently fall back to other endpoints.
+                return [safeMenuApi];
+            }
             if (coreApi) configured.push(`${coreApi.replace(/\/$/, '')}/menu`);
             return Array.from(new Set([...configured, ...defaults]));
         } catch {
@@ -7157,11 +7783,13 @@
     function renderMenuItems(items) {
         if (!Array.isArray(items) || items.length === 0) {
             currentMenuItems = [];
+            menuSizeOptionsCache.clear();
             if (menuItemsGrid) menuItemsGrid.innerHTML = '<p class="menu-status">Chua co du lieu menu.</p>';
             if (menuCategoryRow) menuCategoryRow.innerHTML = '';
             return;
         }
 
+        menuSizeOptionsCache.clear();
         currentMenuItems = items.map((item) => ({
             ...item,
             _category: normalizeCategory(item),
@@ -7177,15 +7805,36 @@
     async function ensureMenuLoaded() {
         if (menuLoaded) return;
         const candidates = readMenuApiCandidates();
+        let configuredSizeSource = '';
+        let configuredSizeName = '';
+        try {
+            const raw = localStorage.getItem(ADMIN_ENV_STORAGE_KEY);
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                configuredSizeSource = String(parsed.VITE_PRODUCT_SIZE_API_URL || '').trim();
+                configuredSizeName = String(parsed.VITE_PRODUCT_DEFAULT_SIZE_NAME || '').trim();
+            }
+        } catch {}
         if (menuStatus) menuStatus.textContent = 'Dang tai menu...';
         try {
             let lastError = null;
             for (const menuUrl of candidates) {
-                if (menuStatus) menuStatus.textContent = `Dang tai tu ${menuUrl}`;
+                let requestUrl = menuUrl;
+                try {
+                    if (configuredSizeSource && menuUrl.includes('/menu/proxy')) {
+                        const parsed = new URL(menuUrl, window.location.href);
+                        parsed.searchParams.set('size_source', configuredSizeSource);
+                        if (configuredSizeName) {
+                            parsed.searchParams.set('size_name', configuredSizeName);
+                        }
+                        requestUrl = parsed.toString();
+                    }
+                } catch {}
+                if (menuStatus) menuStatus.textContent = `Dang tai tu ${requestUrl}`;
                 try {
                     const controller = new AbortController();
                     const timeout = setTimeout(() => controller.abort(), 6000);
-                    const response = await fetch(menuUrl, { method: 'GET', signal: controller.signal });
+                    const response = await fetch(requestUrl, { method: 'GET', signal: controller.signal });
                     clearTimeout(timeout);
                     if (!response.ok) throw new Error(`HTTP ${response.status}`);
                     const contentType = response.headers.get('content-type') || '';
@@ -7193,7 +7842,14 @@
                         throw new Error(`Unexpected content-type: ${contentType || 'unknown'}`);
                     }
                     const payload = await response.json();
-                    const items = Array.isArray(payload) ? payload : (Array.isArray(payload?.items) ? payload.items : []);
+                    const records = extractMenuRecords(payload);
+                    const items = records
+                        .map((record, index) => normalizeMenuRecord(record, index))
+                        .filter(Boolean);
+                    if (items.length === 0) {
+                        throw new Error('Menu payload has no supported item records');
+                    }
+                    await enrichMenuItemsWithSizeData(items);
                     renderMenuItems(items);
                     menuLoaded = true;
                     if (menuStatus) menuStatus.textContent = `Da tai ${items.length} mon`;
@@ -7204,13 +7860,18 @@
             }
             throw lastError || new Error('No menu endpoint reachable');
         } catch (error) {
-            const fallbackItems = [
-                { item_id: 'ts-tranchau', name: 'Tra sua tran chau', category: 'Tra sua', description: 'Dam tra thom sua, tran chau mem dai.', price: 45000, available: true, image_url: 'https://images.unsplash.com/photo-1558857563-b371033873b8?auto=format&fit=crop&w=1000&q=80' },
-                { item_id: 'ca-phe-muoi', name: 'Ca phe muoi', category: 'Ca phe', description: 'Ca phe dam vi cung lop kem man ngot.', price: 42000, available: true, image_url: 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?auto=format&fit=crop&w=1000&q=80' },
-                { item_id: 'tra-dao', name: 'Tra dao cam sa', category: 'Tra trai cay', description: 'Chua ngot can bang, huong sa thanh mat.', price: 48000, available: true, image_url: 'https://images.unsplash.com/photo-1499638673689-79a0b5115d87?auto=format&fit=crop&w=1000&q=80' },
-            ];
-            renderMenuItems(fallbackItems);
-            if (menuStatus) menuStatus.textContent = 'Menu tam thoi (dang cho backend san sang)';
+            renderMenuItems([]);
+            menuLoaded = true;
+            if (menuStatus) {
+                const reason = String(error?.message || '').trim();
+                menuStatus.textContent = reason
+                    ? `Loi tai menu: ${reason}`
+                    : 'Loi tai menu';
+            }
+            if (menuItemsGrid) {
+                const reason = toSafeText(String(error?.message || 'Khong ro loi'));
+                menuItemsGrid.innerHTML = `<p class="menu-status">Khong tai duoc menu. ${reason}</p>`;
+            }
         }
     }
 

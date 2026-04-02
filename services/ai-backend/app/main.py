@@ -6,9 +6,11 @@ import io
 from importlib import metadata as importlib_metadata
 import json
 import logging
+import re
 import subprocess
 import sys
 import time
+from pathlib import Path
 from typing import Awaitable
 import wave
 
@@ -16,13 +18,18 @@ import httpx
 from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, StreamingResponse
+from dotenv import dotenv_values
 
-from app.config import get_settings
+from app.config import ROOT_DIR, get_settings
 from app.models import (
     BridgeDebugChatRequest,
     BridgeDebugChatResponse,
     BridgeTemporaryChatResetResponse,
     ConversationResponse,
+    EnvLoadRequest,
+    EnvLoadResponse,
+    EnvSyncRequest,
+    EnvSyncResponse,
     FeedbackRequest,
     SessionStartRequest,
     SpeechSynthesisRequest,
@@ -45,6 +52,8 @@ logger = logging.getLogger("uvicorn.error")
 SUPPORTED_TTS_ENGINES = {"auto", "vieneu", "edge", "local", "pyttsx3"}
 VIENEU_INSTALL_TIMEOUT_SECONDS = 900
 bridge_keepalive_task: asyncio.Task[None] | None = None
+ENV_KEY_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+ENV_ASSIGNMENT_PATTERN = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=")
 
 app = FastAPI(title="Order Robot AI Backend", version="1.0.0")
 
@@ -55,6 +64,61 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def _serialize_env_value(raw_value: str) -> str:
+    clean_value = str(raw_value or "").replace("\r", " ").replace("\n", " ").strip()
+    if not clean_value:
+        return ""
+    if any(token in clean_value for token in ('"', "'", "#")) or any(ch.isspace() for ch in clean_value):
+        escaped = clean_value.replace("\\", "\\\\").replace('"', '\\"')
+        return f'"{escaped}"'
+    return clean_value
+
+
+def _write_env_updates(env_path: Path, updates: dict[str, str]) -> None:
+    env_path.parent.mkdir(parents=True, exist_ok=True)
+    if env_path.exists():
+        original_lines = env_path.read_text(encoding="utf-8-sig").splitlines()
+    else:
+        original_lines = []
+
+    written: set[str] = set()
+    next_lines: list[str] = list(original_lines)
+    for index, line in enumerate(original_lines):
+        if line.lstrip().startswith("#"):
+            continue
+        match = ENV_ASSIGNMENT_PATTERN.match(line)
+        if not match:
+            continue
+        key = match.group(1)
+        if key not in updates:
+            continue
+        next_lines[index] = f"{key}={_serialize_env_value(updates[key])}"
+        written.add(key)
+
+    for key, value in updates.items():
+        if key in written:
+            continue
+        next_lines.append(f"{key}={_serialize_env_value(value)}")
+
+    content = "\n".join(next_lines).rstrip()
+    env_path.write_text(f"{content}\n" if content else "", encoding="utf-8")
+
+
+def _read_env_values(env_path: Path, keys: set[str]) -> dict[str, str]:
+    if not env_path.exists():
+        return {}
+    parsed = dotenv_values(env_path)
+    values: dict[str, str] = {}
+    for raw_key, raw_value in parsed.items():
+        key = str(raw_key or "").strip()
+        if not key or not ENV_KEY_PATTERN.match(key):
+            continue
+        if keys and key not in keys:
+            continue
+        values[key] = "" if raw_value is None else str(raw_value)
+    return values
 
 
 @app.on_event("startup")
@@ -380,6 +444,67 @@ async def update_tts_config(payload: TTSConfigRequest) -> dict[str, str]:
         "tts_vieneu_stream_lookback": str(settings.tts_vieneu_stream_lookback),
         "tts_vieneu_stream_overlap_frames": str(settings.tts_vieneu_stream_overlap_frames),
     }
+
+
+@app.post("/config/env/sync", response_model=EnvSyncResponse)
+async def sync_env_config(payload: EnvSyncRequest) -> EnvSyncResponse:
+    """Persist admin-configured environment values to the root .env file."""
+    normalized_updates: dict[str, str] = {}
+    for raw_key, raw_value in payload.fields.items():
+        key = str(raw_key or "").strip()
+        if not key or not ENV_KEY_PATTERN.match(key):
+            continue
+        normalized_updates[key] = str(raw_value or "").strip()
+
+    if not normalized_updates:
+        raise HTTPException(status_code=400, detail="No valid ENV keys provided.")
+
+    env_path = ROOT_DIR / ".env"
+    try:
+        await asyncio.to_thread(_write_env_updates, env_path, normalized_updates)
+    except Exception as exc:
+        logger.exception("config_env_sync status=error err=%s", exc)
+        raise HTTPException(status_code=500, detail=f"Cannot update .env: {exc}") from exc
+
+    logger.info(
+        "config_env_sync status=ok updated_keys=%s env_path=%s",
+        len(normalized_updates),
+        env_path,
+    )
+    return EnvSyncResponse(
+        status="ok",
+        env_path=str(env_path),
+        updated_keys=len(normalized_updates),
+    )
+
+
+@app.post("/config/env/load", response_model=EnvLoadResponse)
+async def load_env_config(payload: EnvLoadRequest) -> EnvLoadResponse:
+    """Load selected environment keys from root .env for Admin hydration."""
+    requested_keys: set[str] = set()
+    for raw_key in payload.keys:
+        key = str(raw_key or "").strip()
+        if key and ENV_KEY_PATTERN.match(key):
+            requested_keys.add(key)
+
+    env_path = ROOT_DIR / ".env"
+    try:
+        loaded = await asyncio.to_thread(_read_env_values, env_path, requested_keys)
+    except Exception as exc:
+        logger.exception("config_env_load status=error err=%s", exc)
+        raise HTTPException(status_code=500, detail=f"Cannot read .env: {exc}") from exc
+
+    logger.info(
+        "config_env_load status=ok loaded_keys=%s env_path=%s",
+        len(loaded),
+        env_path,
+    )
+    return EnvLoadResponse(
+        status="ok",
+        env_path=str(env_path),
+        fields=loaded,
+        loaded_keys=len(loaded),
+    )
 
 
 @app.get("/speech/vieneu/voices")

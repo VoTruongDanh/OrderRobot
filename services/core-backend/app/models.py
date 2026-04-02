@@ -20,6 +20,15 @@ class MenuItem(BaseModel):
     tags: list[str] = Field(default_factory=list)
 
 
+class MenuItemSizeOption(BaseModel):
+    item_id: str
+    product_id: int | None = None
+    size_id: int | None = None
+    size_name: str
+    price: Decimal = Field(ge=0)
+    is_default: bool = False
+
+
 class UpsertMenuItemRequest(BaseModel):
     item_id: str
     name: str
@@ -34,6 +43,8 @@ class UpsertMenuItemRequest(BaseModel):
 class CreateOrderLineInput(BaseModel):
     item_id: str
     quantity: int = Field(gt=0, le=20)
+    size_name: str | None = None
+    size_id: int | None = None
 
 
 class CreateOrderRequest(BaseModel):
@@ -57,4 +68,12 @@ class OrderRecord(BaseModel):
     customer_text: str
     items: list[OrderLineItem]
     total_amount: Decimal = Field(ge=0)
-    status: Literal["confirmed"] = "confirmed"
+    status: str = "confirmed"
+    payment_provider: str | None = None
+    payment_status: str | None = None
+    payment_qr_content: str | None = None
+    payment_qr_image_url: str | None = None
+    payment_amount: Decimal | None = Field(default=None, ge=0)
+    payment_expires_at: datetime | None = None
+    sync_error_code: str | None = None
+    sync_error_detail: str | None = None
