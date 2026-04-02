@@ -71,6 +71,8 @@
         body.admin-preview-mode .camera-mini-panel,
         body.admin-preview-mode .voice-mini-panel,
         body.admin-preview-mode .order-status-hud,
+        body.admin-preview-mode .order-review-hud,
+        body.admin-preview-mode .size-picker-hud,
         body.admin-preview-mode .cart-mini-panel,
         body.admin-preview-mode .voice-order-hint {
             display: none !important;
@@ -108,7 +110,7 @@
 
         /* Modular Builder - REDESIGNED VECTOR STYLE */
         
-        /* HEAD SHAPES - Vector TV/Monitor Style */
+        /* HEAD SHAPES - Vector TV/Mónitor Style */
         #head {
             position: relative;
             border: 4px solid #1e293b !important;
@@ -1164,6 +1166,226 @@
         .order-status-hud[hidden] {
             display: none;
         }
+        .order-review-hud {
+            position: fixed;
+            inset: 0;
+            z-index: 158;
+            display: grid;
+            place-items: center;
+            pointer-events: none;
+        }
+        .order-review-hud[hidden] {
+            display: none;
+        }
+        .order-review-backdrop {
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(150deg, rgba(7, 27, 44, 0.62), rgba(8, 43, 66, 0.5));
+            backdrop-filter: blur(5px);
+            pointer-events: auto;
+        }
+        .order-review-card {
+            position: relative;
+            pointer-events: auto;
+            width: min(95vw, 640px);
+            border-radius: 26px;
+            border: 1px solid rgba(131, 170, 196, 0.36);
+            background: linear-gradient(165deg, rgba(255, 255, 255, 0.99), rgba(236, 248, 255, 0.95));
+            box-shadow: 0 26px 66px rgba(8, 44, 78, 0.36);
+            padding: 22px;
+            display: grid;
+            gap: 12px;
+        }
+        .order-review-title {
+            margin: 0;
+            font-size: 1.48rem;
+            font-weight: 900;
+            color: #0f2b3b;
+            line-height: 1.2;
+        }
+        .order-review-sub {
+            margin: 0;
+            font-size: 0.95rem;
+            color: #355468;
+            line-height: 1.35;
+        }
+        .order-review-lines {
+            display: grid;
+            gap: 8px;
+            max-height: 42vh;
+            overflow: auto;
+            padding-right: 4px;
+        }
+        .order-review-line {
+            display: grid;
+            grid-template-columns: 44px auto 1fr auto;
+            align-items: center;
+            gap: 8px;
+            border-radius: 12px;
+            border: 1px solid rgba(125, 170, 197, 0.28);
+            background: linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(232, 246, 255, 0.92));
+            padding: 9px 11px;
+            font-size: 0.95rem;
+            color: #1f3f53;
+        }
+        .order-review-thumb {
+            width: 44px;
+            height: 44px;
+            border-radius: 10px;
+            object-fit: cover;
+            border: 1px solid rgba(125, 170, 197, 0.34);
+            background: #dbeafe;
+        }
+        .order-review-line strong {
+            color: #0f2b3b;
+        }
+        .order-review-total {
+            margin: 0;
+            font-size: 1.2rem;
+            font-weight: 900;
+            color: #0f766e;
+            text-align: right;
+        }
+        .order-review-actions {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        .order-review-action {
+            min-height: 46px;
+            border-radius: 12px;
+            border: 1px solid rgba(120, 162, 188, 0.34);
+            background: rgba(255, 255, 255, 0.92);
+            color: #25526a;
+            font-size: 0.9rem;
+            font-weight: 800;
+            padding: 10px 12px;
+            cursor: pointer;
+            transition: all var(--ui-fast) ease;
+        }
+        .order-review-action:hover {
+            transform: translateY(-1px);
+        }
+        .order-review-action--confirm {
+            border-color: rgba(15, 118, 110, 0.34);
+            background: linear-gradient(135deg, #0ea5a2, #2563eb);
+            color: #fff;
+            box-shadow: 0 10px 20px rgba(20, 88, 161, 0.28);
+        }
+        .size-picker-hud {
+            position: fixed;
+            inset: 0;
+            z-index: 155;
+            display: grid;
+            place-items: center;
+            pointer-events: none;
+        }
+        .size-picker-hud[hidden] {
+            display: none;
+        }
+        .size-picker-backdrop {
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(150deg, rgba(7, 27, 44, 0.56), rgba(8, 43, 66, 0.44));
+            backdrop-filter: blur(4px);
+            pointer-events: auto;
+        }
+        .size-picker-card {
+            position: relative;
+            pointer-events: auto;
+            width: min(94vw, 560px);
+            border-radius: 24px;
+            border: 1px solid rgba(131, 170, 196, 0.36);
+            background: linear-gradient(165deg, rgba(255, 255, 255, 0.98), rgba(236, 248, 255, 0.94));
+            box-shadow: 0 24px 64px rgba(8, 44, 78, 0.34);
+            padding: 20px;
+            display: grid;
+            gap: 12px;
+        }
+        .size-picker-title {
+            margin: 0;
+            font-size: 1.14rem;
+            font-weight: 800;
+            color: #0f2b3b;
+        }
+        .size-picker-sub {
+            margin: 0;
+            font-size: 0.9rem;
+            color: #355468;
+        }
+        .size-picker-item {
+            margin: 0;
+            font-size: 1.02rem;
+            font-weight: 800;
+            color: #0f4c66;
+        }
+        .size-picker-options {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+        }
+        .size-picker-option {
+            display: grid;
+            gap: 4px;
+            border-radius: 14px;
+            border: 1px solid rgba(120, 162, 188, 0.35);
+            background: linear-gradient(145deg, rgba(255, 255, 255, 0.97), rgba(239, 248, 255, 0.93));
+            padding: 11px 12px;
+            text-align: left;
+            cursor: pointer;
+            transition: transform var(--ui-fast) ease, box-shadow var(--ui-fast) ease, border-color var(--ui-fast) ease;
+        }
+        .size-picker-option:hover,
+        .size-picker-option:focus-visible {
+            transform: translateY(-1px);
+            box-shadow: 0 10px 20px rgba(20, 88, 161, 0.2);
+            border-color: rgba(14, 116, 144, 0.54);
+            outline: none;
+        }
+        .size-picker-option--default {
+            border-color: rgba(20, 184, 166, 0.42);
+        }
+        .size-picker-option-size {
+            font-size: 0.95rem;
+            font-weight: 800;
+            color: #0f2b3b;
+        }
+        .size-picker-option-price {
+            font-size: 0.84rem;
+            font-weight: 700;
+            color: #0e7490;
+        }
+        .size-picker-option-tag {
+            justify-self: start;
+            border-radius: 999px;
+            border: 1px solid rgba(20, 184, 166, 0.34);
+            background: rgba(204, 251, 241, 0.82);
+            color: #0f766e;
+            font-size: 0.68rem;
+            font-weight: 800;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            padding: 2px 7px;
+        }
+        .size-picker-actions {
+            display: flex;
+            justify-content: flex-end;
+        }
+        .size-picker-cancel {
+            border-radius: 12px;
+            border: 1px solid rgba(120, 162, 188, 0.34);
+            background: rgba(255, 255, 255, 0.9);
+            color: #25526a;
+            font-size: 0.86rem;
+            font-weight: 800;
+            padding: 8px 14px;
+            cursor: pointer;
+            transition: all var(--ui-fast) ease;
+        }
+        .size-picker-cancel:hover {
+            background: rgba(226, 240, 255, 0.9);
+            border-color: rgba(96, 165, 250, 0.46);
+        }
         .voice-order-hint {
             position: fixed;
             top: 78px;
@@ -1554,16 +1776,15 @@
 
         /* ===== 2026 Robot UI Refresh (research-driven: kawaii + glass + modular cards) ===== */
         :root {
-            --ui-ink: #2c254a;
-            --ui-ink-soft: #6a608e;
-            --ui-accent-pink: #ff66b2;
-            --ui-accent-cyan: #57d8ff;
-            --ui-accent-mint: #5dd8a6;
-            --ui-accent-violet: #9b8cff;
-            --ui-surface: rgba(255, 255, 255, 0.68);
-            --ui-surface-strong: rgba(255, 255, 255, 0.88);
-            --ui-border: rgba(168, 145, 219, 0.34);
-            --ui-shadow: 0 20px 45px rgba(81, 43, 141, 0.16);
+            --ui-ink: #0f2b3b;
+            --ui-ink-soft: #4d6676;
+            --ui-accent-primary: #0ea5a2;
+            --ui-accent-secondary: #1d4ed8;
+            --ui-accent-positive: #16a34a;
+            --ui-surface: rgba(255, 255, 255, 0.74);
+            --ui-surface-strong: rgba(255, 255, 255, 0.92);
+            --ui-border: rgba(120, 162, 188, 0.34);
+            --ui-shadow: 0 22px 42px rgba(15, 44, 80, 0.16);
             --ui-radius-xl: 24px;
             --ui-radius-lg: 18px;
             --ui-fast: 180ms;
@@ -1573,10 +1794,10 @@
 
         body#main-viewport {
             background:
-                radial-gradient(circle at 10% 10%, rgba(255, 196, 231, 0.58), transparent 35%),
-                radial-gradient(circle at 84% 18%, rgba(164, 230, 255, 0.58), transparent 36%),
-                radial-gradient(circle at 52% 95%, rgba(218, 203, 255, 0.48), transparent 40%),
-                linear-gradient(150deg, #fff9fe 0%, #f8fbff 45%, #fdf7ff 100%);
+                radial-gradient(circle at 8% 8%, rgba(187, 247, 246, 0.62), transparent 34%),
+                radial-gradient(circle at 86% 14%, rgba(191, 219, 254, 0.58), transparent 36%),
+                radial-gradient(circle at 46% 96%, rgba(191, 229, 255, 0.4), transparent 42%),
+                linear-gradient(152deg, #f8fcff 0%, #eef7ff 45%, #f6fbff 100%);
             color: var(--ui-ink);
             font-family: "Manrope", "Segoe UI", sans-serif;
         }
@@ -1599,13 +1820,13 @@
         body#main-viewport::before {
             top: -8vh;
             left: -7vw;
-            background: radial-gradient(circle, rgba(255, 119, 185, 0.42), rgba(255, 119, 185, 0));
+            background: radial-gradient(circle, rgba(45, 212, 191, 0.34), rgba(45, 212, 191, 0));
         }
 
         body#main-viewport::after {
             right: -8vw;
             bottom: -10vh;
-            background: radial-gradient(circle, rgba(120, 194, 255, 0.46), rgba(120, 194, 255, 0));
+            background: radial-gradient(circle, rgba(59, 130, 246, 0.34), rgba(59, 130, 246, 0));
         }
 
         .camera-mini-panel,
@@ -1622,7 +1843,7 @@
         .camera-mini-panel {
             top: 18px;
             right: 18px;
-            width: 342px;
+            width: 286px;
             border-radius: var(--ui-radius-xl);
             border: 1px solid var(--ui-border);
             background: linear-gradient(145deg, var(--ui-surface-strong), var(--ui-surface));
@@ -1659,7 +1880,7 @@
             color: var(--ui-ink);
             letter-spacing: 0.12em;
             font-weight: 800;
-            font-size: 0.7rem;
+            font-size: 0.8rem;
         }
 
         .voice-mini-status {
@@ -1673,14 +1894,14 @@
         }
 
         .voice-mini-toggle {
-            border: 1px solid rgba(168, 145, 219, 0.3);
+            border: 1px solid rgba(120, 162, 188, 0.34);
             background: rgba(255, 255, 255, 0.86);
-            color: #534a78;
+            color: #25526a;
             border-radius: 999px;
             padding: 6px 11px;
             font-size: 0.66rem;
             transition: all var(--ui-fast) ease;
-            box-shadow: 0 8px 18px rgba(102, 84, 153, 0.14);
+            box-shadow: 0 8px 18px rgba(40, 90, 130, 0.14);
         }
 
         .voice-mini-toggle:hover {
@@ -1688,10 +1909,10 @@
         }
 
         .voice-mini-toggle.active {
-            background: linear-gradient(135deg, var(--ui-accent-pink), #ff8ec9);
+            background: linear-gradient(135deg, var(--ui-accent-primary), var(--ui-accent-secondary));
             color: #fff;
             border-color: transparent;
-            box-shadow: 0 10px 20px rgba(255, 102, 178, 0.34);
+            box-shadow: 0 10px 22px rgba(20, 94, 175, 0.3);
         }
 
         .chat-mini-list {
@@ -1704,22 +1925,22 @@
             margin: 0;
             padding: 8px 10px;
             border-radius: 12px;
-            border: 1px solid rgba(168, 145, 219, 0.22);
+            border: 1px solid rgba(120, 162, 188, 0.24);
             background: rgba(255, 255, 255, 0.74);
-            color: #2f2653;
+            color: #143042;
             font-size: 0.74rem;
             line-height: 1.38;
-            box-shadow: 0 5px 12px rgba(102, 84, 153, 0.08);
+            box-shadow: 0 5px 12px rgba(33, 80, 120, 0.08);
         }
 
         .chat-mini-line.user {
-            background: linear-gradient(135deg, rgba(255, 105, 180, 0.2), rgba(140, 200, 255, 0.18));
-            border-color: rgba(255, 122, 188, 0.32);
+            background: linear-gradient(135deg, rgba(45, 212, 191, 0.18), rgba(147, 197, 253, 0.2));
+            border-color: rgba(20, 184, 166, 0.28);
         }
 
         .chat-mini-line.assistant {
-            background: linear-gradient(135deg, rgba(167, 244, 224, 0.26), rgba(172, 210, 255, 0.22));
-            border-color: rgba(99, 198, 173, 0.3);
+            background: linear-gradient(135deg, rgba(219, 234, 254, 0.42), rgba(191, 219, 254, 0.36));
+            border-color: rgba(96, 165, 250, 0.3);
         }
         .chat-mini-line.thinking {
             border-style: dashed;
@@ -1728,70 +1949,276 @@
         }
 
         .chat-mini-line-label {
-            color: #75699c;
+            color: #4d6676;
             margin-right: 4px;
         }
 
         .cart-mini-panel {
             right: 18px;
             left: auto;
-            top: 238px;
+            top: 198px;
             bottom: auto;
-            width: 295px;
+            width: 332px;
             border-radius: var(--ui-radius-xl);
             border: 1px solid var(--ui-border);
-            background: linear-gradient(145deg, rgba(255, 255, 255, 0.91), rgba(248, 246, 255, 0.76));
+            background: linear-gradient(145deg, rgba(255, 255, 255, 0.95), rgba(240, 249, 255, 0.86));
             box-shadow: var(--ui-shadow);
-            padding: 12px;
-            gap: 9px;
+            padding: 14px;
+            gap: 10px;
+        }
+
+        .cart-mini-hint {
+            margin: 0;
+            font-size: 0.78rem;
+            color: #3d6174;
+            line-height: 1.3;
         }
 
         .cart-mini-item {
+            display: grid;
+            grid-template-columns: 38px auto 1fr auto;
+            align-items: center;
+            gap: 8px;
             border-radius: 12px;
-            background: linear-gradient(135deg, rgba(255, 255, 255, 0.94), rgba(242, 246, 255, 0.9));
-            border: 1px solid rgba(168, 145, 219, 0.2);
-            padding: 7px 8px;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(232, 246, 255, 0.9));
+            border: 1px solid rgba(125, 170, 197, 0.3);
+            padding: 8px 9px;
+        }
+        .cart-mini-item-thumb {
+            width: 38px;
+            height: 38px;
+            border-radius: 10px;
+            object-fit: cover;
+            border: 1px solid rgba(125, 170, 197, 0.34);
+            background: #dbeafe;
+        }
+
+        .cart-mini-item-qty {
+            font-size: 0.92rem;
+            font-weight: 800;
+            color: #0b4a6b;
+        }
+
+        .cart-mini-item-main {
+            min-width: 0;
+            display: grid;
+            gap: 2px;
+        }
+
+        .cart-mini-item-main strong {
+            font-size: 0.9rem;
+            color: #0f2b3b;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .cart-mini-item-main span {
+            font-size: 0.8rem;
+            color: #355468;
+            font-weight: 700;
+        }
+
+        .cart-mini-quick-add {
+            width: 32px;
+            height: 32px;
+            border-radius: 10px;
+            border: 1px solid rgba(20, 184, 166, 0.36);
+            background: linear-gradient(145deg, rgba(236, 253, 245, 0.96), rgba(204, 251, 241, 0.92));
+            color: #0f766e;
+            font-size: 1rem;
+            font-weight: 900;
+            line-height: 1;
+            cursor: pointer;
+            transition: transform var(--ui-fast) ease, box-shadow var(--ui-fast) ease, border-color var(--ui-fast) ease;
+        }
+
+        .cart-mini-quick-add:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 8px 14px rgba(20, 184, 166, 0.2);
+            border-color: rgba(13, 148, 136, 0.5);
         }
 
         .cart-mini-total {
-            color: #2f8e69;
-            font-size: 0.83rem;
+            color: #0f766e;
+            font-size: 0.98rem;
+            font-weight: 900;
+        }
+
+        .cart-mini-actions {
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        .cart-mini-checkout {
+            min-height: 40px;
+            border-radius: 12px;
+            border: 1px solid rgba(15, 118, 110, 0.32);
+            background: linear-gradient(135deg, #0ea5a2, #2563eb);
+            color: #fff;
+            font-size: 0.86rem;
+            font-weight: 800;
+            letter-spacing: 0.01em;
+            padding: 8px 14px;
+            cursor: pointer;
+            transition: transform var(--ui-fast) ease, box-shadow var(--ui-fast) ease, opacity var(--ui-fast) ease;
+            box-shadow: 0 10px 20px rgba(20, 88, 161, 0.28);
+        }
+
+        .cart-mini-checkout:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 14px 22px rgba(20, 88, 161, 0.34);
+        }
+
+        .cart-mini-checkout:disabled {
+            cursor: not-allowed;
+            opacity: 0.6;
+            transform: none;
+            box-shadow: none;
+            background: linear-gradient(135deg, rgba(148, 163, 184, 0.9), rgba(148, 163, 184, 0.75));
+            border-color: rgba(100, 116, 139, 0.34);
+        }
+
+        .quick-add-toast {
+            position: fixed;
+            right: 20px;
+            top: 196px;
+            z-index: 130;
+            margin: 0;
+            padding: 9px 13px;
+            border-radius: 12px;
+            border: 1px solid rgba(20, 184, 166, 0.36);
+            background: linear-gradient(135deg, rgba(236, 253, 245, 0.96), rgba(204, 251, 241, 0.94));
+            color: #0f766e;
+            font-size: 0.84rem;
+            font-weight: 800;
+            box-shadow: 0 10px 20px rgba(13, 148, 136, 0.24);
+            transform: translateY(-8px);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity var(--ui-fast) ease, transform var(--ui-fast) ease;
+        }
+
+        .quick-add-toast.is-active {
+            opacity: 1;
+            transform: translateY(0);
         }
 
         .order-status-backdrop {
-            background: linear-gradient(150deg, rgba(41, 24, 76, 0.5), rgba(42, 31, 84, 0.42));
+            background: linear-gradient(150deg, rgba(7, 27, 44, 0.58), rgba(8, 43, 66, 0.48));
             backdrop-filter: blur(4px);
         }
 
         .order-status-card,
         .order-rating-card {
-            border-radius: 22px;
-            border: 1px solid rgba(199, 182, 236, 0.34);
-            background: linear-gradient(165deg, rgba(255, 255, 255, 0.95), rgba(247, 245, 255, 0.93));
-            box-shadow: 0 24px 64px rgba(45, 20, 86, 0.32);
-            padding: 18px;
-            gap: 11px;
+            width: min(94vw, 560px);
+            border-radius: 26px;
+            border: 1px solid rgba(131, 170, 196, 0.35);
+            background: linear-gradient(165deg, rgba(255, 255, 255, 0.98), rgba(236, 248, 255, 0.94));
+            box-shadow: 0 24px 64px rgba(8, 44, 78, 0.34);
+            padding: 22px;
+            gap: 12px;
         }
 
         .order-status-title {
-            color: #382c66;
+            color: #0f2b3b;
+            font-size: 1.45rem;
+            line-height: 1.2;
+            letter-spacing: 0.01em;
+        }
+
+        .order-status-sub {
+            font-size: 0.95rem;
+            color: #355468;
+        }
+
+        .order-popup-line {
+            font-size: 0.92rem;
+            padding: 8px 10px;
+            border-radius: 12px;
+        }
+
+        .order-popup-lines {
+            gap: 8px;
+            max-height: 228px;
+            padding-right: 4px;
+        }
+
+        .order-popup-total {
+            font-size: 1.12rem;
+            color: #0f2b3b;
+            font-weight: 800;
+        }
+
+        .order-popup-qr {
+            width: 144px;
+            height: 144px;
+            border-radius: 14px;
+            padding: 10px;
+            border-color: rgba(13, 65, 100, 0.24);
         }
 
         .order-popup-countdown {
-            color: #7f59d9;
+            color: #155e75;
+            font-size: 0.96rem;
+        }
+
+        .order-payment-success {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            align-items: center;
+            gap: 10px;
+            border-radius: 14px;
+            border: 1px solid rgba(34, 197, 94, 0.34);
+            background: linear-gradient(135deg, rgba(240, 253, 244, 0.96), rgba(220, 252, 231, 0.94));
+            padding: 10px 12px;
+            transform: translateY(8px);
+            opacity: 0;
+            transition: transform var(--ui-base) ease, opacity var(--ui-base) ease;
+        }
+
+        .order-payment-success.is-visible {
+            transform: translateY(0);
+            opacity: 1;
+        }
+
+        .order-payment-success-icon {
+            width: 30px;
+            height: 30px;
+            display: grid;
+            place-items: center;
+            border-radius: 999px;
+            background: #22c55e;
+            color: #fff;
+            font-size: 1rem;
+            font-weight: 900;
+            box-shadow: 0 8px 16px rgba(34, 197, 94, 0.34);
+        }
+
+        .order-payment-success-title {
+            margin: 0;
+            font-size: 0.98rem;
+            font-weight: 800;
+            color: #166534;
+        }
+
+        .order-payment-success-sub {
+            margin: 1px 0 0;
+            font-size: 0.78rem;
+            color: #166534;
         }
 
         .rating-star-btn {
-            border: 1px solid rgba(168, 145, 219, 0.34);
+            border: 1px solid rgba(120, 162, 188, 0.34);
             border-radius: 12px;
             background: rgba(255, 255, 255, 0.9);
         }
 
         .rating-star-btn.active,
         .rating-star-btn:hover {
-            background: linear-gradient(130deg, #ffe8a8, #ffd07a);
-            border-color: rgba(236, 159, 59, 0.76);
-            color: #8c4d12;
+            background: linear-gradient(130deg, #e0f2fe, #bae6fd);
+            border-color: rgba(14, 116, 144, 0.5);
+            color: #0f4c66;
         }
 
         aside {
@@ -2044,26 +2471,26 @@
             min-width: 192px;
             border-radius: 999px;
             border: 1px solid rgba(255, 255, 255, 0.55);
-            background: linear-gradient(135deg, #ff69b8, #61d7ff);
+            background: linear-gradient(135deg, #0ea5a2, #2563eb);
             color: #fff;
-            font-size: 0.65rem;
+            font-size: 0.72rem;
             letter-spacing: 0.22em;
-            box-shadow: 0 18px 28px rgba(104, 76, 181, 0.34);
+            box-shadow: 0 18px 28px rgba(15, 76, 153, 0.34);
             transition: transform var(--ui-fast) ease, box-shadow var(--ui-fast) ease;
         }
 
         #menu-toggle-dock button:hover {
             transform: translateY(-2px);
-            box-shadow: 0 24px 34px rgba(108, 81, 188, 0.4);
+            box-shadow: 0 24px 34px rgba(15, 76, 153, 0.42);
         }
 
         #sliding-menu {
             height: 60vh !important;
-            border-top: 1px solid rgba(199, 182, 236, 0.4);
+            border-top: 1px solid rgba(151, 187, 210, 0.44);
             border-radius: 28px 28px 0 0;
-            background: linear-gradient(165deg, rgba(255, 255, 255, 0.92), rgba(244, 243, 255, 0.9));
-            box-shadow: 0 -18px 40px rgba(81, 53, 150, 0.2);
-            padding: 14px 16px 18px;
+            background: linear-gradient(165deg, rgba(255, 255, 255, 0.95), rgba(238, 248, 255, 0.92));
+            box-shadow: 0 -18px 40px rgba(12, 74, 110, 0.2);
+            padding: 16px 18px 20px;
         }
 
         .menu-shell {
@@ -2072,15 +2499,15 @@
         }
 
         .menu-close-btn {
-            border-color: rgba(169, 141, 220, 0.36);
+            border-color: rgba(120, 162, 188, 0.36);
             background: rgba(255, 255, 255, 0.9);
-            color: #5c4f87;
+            color: #25526a;
             transition: all var(--ui-fast) ease;
         }
 
         .menu-close-btn:hover {
-            background: linear-gradient(135deg, rgba(255, 127, 191, 0.22), rgba(111, 213, 255, 0.2));
-            color: #3e3566;
+            background: linear-gradient(135deg, rgba(191, 219, 254, 0.36), rgba(167, 243, 208, 0.3));
+            color: #103246;
         }
 
         .menu-status {
@@ -2089,62 +2516,75 @@
         }
 
         .menu-cat-chip {
-            border-color: rgba(169, 141, 220, 0.38);
+            border-color: rgba(120, 162, 188, 0.38);
             background: rgba(255, 255, 255, 0.9);
-            color: #5d5287;
+            color: #24546c;
             transition: transform var(--ui-fast) ease, box-shadow var(--ui-fast) ease;
         }
 
         .menu-cat-chip:hover {
             transform: translateY(-1px);
-            box-shadow: 0 8px 18px rgba(108, 82, 181, 0.16);
+            box-shadow: 0 8px 18px rgba(30, 101, 143, 0.18);
         }
 
         .menu-cat-chip.active {
-            background: linear-gradient(135deg, #ff69b8, #61d7ff);
+            background: linear-gradient(135deg, #0ea5a2, #2563eb);
             color: #fff;
-            box-shadow: 0 12px 22px rgba(121, 82, 196, 0.34);
+            box-shadow: 0 12px 22px rgba(20, 88, 161, 0.34);
         }
 
         .menu-items-grid {
-            grid-template-columns: repeat(auto-fill, minmax(215px, 1fr));
-            gap: 13px;
-            padding-right: 2px;
+            grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+            gap: 14px;
+            padding-right: 4px;
         }
 
         .menu-item-card {
-            border-radius: 18px;
-            border: 1px solid rgba(171, 148, 223, 0.3);
-            background: linear-gradient(160deg, rgba(255, 255, 255, 0.97), rgba(243, 247, 255, 0.94));
-            box-shadow: 0 10px 24px rgba(70, 42, 130, 0.12);
+            border-radius: 20px;
+            border: 1px solid rgba(125, 170, 197, 0.3);
+            background: linear-gradient(160deg, rgba(255, 255, 255, 0.99), rgba(236, 248, 255, 0.94));
+            box-shadow: 0 12px 24px rgba(14, 58, 94, 0.12);
+            padding: 14px;
+            gap: 10px;
         }
 
         .menu-item-name {
-            color: #32285a;
+            color: #0f2b3b;
+            font-size: 1.08rem;
+            line-height: 1.25;
         }
 
         .menu-item-meta {
-            color: #75689f;
+            color: #4d6676;
+            font-size: 0.76rem;
         }
 
         .menu-item-desc {
-            color: #64598d;
+            color: #355468;
+            font-size: 0.88rem;
+            line-height: 1.4;
         }
 
         .menu-item-price {
-            color: #2a8fbb;
+            color: #0e7490;
+            font-size: 1.1rem;
         }
 
         .menu-item-state.ok {
-            background: rgba(98, 214, 172, 0.18);
-            border-color: rgba(78, 184, 146, 0.34);
-            color: #1f7d58;
+            background: rgba(167, 243, 208, 0.35);
+            border-color: rgba(20, 184, 166, 0.34);
+            color: #0f766e;
         }
 
         .menu-item-state.off {
-            background: rgba(213, 219, 238, 0.5);
-            border-color: rgba(167, 162, 197, 0.42);
-            color: #615883;
+            background: rgba(226, 232, 240, 0.62);
+            border-color: rgba(148, 163, 184, 0.42);
+            color: #4d6676;
+        }
+
+        .menu-item-card:active {
+            transform: translateY(0) scale(0.99);
+            box-shadow: 0 8px 16px rgba(14, 58, 94, 0.16);
         }
 
         @media (max-width: 1100px) {
@@ -2163,17 +2603,17 @@
             }
             .camera-mini-panel,
             .voice-mini-panel {
-                width: 310px;
+                width: 286px;
             }
             .cart-mini-panel {
-                width: 270px;
+                width: 304px;
             }
         }
 
         @media (max-width: 860px) {
             .camera-mini-panel {
                 top: 12px;
-                width: min(46vw, 320px);
+                width: min(40vw, 280px);
             }
 
             .voice-mini-panel {
@@ -2186,11 +2626,11 @@
             }
 
             .cart-mini-panel {
-                top: 224px;
+                top: 188px;
                 bottom: auto;
                 right: 14px;
                 left: auto;
-                width: min(40vw, 280px);
+                width: min(40vw, 312px);
             }
 
             #sliding-menu {
@@ -2239,8 +2679,16 @@
                 width: calc(100vw - 20px);
                 left: 10px;
                 right: 10px;
-                top: 318px;
+                top: 338px;
                 bottom: auto;
+            }
+
+            .quick-add-toast {
+                left: 10px;
+                right: 10px;
+                width: auto;
+                top: 304px;
+                text-align: center;
             }
 
             .voice-order-hint {
@@ -2262,6 +2710,172 @@
             #sliding-menu {
                 height: 70vh !important;
                 padding: 12px 10px 16px;
+            }
+
+            .size-picker-card {
+                width: calc(100vw - 20px);
+                padding: 16px;
+                gap: 10px;
+            }
+
+            .size-picker-options {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (orientation: portrait) and (min-width: 701px) {
+            #stage-container {
+                padding: 74px 14px 210px;
+            }
+
+            .camera-mini-panel {
+                top: 14px;
+                right: 14px;
+                left: auto;
+                width: min(36vw, 300px);
+            }
+
+            .voice-mini-panel {
+                top: 14px;
+                left: 14px;
+                right: auto;
+                width: min(44vw, 420px);
+                max-height: 30vh;
+            }
+
+            .chat-mini-list {
+                max-height: 18vh;
+            }
+
+            .cart-mini-panel {
+                right: 14px;
+                left: auto;
+                top: 206px;
+                bottom: auto;
+                width: min(38vw, 330px);
+                max-height: 42vh;
+            }
+
+            .cart-mini-list {
+                max-height: 20vh;
+            }
+
+            .quick-add-toast {
+                right: 14px;
+                left: auto;
+                top: 176px;
+                bottom: auto;
+                width: min(38vw, 330px);
+                text-align: center;
+            }
+
+            #menu-toggle-dock {
+                bottom: 18px;
+            }
+
+            #sliding-menu {
+                height: 70vh !important;
+            }
+
+            .order-review-card,
+            .order-status-card,
+            .order-rating-card {
+                width: min(92vw, 640px);
+            }
+        }
+
+        @media (orientation: portrait) and (max-width: 700px) {
+            #stage-container {
+                padding: 56px 10px 258px;
+            }
+
+            .camera-mini-panel {
+                top: 10px;
+                left: 10px;
+                right: 10px;
+                width: calc(100vw - 20px);
+                max-width: none;
+            }
+
+            .camera-mini-video {
+                aspect-ratio: 16 / 6;
+            }
+
+            .voice-mini-panel {
+                top: 122px;
+                left: 10px;
+                right: 10px;
+                width: calc(100vw - 20px);
+                max-height: 22vh;
+            }
+
+            .chat-mini-list {
+                max-height: 12vh;
+            }
+
+            .cart-mini-panel {
+                left: 10px;
+                right: 10px;
+                top: auto;
+                bottom: 88px;
+                width: calc(100vw - 20px);
+                max-height: 34vh;
+            }
+
+            .cart-mini-list {
+                max-height: 15vh;
+            }
+
+            .quick-add-toast {
+                left: 10px;
+                right: 10px;
+                top: auto;
+                bottom: 260px;
+                text-align: center;
+            }
+
+            .voice-order-hint {
+                top: 96px;
+                max-width: calc(100vw - 20px);
+            }
+
+            #menu-toggle-dock {
+                bottom: 20px;
+            }
+
+            #sliding-menu {
+                height: 74vh !important;
+                padding: 14px 10px 16px;
+            }
+
+            .order-review-card,
+            .order-status-card,
+            .order-rating-card {
+                width: calc(100vw - 20px);
+                padding: 18px;
+            }
+
+            .order-review-lines {
+                max-height: 44vh;
+            }
+
+            .order-review-actions {
+                grid-template-columns: 1fr;
+            }
+
+            .order-popup-lines {
+                max-height: 26vh;
+            }
+
+            .order-popup-qr-wrap {
+                grid-template-columns: 1fr;
+                justify-items: center;
+                text-align: center;
+            }
+
+            .order-popup-qr {
+                width: 168px;
+                height: 168px;
             }
         }
 
@@ -2288,37 +2902,74 @@
 </section>
 <section class="voice-mini-panel" id="voice-mini-panel" aria-label="Voice va chat panel">
 <div class="voice-mini-head">
-<p class="voice-mini-title">Hoi thoai voice</p>
-<button class="voice-mini-toggle" id="voice-mini-toggle" type="button">Bat nghe</button>
+<p class="voice-mini-title">Hội thoại voice</p>
+<button class="voice-mini-toggle" id="voice-mini-toggle" type="button">Bật nghe</button>
 </div>
-<p class="voice-mini-status" id="voice-mini-status">Dang san sang STT/TTS...</p>
+<p class="voice-mini-status" id="voice-mini-status">Đang sẵn sàng STT/TTS...</p>
 <div class="chat-mini-list" id="chat-mini-list">
-<p class="chat-mini-empty">Chua co hoi thoai.</p>
+<p class="chat-mini-empty">Chưa có hội thoại.</p>
 </div>
 </section>
 <section class="cart-mini-panel" id="cart-mini-panel" aria-label="Gio hang mini">
-<p class="cart-mini-title">Gio hang tam</p>
+<p class="cart-mini-title">Giỏ hàng tạm</p>
+<p class="cart-mini-hint">Nhấn + để thêm nhanh, bấm liên tục không cần chờ robot.</p>
 <div class="cart-mini-list" id="cart-mini-list">
-<p class="cart-mini-empty">Chua co mon nao trong gio.</p>
+<p class="cart-mini-empty">Chưa có món nào trong giỏ.</p>
 </div>
-<p class="cart-mini-total" id="cart-mini-total">Tong: 0 d</p>
+<p class="cart-mini-total" id="cart-mini-total">Tổng: 0 đ</p>
+<div class="cart-mini-actions">
+<button class="cart-mini-checkout" id="cart-mini-checkout-btn" type="button" disabled>Thêm món để đặt hàng</button>
+</div>
+</section>
+<p class="quick-add-toast" id="quick-add-toast" hidden aria-live="polite"></p>
+<section class="size-picker-hud" id="size-picker-hud" hidden aria-label="Size picker">
+<div class="size-picker-backdrop" id="size-picker-backdrop"></div>
+<article class="size-picker-card" role="dialog" aria-modal="true" aria-labelledby="size-picker-title">
+<p class="size-picker-title" id="size-picker-title">Chọn size</p>
+<p class="size-picker-sub">Chọn size để thêm món nhanh hơn.</p>
+<p class="size-picker-item" id="size-picker-item-name">--</p>
+<div class="size-picker-options" id="size-picker-options"></div>
+<div class="size-picker-actions">
+<button class="size-picker-cancel" id="size-picker-cancel" type="button">Huỷ</button>
+</div>
+</article>
+</section>
+<section class="order-review-hud" id="order-review-hud" hidden aria-label="Xác nhận hoá đơn">
+<div class="order-review-backdrop" id="order-review-backdrop"></div>
+<article class="order-review-card" role="dialog" aria-modal="true" aria-labelledby="order-review-title">
+<p class="order-review-title" id="order-review-title">Xác nhận đơn hàng lần 1</p>
+<p class="order-review-sub">Vui lòng xem lại hoá đơn. Bấm <strong>Xác nhận lần 2</strong> để tạo đơn và hiện QR thanh toán.</p>
+<div class="order-review-lines" id="order-review-lines"></div>
+<p class="order-review-total" id="order-review-total">Tổng thanh toán: 0 đ</p>
+<div class="order-review-actions">
+<button class="order-review-action" id="order-review-cancel-btn" type="button">Quay lại chỉnh giỏ</button>
+<button class="order-review-action order-review-action--confirm" id="order-review-confirm-btn" type="button">Xác nhận lần 2</button>
+</div>
+</article>
 </section>
 <section class="order-status-hud" id="order-status-hud" hidden aria-label="Order status popup">
 <div class="order-status-backdrop"></div>
 <article class="order-status-card" id="order-popup-card">
-<p class="order-status-title">Don hang da tao</p>
-<p class="order-status-sub" id="order-popup-order-id">Ma don: --</p>
+<p class="order-status-title">Đơn hàng đã tạo</p>
+<p class="order-status-sub" id="order-popup-order-id">Mã đơn: --</p>
 <div class="order-popup-lines" id="order-popup-lines"></div>
-<p class="order-popup-total" id="order-popup-total">Tong: 0 d</p>
+<p class="order-popup-total" id="order-popup-total">Tổng: 0 đ</p>
+<div class="order-payment-success" id="order-payment-success" hidden>
+<span class="order-payment-success-icon" aria-hidden="true">✓</span>
+<div>
+<p class="order-payment-success-title">Thanh toán thành công</p>
+<p class="order-payment-success-sub">Hệ thống đã xác nhận giao dịch cho đơn này.</p>
+</div>
+</div>
 <div class="order-popup-qr-wrap">
 <div class="order-popup-qr" id="order-popup-qr"></div>
-<p class="order-status-sub" id="order-popup-qr-label">Ma QR ao thanh toan.</p>
+<p class="order-status-sub" id="order-popup-qr-label">Mã QR ảo thanh toán.</p>
 </div>
-<p class="order-popup-countdown" id="order-popup-countdown">Tu dong dong sau 6s</p>
+<p class="order-popup-countdown" id="order-popup-countdown">Tự động đóng sau 6s</p>
 </article>
 <article class="order-rating-card" id="rating-popup-card" hidden>
-<p class="order-status-title">Danh gia trai nghiem</p>
-<p class="order-status-sub">Vui long chon tu 1 den 5 sao cho don vua dat.</p>
+<p class="order-status-title">Đánh giá trải nghiệm</p>
+<p class="order-status-sub">Vui lòng chọn từ 1 đến 5 sao cho đơn vừa đặt.</p>
 <div class="rating-stars" id="rating-stars">
 <button class="rating-star-btn" data-rating="1" type="button">1 Sao</button>
 <button class="rating-star-btn" data-rating="2" type="button">2 Sao</button>
@@ -2326,8 +2977,8 @@
 <button class="rating-star-btn" data-rating="4" type="button">4 Sao</button>
 <button class="rating-star-btn" data-rating="5" type="button">5 Sao</button>
 </div>
-<textarea class="rating-comment-input" id="rating-comment-input" placeholder="Nhan xet ngan (khong bat buoc)"></textarea>
-<p class="rating-popup-countdown" id="rating-popup-countdown">Tu dong gui sau 6s</p>
+<textarea class="rating-comment-input" id="rating-comment-input" placeholder="Nhận xét ngắn (không bắt buộc)"></textarea>
+<p class="rating-popup-countdown" id="rating-popup-countdown">Tự động gửi sau 6s</p>
 </article>
 </section>
 <p class="voice-order-hint" id="voice-order-hint" hidden>Nói xác nhận đơn hàng để đặt</p>
@@ -2391,7 +3042,7 @@
 <div class="menu-shell-head">
 <button class="menu-close-btn" onclick="toggleMenu()">Close</button>
 </div>
-<p class="menu-status" id="menu-status">Dang tai menu...</p>
+<p class="menu-status" id="menu-status">Đang tải menu...</p>
 <div class="menu-category-row" id="menu-category-row"></div>
 <div class="menu-items-grid" id="menu-items-grid"></div>
 <div class="mt-auto text-[8px] font-bold text-slate-300 tracking-[0.4em] uppercase">Aetheris Control OS v6.0</div>
@@ -2428,12 +3079,26 @@
     const chatMiniList = document.getElementById('chat-mini-list');
     const cartMiniList = document.getElementById('cart-mini-list');
     const cartMiniTotal = document.getElementById('cart-mini-total');
+    const cartMiniCheckoutBtn = document.getElementById('cart-mini-checkout-btn');
+    const quickAddToast = document.getElementById('quick-add-toast');
+    const sizePickerHud = document.getElementById('size-picker-hud');
+    const sizePickerBackdrop = document.getElementById('size-picker-backdrop');
+    const sizePickerItemName = document.getElementById('size-picker-item-name');
+    const sizePickerOptions = document.getElementById('size-picker-options');
+    const sizePickerCancel = document.getElementById('size-picker-cancel');
+    const orderReviewHud = document.getElementById('order-review-hud');
+    const orderReviewBackdrop = document.getElementById('order-review-backdrop');
+    const orderReviewLines = document.getElementById('order-review-lines');
+    const orderReviewTotal = document.getElementById('order-review-total');
+    const orderReviewConfirmBtn = document.getElementById('order-review-confirm-btn');
+    const orderReviewCancelBtn = document.getElementById('order-review-cancel-btn');
     const voiceOrderHint = document.getElementById('voice-order-hint');
     const orderStatusHud = document.getElementById('order-status-hud');
     const orderPopupCard = document.getElementById('order-popup-card');
     const orderPopupOrderId = document.getElementById('order-popup-order-id');
     const orderPopupLines = document.getElementById('order-popup-lines');
     const orderPopupTotal = document.getElementById('order-popup-total');
+    const orderPaymentSuccess = document.getElementById('order-payment-success');
     const orderPopupQr = document.getElementById('order-popup-qr');
     const orderPopupQrLabel = document.getElementById('order-popup-qr-label');
     const orderPopupCountdown = document.getElementById('order-popup-countdown');
@@ -2493,6 +3158,8 @@
     const DEFAULT_SUBMIT_SILENCE_MS = 1200;
     const BUSY_AUTO_SUBMIT_SUPPRESS_MS = 2400;
     const MAX_BACKEND_TURN_WAIT_MS = 22000;
+    const MANUAL_ADD_FLUSH_MS = 260;
+    const MANUAL_ADD_TOAST_MS = 900;
     const AUTO_STT_NOISE_SINGLE_TOKEN_BLOCKLIST = new Set([
         'a', 'e', 'em', 'uh', 'um', 'ah', 'oi', 'ha', 'he', 'la', 'na', 'ne',
         'da', 'dat', 'uhm', 'ok', 'oke',
@@ -2567,9 +3234,18 @@
     let kioskHeartbeatTimer = null;
     let orderPopupTimer = null;
     let ratingPopupTimer = null;
+    let quickAddToastTimer = null;
+    let manualAddFlushTimer = null;
+    let cartCheckoutCooldownTimer = null;
+    let cartCheckoutLocked = false;
+    let orderReviewOpen = false;
+    let orderReviewSnapshot = null;
+    let activeSizePickerResolver = null;
     let activeOrderFlowToken = 0;
     const handledOrderIds = [];
     const pendingUserTurns = [];
+    const manualTurnIds = new Set();
+    const pendingManualAddBuckets = new Map();
     let turnSequence = 0;
     let latestIssuedTurnId = '';
     let activeProcessingTurnId = '';
@@ -2883,7 +3559,7 @@
             if (!graphId) return;
             void robotController.runGraph(graphId, payload?.context || {}).then((ran) => {
                 if (ran === false && typeof setVoiceStatus === 'function') {
-                    setVoiceStatus(`Graph ${graphId} khong chay duoc. Vui long kiem tra cau hinh.`);
+                    setVoiceStatus(`Graph ${graphId} không chạy được. Vui lòng kiểm tra cấu hình.`);
                 }
             });
             return;
@@ -2898,7 +3574,7 @@
             if (!actionId) return;
             void robotController.triggerCinematic(actionId).then((ran) => {
                 if (ran === false && typeof setVoiceStatus === 'function') {
-                    setVoiceStatus(`Action ${actionId} dang bi tat hoac khong ho tro.`);
+                    setVoiceStatus(`Action ${actionId} đang bị tắt hoặc không hỗ trợ.`);
                 }
             });
         }
@@ -3153,7 +3829,9 @@
     }
 
     function isTurnStillLatest(turnId) {
-        return Boolean(turnId) && turnId === latestIssuedTurnId;
+        if (!turnId) return false;
+        if (manualTurnIds.has(turnId)) return true;
+        return turnId === latestIssuedTurnId;
     }
 
     function createSupersededTurnError() {
@@ -3171,13 +3849,13 @@
     function updateMenuPanelHeight(visibleCount) {
         if (!menu || !menuItemsGrid) return;
         const safeCount = Math.max(0, Number(visibleCount) || 0);
-        const gap = 12;
-        const minCardWidth = 210;
+        const gap = 14;
+        const minCardWidth = 240;
         const usableWidth = Math.max(menuItemsGrid.clientWidth, minCardWidth);
         const columns = Math.max(1, Math.floor(usableWidth / minCardWidth));
         const rows = Math.max(1, Math.ceil(safeCount / columns));
         const rowsClamped = Math.min(3, rows);
-        const rowsHeight = rowsClamped * 248 + Math.max(0, rowsClamped - 1) * gap;
+        const rowsHeight = rowsClamped * 294 + Math.max(0, rowsClamped - 1) * gap;
         const chromeHeight = 258;
         const minHeight = Math.round(window.innerHeight * 0.48);
         const maxHeight = Math.round(window.innerHeight * 0.88);
@@ -3545,6 +4223,7 @@
             document.body.classList.remove('menu-is-open');
             menuLabel.innerText = 'Menu';
             if (menuToggleDock) menuToggleDock.style.display = '';
+            closeSizePicker('');
             setFaceState('normal');
         }
     }
@@ -3578,7 +4257,7 @@
         voiceLatencyStatusTimer = window.setTimeout(() => {
             voiceLatencyStatusTimer = null;
             if (voiceListening) {
-                setVoiceStatus('Dang nghe ban noi...');
+                setVoiceStatus('Đang nghe bạn nói...');
             }
         }, 2200);
     }
@@ -3615,7 +4294,7 @@
                     const price = Math.max(0, Number(item?.price || 0));
                     return {
                         item_id: String(item?.item_id || item?.id || ''),
-                        name: String(item?.name || 'Mon'),
+                        name: String(item?.name || 'Món'),
                         quantity,
                         unit_price: price,
                         line_total: price * quantity,
@@ -3642,7 +4321,7 @@
                     const inferredPrice = quantity > 0 ? lineTotal / quantity : 0;
                     return {
                         item_id: String(menuItem?.item_id || menuItem?.id || name || ''),
-                        name: name || String(menuItem?.name || 'Mon'),
+                        name: name || String(menuItem?.name || 'Món'),
                         quantity,
                         unit_price: Math.max(0, Number(menuItem?.price || inferredPrice || 0)),
                         line_total: lineTotal,
@@ -3808,7 +4487,7 @@
             });
         }
         if (displayItems.length === 0) {
-            chatMiniList.innerHTML = '<p class="chat-mini-empty">Chua co hoi thoai.</p>';
+            chatMiniList.innerHTML = '<p class="chat-mini-empty">Chưa có hội thoại.</p>';
             return;
         }
         chatMiniList.innerHTML = displayItems.map((entry) => `
@@ -3984,9 +4663,19 @@
         if (orderPopupCard) {
             orderPopupCard.hidden = true;
         }
+        if (orderPaymentSuccess) {
+            orderPaymentSuccess.hidden = true;
+            orderPaymentSuccess.classList.remove('is-visible');
+        }
         if (ratingPopupCard) {
             ratingPopupCard.hidden = true;
         }
+        if (orderReviewHud) {
+            orderReviewHud.hidden = true;
+        }
+        orderReviewOpen = false;
+        orderReviewSnapshot = null;
+        refreshCartCheckoutButtonState();
     }
 
     async function fetchOrderPaymentStatus(orderId) {
@@ -4152,7 +4841,7 @@
                 ok,
             });
             if (!ok) continue;
-            orderPopupQr.innerHTML = `<img class="order-popup-qr-image" src="${toSafeText(candidate)}" alt="QR thanh toan don ${toSafeText(orderId)}" loading="lazy">`;
+            orderPopupQr.innerHTML = `<img class="order-popup-qr-image" src="${toSafeText(candidate)}" alt="QR thanh toán đơn ${toSafeText(orderId)}" loading="lazy">`;
             console.info('[order-qr] rendered image', {
                 orderId: String(orderId || ''),
                 candidate,
@@ -4234,18 +4923,70 @@
         if (!Array.isArray(items)) return [];
         return items
             .map((item) => {
+                const itemId = String(item?.item_id || item?.id || '').trim();
+                const sizeLabel = String(item?.size_label || item?.size || '').trim();
+                const baseName = String(item?.base_name || item?.name || 'Món').trim() || 'Món';
+                const displayName = String(item?.name || baseName || 'Món').trim() || 'Món';
                 const quantity = Math.max(0, Number(item?.quantity || 0));
-                const lineTotal = Math.max(0, Number(item?.line_total || 0));
-                const unitPrice = Math.max(0, Number(item?.unit_price || (quantity > 0 ? lineTotal / quantity : 0)));
+                const rawUnitPrice = Number(item?.unit_price);
+                const rawLineTotal = Number(item?.line_total);
+                const fallbackUnitPrice = quantity > 0 && Number.isFinite(rawLineTotal) ? rawLineTotal / quantity : 0;
+                const unitPrice = Math.max(0, Number.isFinite(rawUnitPrice) ? rawUnitPrice : fallbackUnitPrice);
+                const lineTotal = Math.max(
+                    0,
+                    Number.isFinite(rawLineTotal) && rawLineTotal > 0 ? rawLineTotal : unitPrice * quantity,
+                );
+                const itemKey = String(item?.item_key || '').trim() || buildManualAddKey(itemId, sizeLabel);
+                const imageUrl = String(
+                    item?.image_url
+                    || item?.image
+                    || item?.thumbnail
+                    || '',
+                ).trim();
                 return {
-                    item_id: String(item?.item_id || ''),
-                    name: String(item?.name || 'Mon'),
+                    item_id: itemId,
+                    item_key: itemKey,
+                    name: displayName,
+                    base_name: baseName,
+                    size_label: sizeLabel,
                     quantity,
                     line_total: lineTotal,
                     unit_price: unitPrice,
+                    image_url: imageUrl,
                 };
             })
             .filter((item) => item.quantity > 0);
+    }
+
+    function resolveCartItemImage(item) {
+        const direct = String(item?.image_url || item?.image || '').trim();
+        if (direct) return direct;
+        const itemId = String(item?.item_id || '').trim();
+        if (itemId && Array.isArray(currentMenuItems)) {
+            const matched = currentMenuItems.find((entry) => {
+                const entryId = String(entry?.item_id || entry?.id || '').trim();
+                return entryId && entryId === itemId;
+            });
+            if (matched) {
+                return getItemImage(
+                    matched,
+                    String(matched?.name || item?.base_name || item?.name || 'Món'),
+                    String(matched?.category || 'Đồ uống'),
+                );
+            }
+        }
+        return getItemImage(
+            { image_url: direct },
+            String(item?.base_name || item?.name || 'Món'),
+            'Đồ uống',
+        );
+    }
+
+    function buildManualAddKey(itemId, sizeLabel = '') {
+        const safeItemId = String(itemId || '').trim();
+        if (!safeItemId) return '';
+        const safeSize = normalizeNoToneKey(sizeLabel);
+        return safeSize ? `${safeItemId}::${safeSize}` : safeItemId;
     }
 
     function parseLeadingQuantityFromText(rawText) {
@@ -4360,6 +5101,9 @@
 
     async function showOrderPopupStep(orderData, flowToken) {
         if (!orderStatusHud || !orderPopupCard) return;
+        if (orderReviewOpen) {
+            closeOrderReview({ keepStatus: true });
+        }
 
         const orderId = String(orderData.orderId || '--');
         const snapshot = await fetchOrderSnapshot(orderId);
@@ -4396,9 +5140,13 @@
         if (ratingPopupCard) {
             ratingPopupCard.hidden = true;
         }
+        if (orderPaymentSuccess) {
+            orderPaymentSuccess.hidden = true;
+            orderPaymentSuccess.classList.remove('is-visible');
+        }
 
         if (orderPopupOrderId) {
-            orderPopupOrderId.textContent = `Ma don: ${orderId}`;
+            orderPopupOrderId.textContent = `Mã đơn: ${orderId}`;
         }
         if (orderPopupLines) {
             orderPopupLines.innerHTML = items.map((item) => `
@@ -4410,20 +5158,20 @@
             `).join('');
         }
         if (orderPopupTotal) {
-            orderPopupTotal.textContent = `Tong thanh toan: ${formatCurrencyVnd(total)}`;
+            orderPopupTotal.textContent = `Tổng thanh toán: ${formatCurrencyVnd(total)}`;
         }
         if (orderPopupQrLabel) {
             if (paymentQrImageUrl) {
-                orderPopupQrLabel.textContent = `QR ngan hang cho don ${orderId}`;
+                orderPopupQrLabel.textContent = `QR ngân hàng cho đơn ${orderId}`;
             } else if (isPaymentMode) {
-                orderPopupQrLabel.textContent = `QR thanh toan cho don ${orderId}`;
+                orderPopupQrLabel.textContent = `QR thanh toán cho đơn ${orderId}`;
             } else {
-                orderPopupQrLabel.textContent = `QR ao cho don ${orderId}`;
+                orderPopupQrLabel.textContent = `QR ảo cho đơn ${orderId}`;
             }
         }
         const qrImageRendered = await renderOrderPopupQrImage(orderId, qrSeed, paymentQrImageUrl, paymentQrContent);
         if (!qrImageRendered && orderPopupQrLabel && paymentQrContent) {
-            orderPopupQrLabel.textContent = `Khong tai duoc anh QR. Ma thanh toan: ${paymentQrContent}`;
+            orderPopupQrLabel.textContent = `Không tải được ảnh QR. Mã thanh toán: ${paymentQrContent}`;
         }
 
         await new Promise((resolve) => {
@@ -4439,8 +5187,8 @@
             };
             if (orderPopupCountdown) {
                 orderPopupCountdown.textContent = isPaymentMode
-                    ? `Dang cho thanh toan... con ${remaining}s`
-                    : `Popup thong tin don tu dong dong sau ${remaining}s`;
+                    ? `Đang chờ thanh toán... còn ${remaining}s`
+                    : `Popup thông tin đơn tự động đóng sau ${remaining}s`;
             }
             clearOrderFlowTimers();
             orderPopupTimer = window.setInterval(() => {
@@ -4451,8 +5199,8 @@
                 remaining -= 1;
                 if (orderPopupCountdown) {
                     orderPopupCountdown.textContent = isPaymentMode
-                        ? `Dang cho thanh toan... con ${Math.max(0, remaining)}s`
-                        : `Popup thong tin don tu dong dong sau ${Math.max(0, remaining)}s`;
+                        ? `Đang chờ thanh toán... còn ${Math.max(0, remaining)}s`
+                        : `Popup thông tin đơn tự động đóng sau ${Math.max(0, remaining)}s`;
                 }
                 if (isPaymentMode && !checkInFlight && remaining % 2 === 0) {
                     checkInFlight = true;
@@ -4462,14 +5210,14 @@
                             const statusText = String(paymentSnapshot?.status || '').trim();
                             const errorText = String(paymentSnapshot?.error || '').trim();
                             if (errorText && orderPopupCountdown) {
-                                orderPopupCountdown.textContent = `Dong bo thanh toan loi: ${errorText}`;
+                                orderPopupCountdown.textContent = `Đồng bộ thanh toán lỗi: ${errorText}`;
                                 window.setTimeout(() => {
                                     finish();
                                 }, 1200);
                                 return;
                             }
                             if (statusText && orderPopupCountdown && !paymentSnapshot?.paid) {
-                                orderPopupCountdown.textContent = `Trang thai: ${statusText}. Con ${Math.max(0, remaining)}s`;
+                                orderPopupCountdown.textContent = `Trạng thái: ${statusText}. Còn ${Math.max(0, remaining)}s`;
                                 if (statusText === 'CANCELLED' || statusText === 'REFUNDED') {
                                     window.setTimeout(() => {
                                         finish();
@@ -4478,8 +5226,12 @@
                                 }
                             }
                             if (paymentSnapshot?.paid) {
+                                if (orderPaymentSuccess) {
+                                    orderPaymentSuccess.hidden = false;
+                                    orderPaymentSuccess.classList.add('is-visible');
+                                }
                                 if (orderPopupCountdown) {
-                                    orderPopupCountdown.textContent = 'Da xac nhan thanh toan thanh cong.';
+                                    orderPopupCountdown.textContent = 'Đã xác nhận thanh toán thành công.';
                                 }
                                 window.setTimeout(() => {
                                     finish();
@@ -4541,7 +5293,7 @@
             });
 
             if (ratingPopupCountdown) {
-                ratingPopupCountdown.textContent = `Popup danh gia tu dong gui sau ${remaining}s`;
+                ratingPopupCountdown.textContent = `Popup đánh giá tự động gửi sau ${remaining}s`;
             }
 
             clearOrderFlowTimers();
@@ -4552,7 +5304,7 @@
                 }
                 remaining -= 1;
                 if (ratingPopupCountdown) {
-                    ratingPopupCountdown.textContent = `Popup danh gia tu dong gui sau ${Math.max(0, remaining)}s`;
+                    ratingPopupCountdown.textContent = `Popup đánh giá tự động gửi sau ${Math.max(0, remaining)}s`;
                 }
                 if (remaining <= 0) {
                     finish();
@@ -4567,7 +5319,7 @@
             sessionId: orderData.sessionId,
             orderId: orderData.orderId,
             rating: selectedRating,
-            comment: commentText || `Danh gia sau don ${orderData.orderId || ''}`.trim(),
+            comment: commentText || `Đánh giá sau đơn ${orderData.orderId || ''}`.trim(),
         });
     }
 
@@ -4591,6 +5343,19 @@
                 if (items.length > 0) {
                     archiveChatHistorySnapshot(finalizedOrderData);
                 }
+                if (orderReviewOpen) {
+                    closeOrderReview({ keepStatus: true });
+                }
+                pendingManualAddBuckets.clear();
+                if (manualAddFlushTimer) {
+                    window.clearTimeout(manualAddFlushTimer);
+                    manualAddFlushTimer = null;
+                }
+                cartCheckoutLocked = false;
+                if (cartCheckoutCooldownTimer) {
+                    window.clearTimeout(cartCheckoutCooldownTimer);
+                    cartCheckoutCooldownTimer = null;
+                }
                 clearChatHistory();
                 updateMiniCart([]);
                 hideOrderFlow();
@@ -4598,33 +5363,203 @@
         }
     }
 
+    function closeOrderReview(options = {}) {
+        const keepStatus = options?.keepStatus === true;
+        orderReviewOpen = false;
+        orderReviewSnapshot = null;
+        if (orderReviewHud) {
+            orderReviewHud.hidden = true;
+        }
+        if (orderReviewLines) {
+            orderReviewLines.innerHTML = '';
+        }
+        if (orderReviewTotal) {
+            orderReviewTotal.textContent = 'Tổng thanh toán: 0 đ';
+        }
+        refreshCartCheckoutButtonState();
+        if (!keepStatus) {
+            setVoiceStatus('Đã đóng xem hoá đơn.');
+        }
+    }
+
+    function renderOrderReviewSnapshot(snapshot) {
+        if (!orderReviewLines || !orderReviewTotal) return;
+        const items = normalizeOrderItems(snapshot?.items);
+        const total = items.reduce((sum, item) => sum + Number(item.line_total || 0), 0);
+        orderReviewLines.innerHTML = items.map((item) => `
+            <article class="order-review-line">
+                <img
+                    class="order-review-thumb"
+                    src="${toSafeText(resolveCartItemImage(item))}"
+                    alt="${toSafeText(item.name || 'Món')}"
+                    loading="lazy"
+                >
+                <span>x${Math.max(1, Number(item.quantity || 1))}</span>
+                <strong>${toSafeInlineText(item.name || 'Món')}</strong>
+                <span>${formatCurrencyVnd(Number(item.line_total || 0))}</span>
+            </article>
+        `).join('');
+        orderReviewTotal.textContent = `Tổng thanh toán: ${formatCurrencyVnd(total)}`;
+    }
+
+    function openOrderReview() {
+        const items = normalizeOrderItems(cartState);
+        if (items.length === 0) {
+            setVoiceStatus('Giỏ hàng đang trống. Bạn thêm món trước nhé.');
+            refreshCartCheckoutButtonState();
+            return;
+        }
+        orderReviewSnapshot = {
+            createdAt: Date.now(),
+            items,
+        };
+        renderOrderReviewSnapshot(orderReviewSnapshot);
+        orderReviewOpen = true;
+        if (orderReviewHud) {
+            orderReviewHud.hidden = false;
+        }
+        refreshCartCheckoutButtonState();
+        setVoiceStatus('Vui lòng xem lại hoá đơn và xác nhận lần 2.');
+    }
+
+    function submitReviewedCheckout() {
+        const reviewedItems = normalizeOrderItems(orderReviewSnapshot?.items);
+        if (reviewedItems.length === 0) {
+            closeOrderReview();
+            setVoiceStatus('Giỏ hàng đang trống. Bạn thêm món trước nhé.');
+            return;
+        }
+        if (cartCheckoutLocked) {
+            setVoiceStatus('Đang gửi yêu cầu đặt hàng...');
+            return;
+        }
+        cartCheckoutLocked = true;
+        if (cartCheckoutCooldownTimer) {
+            window.clearTimeout(cartCheckoutCooldownTimer);
+            cartCheckoutCooldownTimer = null;
+        }
+        cartCheckoutCooldownTimer = window.setTimeout(() => {
+            cartCheckoutLocked = false;
+            cartCheckoutCooldownTimer = null;
+            refreshCartCheckoutButtonState();
+        }, 3600);
+        closeOrderReview({ keepStatus: true });
+        refreshCartCheckoutButtonState();
+        setVoiceStatus('Đang gửi yêu cầu đặt hàng...');
+        enqueueUserTurn('xác nhận đặt hàng ngay', { source: 'quick-checkout' });
+    }
+
+    function refreshCartCheckoutButtonState() {
+        if (!cartMiniCheckoutBtn) return;
+        const hasItems = cartState.length > 0;
+        const disabled = !hasItems || cartCheckoutLocked || orderReviewOpen;
+        cartMiniCheckoutBtn.disabled = disabled;
+        if (!hasItems) {
+            cartMiniCheckoutBtn.textContent = 'Thêm món để đặt hàng';
+            return;
+        }
+        if (cartCheckoutLocked) {
+            cartMiniCheckoutBtn.textContent = 'Đang gửi đặt hàng...';
+            return;
+        }
+        cartMiniCheckoutBtn.textContent = orderReviewOpen
+            ? 'Đang chờ xác nhận lần 2'
+            : 'Xác nhận đơn (lần 1)';
+    }
+
+    function triggerCartCheckout() {
+        if (cartState.length === 0) {
+            setVoiceStatus('Giỏ hàng đang trống. Bạn thêm món trước nhé.');
+            refreshCartCheckoutButtonState();
+            return;
+        }
+        if (cartCheckoutLocked) {
+            setVoiceStatus('Đang gửi yêu cầu đặt hàng...');
+            return;
+        }
+        if (orderReviewOpen) {
+            setVoiceStatus('Vui lòng xác nhận lần 2 hoặc quay lại chỉnh giỏ.');
+            return;
+        }
+        openOrderReview();
+    }
+
     function updateMiniCart(cart) {
-        cartState = Array.isArray(cart) ? cart : [];
+        cartState = normalizeOrderItems(Array.isArray(cart) ? cart : []);
         if (!cartMiniList || !cartMiniTotal) return;
         if (voiceOrderHint) {
             voiceOrderHint.hidden = cartState.length !== 1;
         }
 
         if (cartState.length === 0) {
-            cartMiniList.innerHTML = '<p class="cart-mini-empty">Chua co mon nao trong gio.</p>';
-            cartMiniTotal.textContent = 'Tong: 0 d';
+            cartMiniList.innerHTML = '<p class="cart-mini-empty">Chưa có món nào trong giỏ.</p>';
+            cartMiniTotal.textContent = 'Tổng: 0 đ';
+            refreshCartCheckoutButtonState();
             return;
         }
 
         let total = 0;
-        cartMiniList.innerHTML = cartState.map((item) => {
+        cartMiniList.innerHTML = cartState.map((item, index) => {
             const quantity = Number(item.quantity || 0);
             const lineTotal = Number(item.line_total || 0);
             total += lineTotal;
+            const safeName = toSafeInlineText(item.name || 'Món');
+            const thumb = toSafeText(resolveCartItemImage(item));
             return `
                 <article class="cart-mini-item">
-                    <span>x${quantity}</span>
-                    <strong>${toSafeInlineText(item.name || 'Mon')}</strong>
-                    <span>${formatCurrencyVnd(lineTotal)}</span>
+                    <img
+                        class="cart-mini-item-thumb"
+                        src="${thumb}"
+                        alt="${toSafeText(item.name || 'Món')}"
+                        loading="lazy"
+                    >
+                    <span class="cart-mini-item-qty">x${quantity}</span>
+                    <div class="cart-mini-item-main">
+                        <strong>${safeName}</strong>
+                        <span>${formatCurrencyVnd(lineTotal)}</span>
+                    </div>
+                    <button
+                        class="cart-mini-quick-add"
+                        data-cart-index="${index}"
+                        type="button"
+                        aria-label="Thêm nhanh ${safeName}"
+                    >+</button>
                 </article>
             `;
         }).join('');
-        cartMiniTotal.textContent = `Tong: ${formatCurrencyVnd(total)}`;
+        cartMiniTotal.textContent = `Tổng: ${formatCurrencyVnd(total)}`;
+        cartMiniList.querySelectorAll('.cart-mini-quick-add').forEach((button) => {
+            button.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                const rawIndex = button.getAttribute('data-cart-index') || '-1';
+                const cartIndex = Number.parseInt(rawIndex, 10);
+                if (!Number.isFinite(cartIndex) || cartIndex < 0 || cartIndex >= cartState.length) return;
+                const cartItem = cartState[cartIndex];
+                const itemId = String(cartItem?.item_id || '').trim();
+                if (!itemId) return;
+                const menuItem = currentMenuItems.find((entry) => {
+                    const entryId = String(entry?.item_id || entry?.id || '').trim();
+                    return entryId && entryId === itemId;
+                });
+                const fallbackName = String(cartItem?.base_name || cartItem?.name || 'Món').trim() || 'Món';
+                queueManualCartAdd(
+                    {
+                        item_id: itemId,
+                        name: String(menuItem?.name || fallbackName).trim() || fallbackName,
+                        available: true,
+                        price: Number(menuItem?.price ?? cartItem?.unit_price ?? 0),
+                    },
+                    {
+                        quantity: 1,
+                        sizeLabel: String(cartItem?.size_label || '').trim(),
+                        unitPrice: Number(cartItem?.unit_price || menuItem?.price || 0),
+                        baseName: fallbackName,
+                    },
+                );
+            });
+        });
+        refreshCartCheckoutButtonState();
     }
 
     async function startConversationSession(source = 'camera', signal = undefined) {
@@ -5930,6 +6865,15 @@
         const cleanText = String(transcript || '').trim();
         if (!cleanText) return;
         const source = String(options?.source || 'auto').trim().toLowerCase();
+        const isQuickCheckoutSource = source === 'quick-checkout';
+        const isManualSource = source === 'manual' || isQuickCheckoutSource;
+        if (source !== 'manual' && pendingManualAddBuckets.size > 0) {
+            if (manualAddFlushTimer) {
+                window.clearTimeout(manualAddFlushTimer);
+                manualAddFlushTimer = null;
+            }
+            flushPendingManualAdds();
+        }
         let finalText = cleanText;
         if (source === 'browser-interim' && lastQueuedUserTranscriptRaw) {
             const trimmedCarryOver = removeSpokenPrefixText(cleanText, lastQueuedUserTranscriptRaw);
@@ -5955,7 +6899,7 @@
         const busy = isConversationTurnBusy();
         const criticalConfirmIntent = isLikelyCheckoutConfirm(finalText);
         if (
-            source !== 'manual'
+            !isManualSource
             && source !== 'browser-interim'
             && source !== 'browser-final'
             && source !== 'backend-final'
@@ -5971,6 +6915,8 @@
             return;
         }
         if (
+            !isManualSource
+            &&
             !criticalConfirmIntent
             &&
             normalizedTranscript === lastQueuedUserTranscriptNorm
@@ -5980,6 +6926,8 @@
             return;
         }
         if (
+            !isManualSource
+            &&
             !criticalConfirmIntent
             &&
             areTranscriptsLikelySame(normalizedTranscript, lastQueuedUserTranscriptNorm)
@@ -5989,6 +6937,8 @@
             return;
         }
         if (
+            !isManualSource
+            &&
             !criticalConfirmIntent
             &&
             lastRobotSpokenNorm
@@ -5998,20 +6948,42 @@
             console.info('[voice-dedup] dropped likely echo transcript', { transcript: finalText });
             return;
         }
-        lastQueuedUserTranscriptNorm = normalizedTranscript;
-        lastQueuedUserTranscriptRaw = finalText;
-        lastQueuedUserTranscriptAt = now;
+
+        if (!isManualSource) {
+            lastQueuedUserTranscriptNorm = normalizedTranscript;
+            lastQueuedUserTranscriptRaw = finalText;
+            lastQueuedUserTranscriptAt = now;
+        }
         lastAcceptedUserTurnAt = now;
         const turnId = createTurnId();
-        latestIssuedTurnId = turnId;
+        if (isManualSource) {
+            manualTurnIds.add(turnId);
+        } else {
+            latestIssuedTurnId = turnId;
+        }
         markSpeechActivity();
         prioritizeUserSpeech();
-        pendingUserTurns.length = 0;
-        pendingUserTurns.push({
+
+        const queuedTurn = {
             turnId,
             text: finalText,
+            source,
             queuedAt: Date.now(),
-        });
+        };
+
+        if (isManualSource) {
+            pendingUserTurns.push(queuedTurn);
+        } else {
+            const manualPendingTurns = pendingUserTurns.filter(
+                (queued) => String(queued?.source || '').trim().toLowerCase() === 'manual',
+            );
+            pendingUserTurns.length = 0;
+            if (manualPendingTurns.length > 0) {
+                pendingUserTurns.push(...manualPendingTurns);
+            }
+            pendingUserTurns.push(queuedTurn);
+        }
+
         if (!voiceQueueRunning) {
             void processVoiceQueue();
         }
@@ -6062,6 +7034,9 @@
                 if (!queuedTurn) continue;
                 const turnId = String(queuedTurn.turnId || '').trim();
                 const userText = String(queuedTurn.text || '').trim();
+                const turnSource = String(queuedTurn.source || 'auto').trim().toLowerCase();
+                const isManualTurn = turnSource === 'manual';
+                const isQuickCheckoutTurn = turnSource === 'quick-checkout';
                 if (!turnId || !userText) continue;
                 activeProcessingTurnId = turnId;
                 if (!isTurnStillLatest(turnId)) {
@@ -6071,8 +7046,14 @@
                 suspendVoiceCaptureForSequentialTurn();
                 const cartSnapshotBeforeTurn = normalizeOrderItems(cartState);
 
-                appendChat('user', userText);
-                setVoiceStatus('Dang gui len backend...');
+                if (!isManualTurn) {
+                    appendChat('user', userText);
+                }
+                setVoiceStatus(
+                    isManualTurn
+                        ? 'Đang cập nhật giỏ hàng...'
+                        : (isQuickCheckoutTurn ? 'Đang gửi yêu cầu đặt hàng...' : 'Đang gửi lên backend...'),
+                );
                 const userIntent = inferVoiceIntent(userText);
                 if (userIntent === 'menuOpen') {
                     void robotController.dispatchTrigger('voice.intent.menuOpen', { intent: 'menuOpen', scene: 'intent', emotion: 'focused' });
@@ -6123,6 +7104,7 @@
                     fillerTimer = null;
                 };
                 const scheduleFastFiller = () => {
+                    if (isManualTurn) return;
                     clearFillerTimer();
                     fillerTimer = window.setTimeout(() => {
                         if (turnAbortController.signal.aborted) return;
@@ -6132,11 +7114,12 @@
                         if (!fillerText) return;
                         fillerSpoken = true;
                         turnSpeechStartAt = performance.now();
-                        setVoiceStatus('Robot dang phan hoi...');
+            setVoiceStatus('Robot đang phản hồi...');
                         void playCachedFillerAudio(fillerText, turnAbortController).catch(() => {});
                     }, FAST_FILLER_DELAY_MS);
                 };
                 const tryStartEarlySpeechFromStream = () => {
+                    if (isManualTurn) return;
                     if (streamedAudioChunks > 0) return;
                     if (!streamReplyBuffer || turnAbortController.signal.aborted) return;
                     if (!isTurnStillLatest(turnId)) return;
@@ -6153,7 +7136,7 @@
                     if (!turnSpeechStartAt) {
                         turnSpeechStartAt = performance.now();
                     }
-                    setVoiceStatus('Robot dang tra loi...');
+                    setVoiceStatus('Robot đang trả lời...');
                     const playbackTask = async () => {
                         if (turnAbortController.signal.aborted || !isTurnStillLatest(turnId)) {
                             return;
@@ -6172,10 +7155,12 @@
                         .catch(() => {})
                         .then(playbackTask);
                 };
-                showThinkingIndicator(turnId);
-                startThinkingMotion(turnId);
-                setVoiceStatus('Robot dang suy nghi', { thinking: true });
-                scheduleFastFiller();
+                if (!isManualTurn) {
+                    showThinkingIndicator(turnId);
+                    startThinkingMotion(turnId);
+                    setVoiceStatus('Robot đang suy nghĩ', { thinking: true });
+                    scheduleFastFiller();
+                }
 
                 try {
                     ensureNotStale();
@@ -6185,13 +7170,13 @@
                         const opening = String(sessionPayload?.reply_text || '').trim();
                         const skipOpening = suppressNextSessionOpening;
                         suppressNextSessionOpening = false;
-                        if (!skipOpening && opening && chatHistory.length < 3) {
+                        if (!isManualTurn && !skipOpening && opening && chatHistory.length < 3) {
                             appendChat('assistant', opening);
                         }
                     }
 
                     if (!currentSessionId) {
-                        throw new Error('Khong tao duoc session.');
+                        throw new Error('Không tao duoc session.');
                     }
 
                     let replyPayload = null;
@@ -6254,6 +7239,9 @@
                                 return;
                             }
                             if (chunk?.type === 'audio' && chunk.content) {
+                                if (isManualTurn) {
+                                    return;
+                                }
                                 const audioBytes = decodeBase64AudioChunk(chunk.content);
                                 if (!audioBytes.length) {
                                     return;
@@ -6318,7 +7306,8 @@
                     const mergedActionHints = backendActionHints.length > 0
                         ? Array.from(new Set(backendActionHints))
                         : localActionHints;
-                    if (replyPayload?.order_created) {
+                    const orderCreated = Boolean(replyPayload?.order_created);
+                    if (orderCreated) {
                         const finishedSessionId = currentSessionId;
                         const finishedOrderId = String(replyPayload?.order_id || '').trim();
                         const payloadCartForOrder = extractCartItemsFromPayload(replyPayload);
@@ -6326,7 +7315,7 @@
                             ? cartSnapshotBeforeTurn
                             : (payloadCartForOrder || []);
                         currentSessionId = null;
-                        setVoiceStatus(`Da chot don ${finishedOrderId || ''}`.trim());
+                        setVoiceStatus(`Đã chốt đơn ${finishedOrderId || ''}`.trim());
                         void runOrderCompletionFlow({
                             sessionId: finishedSessionId,
                             orderId: finishedOrderId,
@@ -6337,6 +7326,14 @@
                             paymentAmount: Number(replyPayload?.payment_amount || 0),
                             paymentExpiresAt: String(replyPayload?.payment_expires_at || '').trim(),
                         });
+                    } else if (isQuickCheckoutTurn) {
+                        cartCheckoutLocked = false;
+                        if (cartCheckoutCooldownTimer) {
+                            window.clearTimeout(cartCheckoutCooldownTimer);
+                            cartCheckoutCooldownTimer = null;
+                        }
+                        refreshCartCheckoutButtonState();
+                        setVoiceStatus('Chưa tạo được đơn. Bạn kiểm tra giỏ và bấm Đặt hàng ngay lại nhé.');
                     }
                     hideThinkingIndicator(turnId);
                     stopThinkingMotion(turnId);
@@ -6348,8 +7345,13 @@
                         } else {
                             applyOptimisticCartUpdateFromReply(replyText);
                         }
-                        appendChat('assistant', replyText);
-                        if (streamedAudioChunks === 0 && !turnAbortController.signal.aborted) {
+                        if (isManualTurn && !replyPayload?.order_created) {
+                            setVoiceStatus('Đã cập nhật giỏ hàng.');
+                        }
+                        if (!isManualTurn) {
+                            appendChat('assistant', replyText);
+                        }
+                        if (!isManualTurn && streamedAudioChunks === 0 && !turnAbortController.signal.aborted) {
                             clearFillerTimer();
                             if (fillerSpoken) {
                                 interruptBotSpeech();
@@ -6364,25 +7366,27 @@
                                 ? removeSpokenPrefixText(replyText, earlySpeechSpokenText)
                                 : replyText;
                             if (tailReplyText) {
-                                setVoiceStatus('Robot dang tra loi...');
+                                setVoiceStatus('Robot đang trả lời...');
                                 if (!turnSpeechStartAt) {
                                     turnSpeechStartAt = performance.now();
                                 }
                                 await playBotSpeech(tailReplyText);
                             }
                         }
-                        robotController.reactToConversation({
-                            scene: backendScene || inferVoiceIntent(replyText),
-                            emotionHint: backendEmotionHint || (inferVoiceIntent(replyText) === 'cute' ? 'cute' : 'happy'),
-                            actionHints: mergedActionHints,
-                            intent: userIntent,
-                        });
-                        if (backendScene) {
-                            void robotController.dispatchTrigger(`voice.scene.${backendScene}`, {
-                                scene: backendScene,
+                        if (!isManualTurn) {
+                            robotController.reactToConversation({
+                                scene: backendScene || inferVoiceIntent(replyText),
+                                emotionHint: backendEmotionHint || (inferVoiceIntent(replyText) === 'cute' ? 'cute' : 'happy'),
+                                actionHints: mergedActionHints,
                                 intent: userIntent,
-                                emotion: backendEmotionHint || 'neutral',
                             });
+                            if (backendScene) {
+                                void robotController.dispatchTrigger(`voice.scene.${backendScene}`, {
+                                    scene: backendScene,
+                                    intent: userIntent,
+                                    emotion: backendEmotionHint || 'neutral',
+                                });
+                            }
                         }
                         if (shouldOpenMenuFromText(replyText) && !isMenuOpen) {
                             toggleMenu();
@@ -6402,15 +7406,29 @@
                         turnTotalMs,
                         mode: voiceInputMode,
                     });
-                    showVoiceLatencyStatus(firstTextMs, speechStartMs, turnTotalMs);
+                    if (!isManualTurn) {
+                        showVoiceLatencyStatus(firstTextMs, speechStartMs, turnTotalMs);
+                    }
                 } catch (error) {
                     clearFillerTimer();
                     hideThinkingIndicator(turnId);
                     stopThinkingMotion(turnId);
+                    if (isQuickCheckoutTurn) {
+                        cartCheckoutLocked = false;
+                        if (cartCheckoutCooldownTimer) {
+                            window.clearTimeout(cartCheckoutCooldownTimer);
+                            cartCheckoutCooldownTimer = null;
+                        }
+                        refreshCartCheckoutButtonState();
+                    }
                     if (turnTimedOut) {
-                        setVoiceStatus('Backend dang cham. Thu lai cau ngan gon hon nhe.');
+                        setVoiceStatus(
+                            isManualTurn
+                                ? 'Cập nhật giỏ hàng hơi chậm, hệ thống vẫn đang xử lý...'
+                                : 'Backend đang chậm. Thử lại câu ngắn gọn hơn nhé.',
+                        );
                     } else if (isAbortError(error)) {
-                        setVoiceStatus('Dang uu tien loi noi moi...');
+                        setVoiceStatus(isManualTurn ? 'Đang tiếp tục cập nhật giỏ hàng...' : 'Đang ưu tiên lời nói mới...');
                     } else {
                         console.warn('[voice-turn] failed:', error);
                         const errorText = String(error?.message || '').trim();
@@ -6424,6 +7442,7 @@
                     clearFillerTimer();
                     hideThinkingIndicator(turnId);
                     stopThinkingMotion(turnId);
+                    manualTurnIds.delete(turnId);
                     if (activeTurnAbortController === turnAbortController) {
                         activeTurnAbortController = null;
                     }
@@ -6437,7 +7456,7 @@
         } finally {
             voiceQueueRunning = false;
             if (voiceListening && !voiceLatencyStatusTimer) {
-                setVoiceStatus('Dang nghe ban noi...');
+                setVoiceStatus('Đang nghe bạn nói...');
             }
         }
     }
@@ -6492,7 +7511,7 @@
                 voiceBrowserPendingInterim = '';
                 return;
             }
-            setVoiceStatus('Dang xu ly cau vua noi...');
+            setVoiceStatus('Đang xử lý câu vừa nói...');
             if (!voiceBrowserPendingInterimSince) {
                 voiceBrowserPendingInterimSince = Date.now();
             }
@@ -6525,7 +7544,7 @@
 
             if (isConversationTurnBusy()) {
                 if (!busyNoticeShown) {
-                    setVoiceStatus('Robot dang phan hoi, da ghi nhan cau tiep theo...');
+                    setVoiceStatus('Robot đang phản hồi, đã ghi nhận câu tiếp theo...');
                     busyNoticeShown = true;
                 }
                 const waitMs = Math.max(100, Math.min(220, Math.floor(submitSilenceMs * 0.5)));
@@ -6551,7 +7570,7 @@
 
             voiceBrowserPendingInterim = '';
             voiceBrowserPendingInterimSince = 0;
-            setVoiceStatus('Dang gui len backend...');
+            setVoiceStatus('Đang gửi lên backend...');
             enqueueUserTurn(textToSubmit, { source: 'browser-interim' });
         };
 
@@ -6690,7 +7709,7 @@
                         prioritizeUserSpeech();
                     }
                     // Avoid showing low-confidence partial text to users.
-                    setVoiceStatus('Dang nghe ban noi...');
+                    setVoiceStatus('Đang nghe bạn nói...');
                 }
                 return;
             }
@@ -6718,7 +7737,7 @@
                 }
 
                 if (status === 'retry') {
-                    setVoiceStatus(String(payload.message || 'Minh nghe chua ro, ban noi lai giup minh nhe.'));
+                    setVoiceStatus(String(payload.message || 'Mình nghe chưa rõ, bạn nói lại giúp mình nhé.'));
                     return;
                 }
             }
@@ -6726,7 +7745,7 @@
 
         voiceBackendSocket.onerror = () => {
             if (!voiceListening || voiceInputMode !== 'backend') return;
-            setVoiceStatus('Backend STT tam ngat, dang ket noi lai...');
+            setVoiceStatus('Backend STT tạm ngắt, đang kết nối lại...');
             scheduleVoiceAutoRetry('backend-error');
         };
 
@@ -6804,7 +7823,7 @@
 
     async function startBackendSpeechListening() {
         if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
-            throw new Error('Trinh duyet khong ho tro backend STT streaming.');
+            throw new Error('Trình duyệt không hỗ trợ backend STT streaming.');
         }
 
         stopBackendSpeechListening({ finalize: false });
@@ -6838,7 +7857,7 @@
 
         voiceBackendRecorder.start(backendSttChunkMs);
         voiceInputMode = 'backend';
-        setVoiceStatus('Dang nghe ban noi...');
+        setVoiceStatus('Đang nghe bạn nói...');
     }
 
     async function fallbackToBackendStt(reasonText) {
@@ -6858,12 +7877,12 @@
                 try {
                     voiceRecognition.start();
                     voiceInputMode = 'browser';
-                    setVoiceStatus('Dang nghe ban noi...');
+                    setVoiceStatus('Đang nghe bạn nói...');
                     return;
                 } catch (browserRestartError) {
                     if (isRecognitionAlreadyStartedError(browserRestartError)) {
                         voiceInputMode = 'browser';
-                        setVoiceStatus('Dang nghe ban noi...');
+                        setVoiceStatus('Đang nghe bạn nói...');
                         return;
                     }
                 }
@@ -6872,8 +7891,8 @@
             const permissionDenied = /not-allowed|service-not-allowed|permission|denied/i.test(detail);
             setVoiceStatus(
                 permissionDenied
-                    ? 'Khong bat duoc STT, hay cap quyen microphone roi thu lai.'
-                    : 'STT tam ngat. Bam Bat nghe de thu lai.',
+                    ? 'Không bat duoc STT, hay cap quyen microphone roi thu lai.'
+                    : 'STT tạm ngắt. Bấm Bật nghe để thử lại.',
             );
         }
     }
@@ -6881,7 +7900,7 @@
     function setupSpeechRecognition() {
         const RecognitionClass = window.SpeechRecognition || window.webkitSpeechRecognition;
         if (!RecognitionClass) {
-            setVoiceStatus('Trinh duyet nay khong ho tro STT browser, chuyen sang backend STT.');
+            setVoiceStatus('Trình duyệt này không hỗ trợ STT browser, chuyển sang backend STT.');
             return;
         }
 
@@ -6915,7 +7934,7 @@
                 if (botSpeechActive || hasActiveConversationTurn()) {
                     prioritizeUserSpeech();
                 }
-                setVoiceStatus(`Dang nghe: ${interim.trim()}`);
+                setVoiceStatus(`Đang nghe: ${interim.trim()}`);
                 scheduleBrowserInterimSubmit(interim.trim());
                 if (activeGreetingAudio) {
                     activeGreetingAudio.pause();
@@ -6941,18 +7960,18 @@
             const fallbackErrors = ['audio-capture', 'not-allowed', 'service-not-allowed', 'network', 'language-not-supported'];
             if (transientErrors.includes(errCode)) {
                 // Browser STT frequently emits transient no-speech/aborted even when pipeline is still healthy.
-                setVoiceStatus('Dang nghe ban noi...');
+                setVoiceStatus('Đang nghe bạn nói...');
                 return;
             }
             if (fallbackErrors.includes(errCode)) {
                 if (resolvedAiHasRealtimeStack) {
-                    void fallbackToBackendStt('STT browser tam ngat, dang chuyen sang backend STT...');
+                    void fallbackToBackendStt('STT browser tạm ngắt, đang chuyển sang backend STT...');
                 } else {
-                    setVoiceStatus('Dang nghe ban noi...');
+                    setVoiceStatus('Đang nghe bạn nói...');
                 }
                 return;
             }
-            setVoiceStatus('STT tam ngat, dang thu ket noi lai...');
+            setVoiceStatus('STT tạm ngắt, đang thử kết nối lại...');
         };
 
         voiceRecognition.onend = () => {
@@ -6980,7 +7999,7 @@
         voiceAutoRetryTimer = window.setTimeout(() => {
             voiceAutoRetryTimer = null;
             if (!voiceListening || !voiceAlwaysListenMode) return;
-            setVoiceStatus(`Dang tu dong khoi dong lai nghe (${reason})...`);
+            setVoiceStatus(`Đang tự động khởi động lại nghe (${reason})...`);
             setVoiceListening(true, 'system-retry');
         }, 650);
     }
@@ -6988,7 +8007,7 @@
     function setVoiceListening(enabled, source = 'system') {
         const nextEnabled = Boolean(enabled);
         if (!nextEnabled && source !== 'manual' && voicePinnedByUser) {
-            setVoiceStatus('Dang nghe thu cong, bo qua auto-stop.');
+            setVoiceStatus('Đang nghe thu cong, bo qua auto-stop.');
             return;
         }
         if (nextEnabled && voiceListening && voiceInputMode !== 'idle' && source !== 'manual') {
@@ -7002,7 +8021,7 @@
         voiceListening = nextEnabled;
         if (voiceMiniToggle) {
             voiceMiniToggle.classList.toggle('active', voiceListening);
-            voiceMiniToggle.textContent = voiceListening ? 'Dung nghe' : 'Bat nghe';
+            voiceMiniToggle.textContent = voiceListening ? 'Dừng nghe' : 'Bật nghe';
         }
 
         if (!voiceListening) {
@@ -7012,6 +8031,21 @@
             interruptTurnProcessingForUser();
             interruptBotSpeech();
             pendingUserTurns.length = 0;
+            manualTurnIds.clear();
+            pendingManualAddBuckets.clear();
+            if (manualAddFlushTimer) {
+                window.clearTimeout(manualAddFlushTimer);
+                manualAddFlushTimer = null;
+            }
+            cartCheckoutLocked = false;
+            if (cartCheckoutCooldownTimer) {
+                window.clearTimeout(cartCheckoutCooldownTimer);
+                cartCheckoutCooldownTimer = null;
+            }
+            if (orderReviewOpen) {
+                closeOrderReview({ keepStatus: true });
+            }
+            refreshCartCheckoutButtonState();
             latestIssuedTurnId = '';
             activeProcessingTurnId = '';
             lastQueuedUserTranscriptNorm = '';
@@ -7042,7 +8076,7 @@
                     clearBrowserSubmitTimer();
                     voiceBrowserPendingInterim = '';
                     clearVoiceAutoRetryTimer();
-                    setVoiceStatus('Dang nghe ban noi...');
+                    setVoiceStatus('Đang nghe bạn nói...');
                     return;
                 } catch (browserError) {
                     if (isRecognitionAlreadyStartedError(browserError)) {
@@ -7050,7 +8084,7 @@
                         clearBrowserSubmitTimer();
                         voiceBrowserPendingInterim = '';
                         clearVoiceAutoRetryTimer();
-                        setVoiceStatus('Dang nghe ban noi...');
+                        setVoiceStatus('Đang nghe bạn nói...');
                         return;
                     }
                     console.warn('[stt] browser speech start failed:', browserError);
@@ -7062,7 +8096,7 @@
                 if (resolvedAiHasRealtimeStack) {
                     await startBackendSpeechListening();
                     clearVoiceAutoRetryTimer();
-                    setVoiceStatus('Dang nghe ban noi...');
+                    setVoiceStatus('Đang nghe bạn nói...');
                     return;
                 }
             } catch (backendError) {
@@ -7070,7 +8104,7 @@
             }
 
             if (voiceAlwaysListenMode && source !== 'manual') {
-                setVoiceStatus('STT tam ngat, robot dang tu dong ket noi lai...');
+                setVoiceStatus('STT tạm ngắt, robot đang tự động kết nối lại...');
                 voiceInputMode = 'idle';
                 scheduleVoiceAutoRetry('pipeline');
                 return;
@@ -7078,8 +8112,8 @@
 
             setVoiceStatus(
                 source === 'manual'
-                    ? 'Khong bat duoc STT, hay cap quyen microphone roi thu lai.'
-                    : 'STT tam ngat. Bam Bat nghe de thu lai.',
+                    ? 'Không bat duoc STT, hay cap quyen microphone roi thu lai.'
+                    : 'STT tạm ngắt. Bấm Bật nghe để thử lại.',
             );
             voiceListening = false;
             if (source === 'manual') {
@@ -7087,7 +8121,7 @@
             }
             if (voiceMiniToggle) {
                 voiceMiniToggle.classList.remove('active');
-                voiceMiniToggle.textContent = 'Bat nghe';
+                voiceMiniToggle.textContent = 'Bật nghe';
             }
             stopBackendSpeechListening({ finalize: false });
             voiceInputMode = 'idle';
@@ -7151,7 +8185,7 @@
 
             const greetingText = pickGreetingVariantText();
             appendChat('assistant', greetingText);
-            setVoiceStatus('Robot dang chao khach...');
+            setVoiceStatus('Robot đang chào khách...');
             const greetingAbortController = new AbortController();
             activeBotSpeechAbortController = greetingAbortController;
 
@@ -7172,15 +8206,15 @@
             lastAutoGreetingAt = Date.now();
             clearAutoGreetingRetry();
             void preloadGreetingAudioCache().catch(() => {});
-            setVoiceStatus(voiceListening ? 'Dang nghe ban noi...' : 'San sang giao tiep.');
+            setVoiceStatus(voiceListening ? 'Đang nghe bạn nói...' : 'Sẵn sàng giao tiếp.');
         } catch (error) {
             console.warn('[auto-greeting] failed:', error);
             if (isAutoplayBlockedError(error)) {
-                setVoiceStatus('Am thanh dang bi chan. Cham vao man hinh 1 lan de mo tieng robot.');
+                setVoiceStatus('Âm thanh đang bị chặn. Chạm vào màn hình 1 lần để mở tiếng robot.');
             } else if (autoGreetingRetryCount >= AUTO_GREETING_MAX_RETRIES) {
-                setVoiceStatus('Chua tao duoc loi chao. Dang doi backend san sang...');
+                setVoiceStatus('Chưa tạo được lời chào. Đang đợi backend sẵn sàng...');
             } else {
-                setVoiceStatus('Dang khoi dong loi chao...');
+                setVoiceStatus('Đang khởi động lời chào...');
             }
             scheduleAutoGreetingRetry();
         } finally {
@@ -7277,7 +8311,7 @@
 
             if (absenceFrames >= presenceAbsenceFrames) {
                 if (presenceDetected) {
-                    setVoiceStatus('Dang cho khach vao vung camera...');
+                    setVoiceStatus('Đang chờ khách vào vùng camera...');
                     void robotController.dispatchTrigger('presence.leave', {
                         presence: 'leave',
                         scene: 'idle',
@@ -7288,7 +8322,7 @@
                     } else if (!voiceListening) {
                         setVoiceListening(true, 'presence');
                     } else {
-                        setVoiceStatus('Dang cho khach moi, robot van tiep tuc nghe.');
+                        setVoiceStatus('Đang chờ khách mới, robot vẫn tiếp tục nghe.');
                     }
                 }
                 presenceDetected = false;
@@ -7325,7 +8359,7 @@
         try {
             const ran = await robotController.triggerCinematic(actionId);
             if (ran === false && typeof setVoiceStatus === 'function') {
-                setVoiceStatus(`Action ${actionId} dang bi tat hoac khong ho tro.`);
+                setVoiceStatus(`Action ${actionId} đang bị tắt hoặc không hỗ trợ.`);
             }
         } catch (error) {
             if (typeof setVoiceStatus === 'function') {
@@ -7358,7 +8392,7 @@
     }
 
     function buildPlaceholderImage(name, category) {
-        const label = `${category || 'Menu'} • ${name || 'Mon'}`;
+        const label = `${category || 'Menu'} • ${name || 'Món'}`;
         const svg = `
             <svg xmlns='http://www.w3.org/2000/svg' width='640' height='480'>
                 <defs>
@@ -7416,22 +8450,22 @@
         const visibleItems = byCategory;
 
         if (!Array.isArray(visibleItems) || visibleItems.length === 0) {
-            menuItemsGrid.innerHTML = '<p class="menu-status">Khong tim thay mon phu hop.</p>';
+            menuItemsGrid.innerHTML = '<p class="menu-status">Không tìm thấy món phù hợp.</p>';
             updateMenuPanelHeight(1);
             return;
         }
 
         menuItemsGrid.innerHTML = visibleItems.map((item, index) => {
-            const name = item.name || 'Mon';
+            const name = item.name || 'Món';
             const category = item._category || 'Menu';
             const stateClass = item.available ? 'ok' : 'off';
-            const stateText = item.available ? 'Dang phuc vu' : 'Tam het';
+            const stateText = item.available ? 'Đang phục vụ' : 'Tạm hết';
             const image = getItemImage(item, name, category);
-            const description = item.description || 'Khong co mo ta.';
+            const description = item.description || 'Không có mô tả.';
             const sizeHint = buildMenuSizeSummary(item);
             const displayPrice = formatMenuDisplayPrice(item);
             return `
-                <article class="menu-item-card animate-item" data-menu-index="${index}" role="button" tabindex="0" aria-label="Chon mon ${toSafeText(name)}">
+                <article class="menu-item-card animate-item" data-menu-index="${index}" role="button" tabindex="0" aria-label="Chọn món ${toSafeText(name)}">
                     <img class="menu-item-media" src="${toSafeText(image)}" alt="${toSafeText(name)}" loading="lazy">
                     <p class="menu-item-meta">${toSafeText(category)}</p>
                     <h4 class="menu-item-name">${toSafeText(name)}</h4>
@@ -7562,41 +8596,282 @@
         }));
     }
 
-    function pickSizeFromPrompt(itemName, options) {
+    function closeSizePicker(value = '') {
+        const resolve = activeSizePickerResolver;
+        activeSizePickerResolver = null;
+        if (sizePickerHud) {
+            sizePickerHud.hidden = true;
+        }
+        if (sizePickerOptions) {
+            sizePickerOptions.innerHTML = '';
+        }
+        if (sizePickerItemName) {
+            sizePickerItemName.textContent = '--';
+        }
+        if (typeof resolve === 'function') {
+            resolve(String(value || ''));
+        }
+    }
+
+    function bindSizePickerEvents() {
+        if (sizePickerBackdrop) {
+            sizePickerBackdrop.addEventListener('click', () => {
+                closeSizePicker('');
+            });
+        }
+        if (sizePickerCancel) {
+            sizePickerCancel.addEventListener('click', () => {
+                closeSizePicker('');
+            });
+        }
+        window.addEventListener('keydown', (event) => {
+            if (event.key !== 'Escape') return;
+            if (!sizePickerHud || sizePickerHud.hidden) return;
+            event.preventDefault();
+            closeSizePicker('');
+        });
+    }
+
+    function bindOrderReviewEvents() {
+        if (orderReviewBackdrop) {
+            orderReviewBackdrop.addEventListener('click', () => {
+                closeOrderReview();
+            });
+        }
+        if (orderReviewCancelBtn) {
+            orderReviewCancelBtn.addEventListener('click', () => {
+                closeOrderReview();
+            });
+        }
+        if (orderReviewConfirmBtn) {
+            orderReviewConfirmBtn.addEventListener('click', () => {
+                submitReviewedCheckout();
+            });
+        }
+        window.addEventListener('keydown', (event) => {
+            if (event.key !== 'Escape') return;
+            if (!orderReviewHud || orderReviewHud.hidden) return;
+            event.preventDefault();
+            closeOrderReview();
+        });
+    }
+
+    async function pickSizeFromPrompt(itemName, options) {
         if (!Array.isArray(options) || options.length === 0) return '';
-        const sizeList = options.map((opt) => String(opt.size_name || '')).filter(Boolean);
-        if (sizeList.length === 0) return '';
-        const defaultOption = options.find((opt) => opt.is_default) || options[0];
-        const defaultValue = String(defaultOption?.size_name || '').trim();
-        const input = window.prompt(`Chon size cho ${itemName}: ${sizeList.join(', ')}`, defaultValue);
-        if (!input) return '';
-        const normalizedInput = normalizeSizeLabel(input);
-        const matched = options.find((opt) => normalizeSizeLabel(opt.size_name) === normalizedInput);
-        return matched ? String(matched.size_name || '').trim() : '';
+        const normalizedOptions = options
+            .map((opt) => ({
+                size_name: String(opt?.size_name || '').trim(),
+                is_default: Boolean(opt?.is_default),
+                price: parseMenuNumber(opt?.price, NaN),
+            }))
+            .filter((opt) => opt.size_name.length > 0);
+        if (normalizedOptions.length === 0) return '';
+
+        const defaultOption = normalizedOptions.find((opt) => opt.is_default) || normalizedOptions[0];
+        if (!sizePickerHud || !sizePickerOptions || !sizePickerItemName) {
+            return String(defaultOption?.size_name || '').trim();
+        }
+
+        if (activeSizePickerResolver) {
+            closeSizePicker('');
+        }
+
+        return new Promise((resolve) => {
+            activeSizePickerResolver = resolve;
+            sizePickerItemName.textContent = String(itemName || 'Món').trim() || 'Món';
+            sizePickerOptions.innerHTML = normalizedOptions.map((opt) => {
+                const sizeValue = String(opt.size_name || '').trim();
+                const encoded = encodeURIComponent(sizeValue);
+                const sizeLabel = normalizeSizeLabel(sizeValue);
+                const priceLabel = Number.isFinite(opt.price) && opt.price >= 0
+                    ? formatCurrencyVnd(opt.price)
+                    : '--';
+                const defaultTag = opt.is_default ? '<span class="size-picker-option-tag">Mặc định</span>' : '';
+                const defaultClass = opt.is_default ? 'size-picker-option--default' : '';
+                return `
+                    <button
+                        class="size-picker-option ${defaultClass}"
+                        data-size-value="${encoded}"
+                        type="button"
+                        aria-label="Chọn size ${toSafeText(sizeLabel)}"
+                    >
+                        <span class="size-picker-option-size">Size ${toSafeText(sizeLabel)}</span>
+                        <span class="size-picker-option-price">${toSafeText(priceLabel)}</span>
+                        ${defaultTag}
+                    </button>
+                `;
+            }).join('');
+
+            sizePickerOptions.querySelectorAll('.size-picker-option').forEach((button) => {
+                button.addEventListener('click', () => {
+                    const raw = button.getAttribute('data-size-value') || '';
+                    const picked = decodeURIComponent(raw || '');
+                    closeSizePicker(picked);
+                });
+            });
+
+            sizePickerHud.hidden = false;
+            const defaultSelectorValue = encodeURIComponent(String(defaultOption?.size_name || '').trim());
+            const defaultButton = sizePickerOptions.querySelector(
+                `.size-picker-option[data-size-value="${defaultSelectorValue}"]`,
+            );
+            window.setTimeout(() => {
+                if (defaultButton instanceof HTMLElement) {
+                    defaultButton.focus();
+                }
+            }, 0);
+        });
+    }
+
+    function showQuickAddToastMessage(text) {
+        if (!quickAddToast) return;
+        const message = String(text || '').trim();
+        if (!message) return;
+        quickAddToast.hidden = false;
+        quickAddToast.textContent = message;
+        quickAddToast.classList.remove('is-active');
+        void quickAddToast.offsetWidth;
+        quickAddToast.classList.add('is-active');
+        if (quickAddToastTimer) {
+            window.clearTimeout(quickAddToastTimer);
+            quickAddToastTimer = null;
+        }
+        quickAddToastTimer = window.setTimeout(() => {
+            quickAddToast.classList.remove('is-active');
+            quickAddToast.hidden = true;
+            quickAddToastTimer = null;
+        }, MANUAL_ADD_TOAST_MS);
+    }
+
+    function applyOptimisticManualAdd(item, quantity = 1, options = {}) {
+        const safeQuantity = Math.max(1, Number(quantity || 1));
+        const itemId = String(item?.item_id || item?.id || '').trim();
+        const baseName = String(item?.name || 'Món').trim() || 'Món';
+        const sizeLabel = String(options?.sizeLabel || '').trim();
+        const displayName = sizeLabel ? `${baseName} (${sizeLabel})` : baseName;
+        const unitPrice = Math.max(
+            0,
+            Number(options?.unitPrice ?? item?.price ?? 0),
+        );
+        const key = buildManualAddKey(itemId, sizeLabel);
+        const nextCart = normalizeOrderItems(cartState);
+        const existingIndex = nextCart.findIndex((entry) => {
+            const entryKey = String(entry?.item_key || '').trim()
+                || buildManualAddKey(entry?.item_id, entry?.size_label || '');
+            return entryKey && entryKey === key;
+        });
+
+        if (existingIndex >= 0) {
+            const current = nextCart[existingIndex];
+            const nextQuantity = Math.max(1, Number(current.quantity || 0) + safeQuantity);
+            const resolvedUnitPrice = Math.max(0, Number(current.unit_price || unitPrice || 0));
+            nextCart[existingIndex] = {
+                ...current,
+                quantity: nextQuantity,
+                unit_price: resolvedUnitPrice,
+                line_total: resolvedUnitPrice * nextQuantity,
+            };
+        } else {
+            nextCart.push({
+                item_id: itemId,
+                item_key: key,
+                name: displayName,
+                base_name: baseName,
+                size_label: sizeLabel,
+                quantity: safeQuantity,
+                unit_price: unitPrice,
+                line_total: unitPrice * safeQuantity,
+            });
+        }
+
+        updateMiniCart(nextCart);
+        showQuickAddToastMessage(`+${safeQuantity} ${baseName}`);
+    }
+
+    function flushPendingManualAdds() {
+        if (pendingManualAddBuckets.size === 0) return;
+        const batchedRequests = Array.from(pendingManualAddBuckets.values());
+        pendingManualAddBuckets.clear();
+        for (const request of batchedRequests) {
+            const quantity = Math.max(1, Number(request?.quantity || 1));
+            const baseName = String(request?.baseName || 'mon').trim() || 'mon';
+            const sizeLabel = String(request?.sizeLabel || '').trim();
+            const spokenName = sizeLabel ? `${baseName} size ${sizeLabel}` : baseName;
+            const text = quantity > 1
+                ? `cho minh ${quantity} ${spokenName}`
+                : `cho minh 1 ${spokenName}`;
+            enqueueUserTurn(text, { source: 'manual' });
+        }
+    }
+
+    function queueManualCartAdd(item, options = {}) {
+        const itemId = String(item?.item_id || item?.id || '').trim();
+        if (!itemId) return;
+        const safeQuantity = Math.max(1, Number(options?.quantity || 1));
+        const sizeLabel = String(options?.sizeLabel || '').trim();
+        const baseName = String(item?.name || options?.baseName || 'Món').trim() || 'Món';
+        const unitPrice = Math.max(0, Number(options?.unitPrice ?? item?.price ?? 0));
+        const key = buildManualAddKey(itemId, sizeLabel);
+        if (!key) return;
+
+        applyOptimisticManualAdd(
+            { ...item, item_id: itemId, name: baseName, price: unitPrice },
+            safeQuantity,
+            { sizeLabel, unitPrice },
+        );
+
+        const bucket = pendingManualAddBuckets.get(key) || {
+            itemId,
+            baseName,
+            sizeLabel,
+            quantity: 0,
+        };
+        bucket.quantity += safeQuantity;
+        pendingManualAddBuckets.set(key, bucket);
+
+        if (manualAddFlushTimer) {
+            window.clearTimeout(manualAddFlushTimer);
+            manualAddFlushTimer = null;
+        }
+        manualAddFlushTimer = window.setTimeout(() => {
+            manualAddFlushTimer = null;
+            flushPendingManualAdds();
+        }, MANUAL_ADD_FLUSH_MS);
     }
 
     async function handleMenuCardSelect(item) {
         if (!item || !item.available) {
-            setVoiceStatus('Mon nay tam het. Ban chon mon khac nhe.');
+            setVoiceStatus('Món này tạm hết. Bạn chọn món khác nhé.');
             return;
         }
         const itemName = String(item.name || 'mon').trim();
         const sizeOptions = await fetchMenuItemSizes(item);
         let selectedSize = '';
         if (sizeOptions.length > 1) {
-            selectedSize = pickSizeFromPrompt(itemName, sizeOptions);
+            selectedSize = await pickSizeFromPrompt(itemName, sizeOptions);
             if (!selectedSize) {
-                setVoiceStatus('Chua chon size, da huy them mon.');
+                setVoiceStatus('Chưa chọn size, đã huỷ thêm món.');
                 return;
             }
         } else if (sizeOptions.length === 1) {
             selectedSize = String(sizeOptions[0].size_name || '').trim();
         }
+        let resolvedUnitPrice = Math.max(0, Number(item?.price || 0));
+        if (selectedSize) {
+            const matchedSize = sizeOptions.find(
+                (option) => normalizeSizeLabel(option?.size_name) === normalizeSizeLabel(selectedSize),
+            );
+            resolvedUnitPrice = Math.max(
+                0,
+                Number(matchedSize?.price ?? resolvedUnitPrice),
+            );
+        }
 
-        const requestText = selectedSize
-            ? `cho minh 1 ${itemName} size ${selectedSize}`
-            : `cho minh 1 ${itemName}`;
-        enqueueUserTurn(requestText, { source: 'manual' });
+        queueManualCartAdd(item, {
+            quantity: 1,
+            sizeLabel: selectedSize,
+            unitPrice: resolvedUnitPrice,
+        });
     }
 
     function parseMenuNumber(value, fallback = 0) {
@@ -7784,7 +9059,7 @@
         if (!Array.isArray(items) || items.length === 0) {
             currentMenuItems = [];
             menuSizeOptionsCache.clear();
-            if (menuItemsGrid) menuItemsGrid.innerHTML = '<p class="menu-status">Chua co du lieu menu.</p>';
+            if (menuItemsGrid) menuItemsGrid.innerHTML = '<p class="menu-status">Chưa có dữ liệu menu.</p>';
             if (menuCategoryRow) menuCategoryRow.innerHTML = '';
             return;
         }
@@ -7815,7 +9090,7 @@
                 configuredSizeName = String(parsed.VITE_PRODUCT_DEFAULT_SIZE_NAME || '').trim();
             }
         } catch {}
-        if (menuStatus) menuStatus.textContent = 'Dang tai menu...';
+        if (menuStatus) menuStatus.textContent = 'Đang tải menu...';
         try {
             let lastError = null;
             for (const menuUrl of candidates) {
@@ -7830,7 +9105,7 @@
                         requestUrl = parsed.toString();
                     }
                 } catch {}
-                if (menuStatus) menuStatus.textContent = `Dang tai tu ${requestUrl}`;
+                if (menuStatus) menuStatus.textContent = `Đang tải từ ${requestUrl}`;
                 try {
                     const controller = new AbortController();
                     const timeout = setTimeout(() => controller.abort(), 6000);
@@ -7852,7 +9127,7 @@
                     await enrichMenuItemsWithSizeData(items);
                     renderMenuItems(items);
                     menuLoaded = true;
-                    if (menuStatus) menuStatus.textContent = `Da tai ${items.length} mon`;
+                    if (menuStatus) menuStatus.textContent = `Đã tải ${items.length} mon`;
                     return;
                 } catch (error) {
                     lastError = error;
@@ -7865,12 +9140,12 @@
             if (menuStatus) {
                 const reason = String(error?.message || '').trim();
                 menuStatus.textContent = reason
-                    ? `Loi tai menu: ${reason}`
-                    : 'Loi tai menu';
+                    ? `Lỗi tải menu: ${reason}`
+                    : 'Lỗi tải menu';
             }
             if (menuItemsGrid) {
-                const reason = toSafeText(String(error?.message || 'Khong ro loi'));
-                menuItemsGrid.innerHTML = `<p class="menu-status">Khong tai duoc menu. ${reason}</p>`;
+                const reason = toSafeText(String(error?.message || 'Không ro loi'));
+                menuItemsGrid.innerHTML = `<p class="menu-status">Không tải được menu. ${reason}</p>`;
             }
         }
     }
@@ -7908,17 +9183,24 @@
     renderChatMini();
     hideOrderFlow();
     updateMiniCart([]);
+    bindSizePickerEvents();
+    bindOrderReviewEvents();
+    if (cartMiniCheckoutBtn) {
+        cartMiniCheckoutBtn.addEventListener('click', () => {
+            triggerCartCheckout();
+        });
+    }
     if (isAdminPreviewMode) {
-        setVoiceStatus('Admin preview mode');
+        setVoiceStatus('Chế độ xem trước admin');
         updateMenuPanelHeight(0);
     } else {
         setupSpeechRecognition();
         prewarmVoiceRuntime();
         if (voiceAlwaysListenMode) {
-            setVoiceStatus('Dang khoi dong nghe lien tuc...');
+            setVoiceStatus('Đang khởi động nghe liên tục...');
             setVoiceListening(true, 'system');
         } else {
-            setVoiceStatus('Dang cho khach vao vung camera...');
+            setVoiceStatus('Đang chờ khách vào vùng camera...');
         }
         updateMenuPanelHeight(3);
         void initializeMiniCamera();
@@ -7932,6 +9214,8 @@
         renderMenuCards();
     });
     document.addEventListener('pointerdown', (event) => {
+        if (sizePickerHud && !sizePickerHud.hidden) return;
+        if (orderReviewHud && !orderReviewHud.hidden) return;
         if (!isMenuOpen) return;
         const target = event.target;
         if (!(target instanceof Node)) return;
