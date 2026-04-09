@@ -2,6 +2,7 @@ import './App.css'
 import { useEffect, useRef, useState } from 'react'
 import {
   ADMIN_ROBOT_STUDIO_COMMAND_KEY,
+  getAllAdminEnvConfig,
   getCameraPreviewVisible,
   getMicNoiseFilterStrength,
   getRobotScalePercent,
@@ -23,6 +24,7 @@ function App() {
       const nextCameraVisible = getCameraPreviewVisible()
       const nextMicNoiseStrength = getMicNoiseFilterStrength()
       const nextRobotStudioConfig = getRobotStudioConfig()
+      const nextAdminEnvConfig = getAllAdminEnvConfig()
       setRobotScalePercent(nextScale)
       setCameraPreviewVisible(nextCameraVisible)
       iframeRef.current?.contentWindow?.postMessage(
@@ -39,6 +41,10 @@ function App() {
       )
       iframeRef.current?.contentWindow?.postMessage(
         { type: 'orderrobot:robot-studio-config', config: nextRobotStudioConfig },
+        window.location.origin,
+      )
+      iframeRef.current?.contentWindow?.postMessage(
+        { type: 'orderrobot:admin-env-config', config: nextAdminEnvConfig },
         window.location.origin,
       )
 
@@ -104,6 +110,10 @@ function App() {
             )
             iframeRef.current?.contentWindow?.postMessage(
               { type: 'orderrobot:robot-studio-config', config: getRobotStudioConfig() },
+              window.location.origin,
+            )
+            iframeRef.current?.contentWindow?.postMessage(
+              { type: 'orderrobot:admin-env-config', config: getAllAdminEnvConfig() },
               window.location.origin,
             )
           }}

@@ -173,6 +173,7 @@ const ESSENTIAL_ENV_KEYS = new Set([
   'VITE_MENU_API_URL',
   'VITE_PRODUCT_SIZE_API_URL',
   'VITE_ORDERS_API_URL',
+  'VITE_TAX_PERCENT',
   'AI_MODEL',
   'CORE_BACKEND_URL',
   'TTS_ENGINE',
@@ -272,6 +273,7 @@ const ENV_TEMPLATE: EnvField[] = [
   { key: 'VITE_PRODUCT_SIZE_API_URL', label: 'VITE Product Size API URL', value: getProductSizeApiUrl() },
   { key: 'VITE_PRODUCT_DEFAULT_SIZE_NAME', label: 'VITE Product Default Size Name', value: getProductDefaultSizeName() },
   { key: 'VITE_ORDERS_API_URL', label: 'VITE Orders API URL', value: getOrdersApiUrl() },
+  { key: 'VITE_TAX_PERCENT', label: 'VITE Tax Percent (%)', value: '10' },
 ]
 
 const TTS_VOICE_OPTIONS = [
@@ -512,6 +514,12 @@ function normalizeFieldsForPersistence(fields: EnvField[]): EnvField[] {
   const mode = getFieldValue(fields, 'POS_MENU_SOURCE_MODE', 'remote_strict').trim().toLowerCase()
   const coreApi = normalizeApiBaseUrl(getFieldValue(fields, 'VITE_CORE_API_URL', getCoreApiUrl()))
   const canonicalMenuUrl = `${coreApi}/menu`
+  const normalizeTaxPercent = (raw: string) => {
+    const parsed = Number.parseFloat(String(raw || '').trim())
+    if (!Number.isFinite(parsed)) return '10'
+    const clamped = Math.max(0, Math.min(100, parsed))
+    return Number.isInteger(clamped) ? String(clamped) : clamped.toFixed(2).replace(/\.?0+$/, '')
+  }
   return fields.map((field) => {
     if (field.key === 'POS_MENU_SOURCE_MODE') {
       const nextMode = mode === 'local' ? 'local' : 'remote_strict'
@@ -519,6 +527,10 @@ function normalizeFieldsForPersistence(fields: EnvField[]): EnvField[] {
     }
     if (field.key === 'VITE_MENU_API_URL' && mode === 'remote_strict' && canonicalMenuUrl) {
       return field.value === canonicalMenuUrl ? field : { ...field, value: canonicalMenuUrl }
+    }
+    if (field.key === 'VITE_TAX_PERCENT') {
+      const nextTax = normalizeTaxPercent(field.value)
+      return field.value === nextTax ? field : { ...field, value: nextTax }
     }
     return field
   })
@@ -1044,6 +1056,40 @@ export default function AdminPage() {
     )
   }, [])
 
+  const applyVoiceListenModeInstant = useCallback(
+    (nextModeRaw: string) => {
+      const nextMode: VoiceListenMode = nextModeRaw === 'sequential' ? 'sequential' : 'always'
+      const nextFields = normalizeFieldsForPersistence(
+        envFields.map((field) => {
+          if (field.key === 'VOICE_LISTEN_MODE') {
+            return { ...field, value: nextMode }
+          }
+          if (field.key === 'VOICE_ALWAYS_LISTEN') {
+            return { ...field, value: nextMode === 'always' ? 'true' : 'false' }
+          }
+          return field
+        }),
+      )
+      saveAdminEnvConfig(toEnvPayload(nextFields))
+      setEnvFields(nextFields)
+      setLastSyncAt(getAdminConfigUpdatedAt())
+      setNotice({
+        tone: 'info',
+        text:
+          nextMode === 'sequential'
+            ? t(
+                'Da ap dung ngay che do nghe theo luot (Sequential) cho kiosk.',
+                'Sequential listen mode is now applied instantly on kiosk.',
+              )
+            : t(
+                'Da ap dung ngay che do nghe lien tuc (Always) cho kiosk.',
+                'Always listen mode is now applied instantly on kiosk.',
+              ),
+      })
+    },
+    [envFields, t],
+  )
+
   const renderEnvFieldInput = useCallback(
     (field: EnvField, onFieldBlur: () => void) => {
       if (field.key === 'VOICE_LISTEN_MODE') {
@@ -1053,8 +1099,7 @@ export default function AdminPage() {
             value={modeValue}
             onChange={(event) => {
               const nextMode = event.target.value === 'sequential' ? 'sequential' : 'always'
-              setFieldValue('VOICE_LISTEN_MODE', nextMode)
-              setFieldValue('VOICE_ALWAYS_LISTEN', nextMode === 'always' ? 'true' : 'false')
+              applyVoiceListenModeInstant(nextMode)
             }}
             onBlur={onFieldBlur}
           >
@@ -1124,7 +1169,7 @@ export default function AdminPage() {
         />
       )
     },
-    [envFields, setFieldValue, uiLanguage],
+    [applyVoiceListenModeInstant, envFields, uiLanguage],
   )
 
   const applyVieneuRealtimeProfile = useCallback(
@@ -2895,8 +2940,7 @@ export default function AdminPage() {
                       value={getFieldValue(envFields, 'VOICE_LISTEN_MODE', 'always') === 'sequential' ? 'sequential' : 'always'}
                       onChange={(event) => {
                         const nextMode = event.target.value === 'sequential' ? 'sequential' : 'always'
-                        setFieldValue('VOICE_LISTEN_MODE', nextMode)
-                        setFieldValue('VOICE_ALWAYS_LISTEN', nextMode === 'always' ? 'true' : 'false')
+                        applyVoiceListenModeInstant(nextMode)
                       }}
                     >
                       {VOICE_LISTEN_MODE_OPTIONS.map((option) => (

@@ -574,6 +574,22 @@ class OrderService:
                 is_default = _normalize_name(raw_name) == preferred_size_name
             elif index == 0:
                 is_default = True
+            raw_size_available = (
+                candidate.get("isAvailable")
+                if candidate.get("isAvailable") is not None
+                else candidate.get("available")
+                if candidate.get("available") is not None
+                else candidate.get("inStock")
+                if candidate.get("inStock") is not None
+                else candidate.get("isActive")
+            )
+            size_available = True
+            if isinstance(raw_size_available, bool):
+                size_available = raw_size_available
+            elif isinstance(raw_size_available, (int, float)):
+                size_available = raw_size_available != 0
+            elif isinstance(raw_size_available, str):
+                size_available = raw_size_available.strip().lower() in {"1", "true", "yes", "y", "on", "available"}
             options.append(
                 MenuItemSizeOption(
                     item_id=item_id,
@@ -582,6 +598,7 @@ class OrderService:
                     size_name=raw_name or f"Size-{index+1}",
                     price=_parse_decimal(candidate.get("price"), fallback=Decimal("0")),
                     is_default=is_default,
+                    available=size_available,
                 )
             )
         return options
@@ -594,6 +611,7 @@ class OrderService:
             size_name=self.settings.pos_default_size_name or "M",
             price=menu_item.price,
             is_default=True,
+            available=True,
         )
 
     def _get_remote_menu_items_by_ids(self, item_ids: list[str]) -> dict[str, MenuItem]:
@@ -873,13 +891,18 @@ class OrderService:
         preferred_size_id: int | None = None,
     ) -> dict[str, Any] | None:
         candidates = self._fetch_product_size_candidates(product_id)
-
         if not candidates:
+            return None
+
+        available_candidates = [candidate for candidate in candidates if self._is_size_candidate_available(candidate)]
+        if not available_candidates:
             return None
 
         if preferred_size_id is not None:
             for candidate in candidates:
                 if self._safe_int(candidate.get("size_id")) == int(preferred_size_id):
+                    if not self._is_size_candidate_available(candidate):
+                        raise ValueError(f"Size da chon (sizeId={int(preferred_size_id)}) hien tam het.")
                     return candidate
 
         if preferred_size_name:
@@ -887,16 +910,20 @@ class OrderService:
             if normalized_preferred:
                 for candidate in candidates:
                     if _normalize_name(str(candidate.get("size_name") or "")) == normalized_preferred:
+                        if not self._is_size_candidate_available(candidate):
+                            raise ValueError(
+                                f"Size '{str(candidate.get('size_name') or preferred_size_name).strip()}' hien tam het."
+                            )
                         return candidate
 
         preferred_size_name = _normalize_name(self.settings.pos_default_size_name)
         if preferred_size_name:
-            for candidate in candidates:
+            for candidate in available_candidates:
                 if _normalize_name(candidate["size_name"]) == preferred_size_name:
                     return candidate
 
-        candidates.sort(key=lambda item: (int(item["sort_order"]), str(item["size_name"]).lower()))
-        return candidates[0]
+        available_candidates.sort(key=lambda item: (int(item["sort_order"]), str(item["size_name"]).lower()))
+        return available_candidates[0]
 
     def _fetch_product_size_candidates(self, product_id: int) -> list[dict[str, Any]]:
         source = self.settings.pos_size_source_url.strip()
@@ -947,12 +974,30 @@ class OrderService:
                 record.get("priceAfterDiscount", record.get("priceBase")),
                 fallback=Decimal("0"),
             )
+            raw_available = (
+                record.get("isAvailable")
+                if record.get("isAvailable") is not None
+                else record.get("available")
+                if record.get("available") is not None
+                else record.get("inStock")
+                if record.get("inStock") is not None
+                else record.get("isActive")
+                if record.get("isActive") is not None
+                else size_obj.get("isAvailable")
+                if size_obj.get("isAvailable") is not None
+                else size_obj.get("available")
+                if size_obj.get("available") is not None
+                else size_obj.get("inStock")
+                if size_obj.get("inStock") is not None
+                else size_obj.get("isActive")
+            )
             candidates.append(
                 {
                     "size_id": safe_size_id,
                     "size_name": size_name,
                     "sort_order": sort_order,
                     "price": price,
+                    "available": raw_available,
                 }
             )
         if self.remote_menu_strict_enabled and invalid_rows > 0:
@@ -961,6 +1006,19 @@ class OrderService:
             )
         candidates.sort(key=lambda item: (int(item["sort_order"]), str(item["size_name"]).lower()))
         return candidates
+
+    @staticmethod
+    def _is_size_candidate_available(candidate: dict[str, Any]) -> bool:
+        raw = candidate.get("available")
+        if raw is None:
+            return True
+        if isinstance(raw, bool):
+            return raw
+        if isinstance(raw, (int, float)):
+            return raw != 0
+        if isinstance(raw, str):
+            return raw.strip().lower() in {"1", "true", "yes", "y", "on", "available"}
+        return True
 
     @staticmethod
     def _build_product_query_url(source: str, product_id: int) -> str:

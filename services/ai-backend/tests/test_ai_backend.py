@@ -222,6 +222,12 @@ def test_ensure_frontend_safe_reply_repairs_vietnamese_spacing_artifacts() -> No
     assert safe == "Món này bên mình không phục vụ ạ 😅 Bạn chọn món khác trong menu giúp mình nhé, mình sẵn sàng gợi ý cho bạn nè!"
 
 
+def test_ensure_frontend_safe_reply_fallbacks_for_broken_recommendation_spacing() -> None:
+    raw = "Dạ, món này dễ uố ng nè. Bạn có muốnt hêm topping không?"
+    safe = ensure_frontend_safe_reply("recommendation", raw)
+    assert safe == "Dạ, món này dễ uống nè. Bạn có muốn thêm topping không?"
+
+
 def test_normalize_text_preserves_d_letter_for_vietnamese_intents() -> None:
     assert normalize_text("Đặt đi giúp mình") == "dat di giup minh"
 
@@ -324,6 +330,62 @@ async def test_conversation_engine_requires_size_before_adding_item() -> None:
     assert added.cart[0].item_id == "tra-dao"
     assert added.cart[0].size_name == "L"
     assert added.cart[0].unit_price == Decimal("52000")
+
+
+@pytest.mark.anyio
+async def test_conversation_engine_accepts_sai_nho_as_size_alias() -> None:
+    settings = Settings(
+        ai_base_url="",
+        ai_api_key="",
+        ai_model="",
+        core_backend_url="http://127.0.0.1:8001",
+        voice_lang="vi-VN",
+        voice_style="cute_friendly",
+        tts_voice="vietnam",
+        tts_rate="165",
+        stt_model="small",
+        stt_device="cpu",
+        stt_compute_type="int8",
+    )
+    core_client = SizeAwareCoreBackendClient()
+    engine = ConversationEngine(settings, core_client)
+
+    start = await engine.start_session()
+    ask_size = await engine.handle_turn(start.session_id, "cho minh 1 tra dao cam sa")
+    assert ask_size.scene == "clarify_size"
+
+    added = await engine.handle_turn(start.session_id, "sai nho")
+    assert added.scene == "cart_updated"
+    assert len(added.cart) == 1
+    assert added.cart[0].size_name == "S"
+
+
+@pytest.mark.anyio
+async def test_short_negative_reply_keeps_cart_and_moves_to_confirmation() -> None:
+    settings = Settings(
+        ai_base_url="",
+        ai_api_key="",
+        ai_model="",
+        core_backend_url="http://127.0.0.1:8001",
+        voice_lang="vi-VN",
+        voice_style="cute_friendly",
+        tts_voice="vietnam",
+        tts_rate="165",
+        stt_model="small",
+        stt_device="cpu",
+        stt_compute_type="int8",
+    )
+    core_client = FakeCoreBackendClient()
+    engine = ConversationEngine(settings, core_client)
+
+    start = await engine.start_session()
+    added = await engine.handle_turn(start.session_id, "them 1 tra dao cam sa")
+    assert len(added.cart) == 1
+
+    follow_up = await engine.handle_turn(start.session_id, "khong")
+    assert follow_up.scene == "ask_confirmation"
+    assert follow_up.needs_confirmation is True
+    assert len(follow_up.cart) == 1
 
 
 @pytest.mark.anyio

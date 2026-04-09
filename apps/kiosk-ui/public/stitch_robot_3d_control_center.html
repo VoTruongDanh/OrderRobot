@@ -944,6 +944,9 @@
             overflow: auto;
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+            align-items: start;
+            align-content: start;
+            grid-auto-rows: max-content;
             gap: 12px;
             padding-right: 6px;
         }
@@ -954,6 +957,8 @@
             background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(241,245,249,0.98));
             display: grid;
             gap: 9px;
+            align-self: start;
+            height: max-content;
             box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
             cursor: pointer;
             transition: transform 0.18s ease, box-shadow 0.18s ease;
@@ -1187,90 +1192,173 @@
         .order-review-card {
             position: relative;
             pointer-events: auto;
-            width: min(95vw, 640px);
+            width: min(94vw, 620px);
             border-radius: 26px;
-            border: 1px solid rgba(131, 170, 196, 0.36);
-            background: linear-gradient(165deg, rgba(255, 255, 255, 0.99), rgba(236, 248, 255, 0.95));
-            box-shadow: 0 26px 66px rgba(8, 44, 78, 0.36);
-            padding: 22px;
+            border: 1px solid rgba(125, 169, 196, 0.32);
+            background: linear-gradient(175deg, rgba(255, 255, 255, 0.99), rgba(240, 249, 255, 0.97));
+            box-shadow: 0 26px 56px rgba(11, 42, 73, 0.28);
+            padding: 20px 20px 16px;
             display: grid;
-            gap: 12px;
+            gap: 11px;
+            overflow: hidden;
+        }
+        .order-review-card::before {
+            content: '';
+            position: absolute;
+            inset: 0 auto auto 0;
+            width: 100%;
+            height: 5px;
+            background: linear-gradient(92deg, #0f766e, #0ea5e9 52%, #2563eb);
+        }
+        .order-review-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }
+        .order-review-step {
+            margin: 0;
+            flex: 0 0 auto;
+            border-radius: 999px;
+            border: 1px solid rgba(14, 116, 144, 0.28);
+            background: linear-gradient(135deg, rgba(207, 250, 254, 0.96), rgba(224, 242, 254, 0.9));
+            color: #0b766f;
+            font-size: 0.72rem;
+            font-weight: 800;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            padding: 4px 10px;
         }
         .order-review-title {
             margin: 0;
-            font-size: 1.48rem;
-            font-weight: 900;
-            color: #0f2b3b;
-            line-height: 1.2;
+            font-size: 1.23rem;
+            font-weight: 800;
+            color: #163246;
+            line-height: 1.22;
         }
         .order-review-sub {
-            margin: 0;
-            font-size: 0.95rem;
-            color: #355468;
-            line-height: 1.35;
+            margin: -2px 0 0;
+            font-size: 0.88rem;
+            color: #4a6478;
+            line-height: 1.4;
         }
         .order-review-lines {
             display: grid;
             gap: 8px;
-            max-height: 42vh;
+            max-height: 40vh;
             overflow: auto;
             padding-right: 4px;
         }
         .order-review-line {
             display: grid;
-            grid-template-columns: 44px auto 1fr auto;
+            grid-template-columns: 44px auto minmax(0, 1fr) auto;
             align-items: center;
-            gap: 8px;
-            border-radius: 12px;
+            gap: 9px;
+            border-radius: 13px;
             border: 1px solid rgba(125, 170, 197, 0.28);
-            background: linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(232, 246, 255, 0.92));
-            padding: 9px 11px;
-            font-size: 0.95rem;
-            color: #1f3f53;
+            background: linear-gradient(180deg, rgba(252, 254, 255, 0.96), rgba(246, 251, 255, 0.94));
+            box-shadow: 0 6px 14px rgba(23, 58, 88, 0.08);
+            padding: 8px 9px;
+            font-size: 0.9rem;
+            color: #2f4e63;
         }
         .order-review-thumb {
             width: 44px;
             height: 44px;
-            border-radius: 10px;
+            border-radius: 9px;
             object-fit: cover;
             border: 1px solid rgba(125, 170, 197, 0.34);
             background: #dbeafe;
         }
-        .order-review-line strong {
-            color: #0f2b3b;
+        .order-review-line-qty {
+            min-width: 26px;
+            height: 26px;
+            display: grid;
+            place-items: center;
+            border-radius: 999px;
+            background: linear-gradient(135deg, rgba(211, 245, 240, 0.96), rgba(181, 240, 214, 0.9));
+            color: #0b766f;
+            font-size: 0.74rem;
+            font-weight: 800;
+            border: 1px solid rgba(20, 184, 166, 0.26);
         }
-        .order-review-total {
+        .order-review-line strong {
+            color: #16384b;
+            font-size: 1rem;
+            font-weight: 800;
+            line-height: 1.28;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .order-review-line-price {
+            font-weight: 700;
+            color: #2f5168;
+            white-space: nowrap;
+        }
+        .order-review-summary {
+            border-radius: 13px;
+            border: 1px solid rgba(109, 164, 171, 0.3);
+            background: linear-gradient(160deg, rgba(240, 253, 250, 0.92), rgba(229, 246, 254, 0.92));
+            padding: 10px 12px 11px;
+            display: grid;
+            gap: 6px;
+        }
+        .order-review-summary-row {
             margin: 0;
-            font-size: 1.2rem;
-            font-weight: 900;
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 12px;
+            color: #2f5368;
+            font-size: 0.86rem;
+            font-weight: 700;
+        }
+        .order-review-summary-row strong {
+            font-size: 0.95rem;
+            color: #1f4962;
+            font-weight: 800;
+        }
+        .order-review-summary-row.is-total {
+            margin-top: 2px;
+            padding-top: 8px;
+            border-top: 1px dashed rgba(80, 145, 166, 0.34);
+            font-size: 0.94rem;
+            font-weight: 800;
+            color: #125c78;
+        }
+        .order-review-summary-row.is-total strong {
+            font-size: 1.24rem;
             color: #0f766e;
-            text-align: right;
         }
         .order-review-actions {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 10px;
+            gap: 8px;
         }
         .order-review-action {
             min-height: 46px;
-            border-radius: 12px;
-            border: 1px solid rgba(120, 162, 188, 0.34);
-            background: rgba(255, 255, 255, 0.92);
-            color: #25526a;
-            font-size: 0.9rem;
+            border-radius: 13px;
+            border: 1px solid rgba(143, 175, 196, 0.42);
+            background: rgba(255, 255, 255, 0.96);
+            color: #2a5067;
+            font-size: 0.94rem;
             font-weight: 800;
-            padding: 10px 12px;
+            padding: 9px 12px;
             cursor: pointer;
-            transition: all var(--ui-fast) ease;
+            transition: transform var(--ui-fast) ease, box-shadow var(--ui-fast) ease, border-color var(--ui-fast) ease;
         }
         .order-review-action:hover {
             transform: translateY(-1px);
+            box-shadow: 0 8px 16px rgba(38, 83, 116, 0.15);
+            border-color: rgba(109, 157, 185, 0.5);
         }
         .order-review-action--confirm {
-            border-color: rgba(15, 118, 110, 0.34);
-            background: linear-gradient(135deg, #0ea5a2, #2563eb);
+            border-color: rgba(31, 127, 194, 0.45);
+            background: linear-gradient(132deg, #0f8ea0, #2563eb);
             color: #fff;
-            box-shadow: 0 10px 20px rgba(20, 88, 161, 0.28);
+            font-weight: 800;
+            box-shadow: 0 10px 18px rgba(23, 98, 165, 0.3);
         }
         .size-picker-hud {
             position: fixed;
@@ -1345,6 +1433,19 @@
         .size-picker-option--default {
             border-color: rgba(20, 184, 166, 0.42);
         }
+        .size-picker-option--disabled {
+            cursor: not-allowed;
+            opacity: 0.56;
+            border-style: dashed;
+            background: linear-gradient(145deg, rgba(241, 245, 249, 0.9), rgba(226, 232, 240, 0.85));
+            box-shadow: none;
+        }
+        .size-picker-option--disabled:hover,
+        .size-picker-option--disabled:focus-visible {
+            transform: none;
+            box-shadow: none;
+            border-color: rgba(148, 163, 184, 0.36);
+        }
         .size-picker-option-size {
             font-size: 0.95rem;
             font-weight: 800;
@@ -1366,6 +1467,11 @@
             letter-spacing: 0.05em;
             text-transform: uppercase;
             padding: 2px 7px;
+        }
+        .size-picker-option-tag--off {
+            border-color: rgba(249, 115, 22, 0.3);
+            background: rgba(255, 237, 213, 0.82);
+            color: #c2410c;
         }
         .size-picker-actions {
             display: flex;
@@ -1612,6 +1718,17 @@
             margin: 0;
             font-size: 0.74rem;
             color: #64748b;
+        }
+        .cart-mini-empty-note {
+            margin: 6px 0 0;
+            padding: 7px 9px;
+            border-radius: 10px;
+            border: 1px solid rgba(245, 158, 11, 0.32);
+            background: rgba(255, 247, 237, 0.9);
+            color: #9a5b00;
+            font-size: 0.72rem;
+            line-height: 1.35;
+            font-weight: 700;
         }
 
         /* Disco Dance Mode */
@@ -1960,11 +2077,26 @@
             bottom: auto;
             width: 332px;
             border-radius: var(--ui-radius-xl);
-            border: 1px solid var(--ui-border);
-            background: linear-gradient(145deg, rgba(255, 255, 255, 0.95), rgba(240, 249, 255, 0.86));
-            box-shadow: var(--ui-shadow);
+            border: 1px solid rgba(120, 162, 188, 0.4);
+            background:
+                radial-gradient(120% 80% at 100% 0%, rgba(147, 197, 253, 0.22), rgba(255, 255, 255, 0)),
+                linear-gradient(150deg, rgba(255, 255, 255, 0.98), rgba(235, 247, 255, 0.94));
+            box-shadow: 0 22px 46px rgba(13, 61, 98, 0.2);
             padding: 14px;
             gap: 10px;
+            overflow: hidden;
+            position: fixed;
+        }
+        .cart-mini-panel::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 5px;
+            background: linear-gradient(90deg, #14b8a6, #22d3ee, #2563eb);
+            opacity: 0.96;
+            pointer-events: none;
         }
 
         .cart-mini-hint {
@@ -1976,17 +2108,18 @@
 
         .cart-mini-item {
             display: grid;
-            grid-template-columns: 38px auto 1fr auto;
+            grid-template-columns: 40px auto 1fr auto;
             align-items: center;
             gap: 8px;
-            border-radius: 12px;
-            background: linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(232, 246, 255, 0.9));
+            border-radius: 14px;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 1), rgba(236, 250, 255, 0.95));
             border: 1px solid rgba(125, 170, 197, 0.3);
-            padding: 8px 9px;
+            box-shadow: 0 8px 16px rgba(18, 62, 92, 0.08);
+            padding: 8px 8px;
         }
         .cart-mini-item-thumb {
-            width: 38px;
-            height: 38px;
+            width: 40px;
+            height: 40px;
             border-radius: 10px;
             object-fit: cover;
             border: 1px solid rgba(125, 170, 197, 0.34);
@@ -1994,9 +2127,16 @@
         }
 
         .cart-mini-item-qty {
-            font-size: 0.92rem;
+            min-width: 28px;
+            height: 28px;
+            display: grid;
+            place-items: center;
+            border-radius: 999px;
+            background: linear-gradient(135deg, rgba(203, 250, 245, 0.94), rgba(167, 243, 208, 0.9));
+            border: 1px solid rgba(20, 184, 166, 0.24);
+            font-size: 0.82rem;
             font-weight: 800;
-            color: #0b4a6b;
+            color: #0f766e;
         }
 
         .cart-mini-item-main {
@@ -2013,7 +2153,15 @@
             white-space: nowrap;
         }
 
-        .cart-mini-item-main span {
+        .cart-mini-item-size {
+            margin: 0;
+            font-size: 0.76rem;
+            color: #4f6b7d;
+            font-weight: 700;
+            line-height: 1.2;
+        }
+
+        .cart-mini-item-price {
             font-size: 0.8rem;
             color: #355468;
             font-weight: 700;
@@ -2041,8 +2189,29 @@
 
         .cart-mini-total {
             color: #0f766e;
-            font-size: 0.98rem;
+            font-size: 0.92rem;
+            font-weight: 700;
+            margin: 0;
+            padding: 6px 2px 2px;
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 10px;
+            border-top: 1px dashed rgba(125, 170, 197, 0.45);
+        }
+
+        .cart-mini-total span {
+            color: #4a6a7f;
+            font-size: 0.78rem;
+            letter-spacing: 0.02em;
+            font-weight: 700;
+        }
+
+        .cart-mini-total strong {
+            color: #0b766f;
+            font-size: 1.15rem;
             font-weight: 900;
+            white-space: nowrap;
         }
 
         .cart-mini-actions {
@@ -2051,18 +2220,19 @@
         }
 
         .cart-mini-checkout {
-            min-height: 40px;
-            border-radius: 12px;
+            min-height: 44px;
+            width: 100%;
+            border-radius: 14px;
             border: 1px solid rgba(15, 118, 110, 0.32);
-            background: linear-gradient(135deg, #0ea5a2, #2563eb);
+            background: linear-gradient(135deg, #0ea5a2, #0ea5e9 52%, #2563eb);
             color: #fff;
-            font-size: 0.86rem;
+            font-size: 0.95rem;
             font-weight: 800;
-            letter-spacing: 0.01em;
+            letter-spacing: 0.02em;
             padding: 8px 14px;
             cursor: pointer;
             transition: transform var(--ui-fast) ease, box-shadow var(--ui-fast) ease, opacity var(--ui-fast) ease;
-            box-shadow: 0 10px 20px rgba(20, 88, 161, 0.28);
+            box-shadow: 0 12px 22px rgba(20, 88, 161, 0.31);
         }
 
         .cart-mini-checkout:hover {
@@ -2133,9 +2303,36 @@
         }
 
         .order-popup-line {
-            font-size: 0.92rem;
-            padding: 8px 10px;
-            border-radius: 12px;
+            display: grid;
+            grid-template-columns: 40px auto 1fr auto;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.9rem;
+            padding: 8px 9px;
+            border-radius: 13px;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 1), rgba(236, 250, 255, 0.95));
+            border: 1px solid rgba(125, 170, 197, 0.28);
+            box-shadow: 0 8px 16px rgba(18, 62, 92, 0.08);
+        }
+        .order-popup-thumb {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            object-fit: cover;
+            border: 1px solid rgba(125, 170, 197, 0.34);
+            background: #dbeafe;
+        }
+        .order-popup-line-qty {
+            min-width: 28px;
+            height: 28px;
+            display: grid;
+            place-items: center;
+            border-radius: 999px;
+            background: linear-gradient(135deg, rgba(203, 250, 245, 0.94), rgba(167, 243, 208, 0.9));
+            border: 1px solid rgba(20, 184, 166, 0.24);
+            font-size: 0.8rem;
+            font-weight: 900;
+            color: #0f766e;
         }
 
         .order-popup-lines {
@@ -2145,22 +2342,39 @@
         }
 
         .order-popup-total {
-            font-size: 1.12rem;
-            color: #0f2b3b;
+            font-size: 1.14rem;
+            color: #0f766e;
             font-weight: 800;
+            text-align: right;
+            padding: 8px 10px;
+            background: rgba(236, 253, 245, 0.86);
+            border: 1px solid rgba(20, 184, 166, 0.24);
+            border-radius: 12px;
+        }
+        .order-popup-qr-wrap {
+            border-radius: 14px;
+            border: 1px solid rgba(125, 170, 197, 0.24);
+            background: linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(233, 246, 255, 0.9));
+            padding: 10px;
         }
 
         .order-popup-qr {
             width: 144px;
             height: 144px;
-            border-radius: 14px;
+            border-radius: 16px;
             padding: 10px;
             border-color: rgba(13, 65, 100, 0.24);
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.56);
         }
 
         .order-popup-countdown {
             color: #155e75;
-            font-size: 0.96rem;
+            font-size: 0.9rem;
+            border-radius: 10px;
+            background: rgba(224, 242, 254, 0.78);
+            border: 1px solid rgba(125, 170, 197, 0.26);
+            padding: 7px 10px;
+            text-align: center;
         }
 
         .order-payment-success {
@@ -2859,6 +3073,23 @@
                 max-height: 44vh;
             }
 
+            .order-review-head {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .order-review-title {
+                font-size: 1.12rem;
+            }
+
+            .order-review-sub {
+                font-size: 0.83rem;
+            }
+
+            .order-review-summary-row.is-total strong {
+                font-size: 1.1rem;
+            }
+
             .order-review-actions {
                 grid-template-columns: 1fr;
             }
@@ -2916,7 +3147,7 @@
 <div class="cart-mini-list" id="cart-mini-list">
 <p class="cart-mini-empty">Chưa có món nào trong giỏ.</p>
 </div>
-<p class="cart-mini-total" id="cart-mini-total">Tổng: 0 đ</p>
+<p class="cart-mini-total" id="cart-mini-total"><span>Tổng (VAT 10%)</span><strong>0 đ</strong></p>
 <div class="cart-mini-actions">
 <button class="cart-mini-checkout" id="cart-mini-checkout-btn" type="button" disabled>Thêm món để đặt hàng</button>
 </div>
@@ -2937,10 +3168,17 @@
 <section class="order-review-hud" id="order-review-hud" hidden aria-label="Xác nhận hoá đơn">
 <div class="order-review-backdrop" id="order-review-backdrop"></div>
 <article class="order-review-card" role="dialog" aria-modal="true" aria-labelledby="order-review-title">
+<div class="order-review-head">
 <p class="order-review-title" id="order-review-title">Xác nhận đơn hàng lần 1</p>
-<p class="order-review-sub">Vui lòng xem lại hoá đơn. Bấm <strong>Xác nhận lần 2</strong> để tạo đơn và hiện QR thanh toán.</p>
+<p class="order-review-step">Bước 1/2</p>
+</div>
+<p class="order-review-sub">Kiểm tra món và số tiền. Nhấn <strong>Xác nhận lần 2</strong> để hiện QR thanh toán.</p>
 <div class="order-review-lines" id="order-review-lines"></div>
-<p class="order-review-total" id="order-review-total">Tổng thanh toán: 0 đ</p>
+<div class="order-review-summary" id="order-review-summary">
+<p class="order-review-summary-row"><span>Tạm tính</span><strong id="order-review-subtotal">0 đ</strong></p>
+<p class="order-review-summary-row"><span id="order-review-vat-label">VAT 10%</span><strong id="order-review-vat-amount">0 đ</strong></p>
+<p class="order-review-summary-row is-total"><span>Tổng thanh toán</span><strong id="order-review-total">0 đ</strong></p>
+</div>
 <div class="order-review-actions">
 <button class="order-review-action" id="order-review-cancel-btn" type="button">Quay lại chỉnh giỏ</button>
 <button class="order-review-action order-review-action--confirm" id="order-review-confirm-btn" type="button">Xác nhận lần 2</button>
@@ -3089,6 +3327,9 @@
     const orderReviewHud = document.getElementById('order-review-hud');
     const orderReviewBackdrop = document.getElementById('order-review-backdrop');
     const orderReviewLines = document.getElementById('order-review-lines');
+    const orderReviewSubtotal = document.getElementById('order-review-subtotal');
+    const orderReviewVatLabel = document.getElementById('order-review-vat-label');
+    const orderReviewVatAmount = document.getElementById('order-review-vat-amount');
     const orderReviewTotal = document.getElementById('order-review-total');
     const orderReviewConfirmBtn = document.getElementById('order-review-confirm-btn');
     const orderReviewCancelBtn = document.getElementById('order-review-cancel-btn');
@@ -3165,6 +3406,7 @@
         'da', 'dat', 'uhm', 'ok', 'oke',
     ]);
     const DEFAULT_TTS_STREAM_PLAYBACK_RATE = 1.15;
+    const DEFAULT_TAX_PERCENT = 10;
     const AI_RUNTIME_FALLBACK_URL = 'http://127.0.0.1:8012';
     const AI_RUNTIME_PROBE_TIMEOUT_MS = 1600;
     const isAdminPreviewMode = new URLSearchParams(window.location.search).get('adminPreview') === '1';
@@ -3225,6 +3467,7 @@
     let backendSttChunkMs = DEFAULT_BACKEND_STT_CHUNK_MS;
     let submitSilenceMs = DEFAULT_SUBMIT_SILENCE_MS;
     let ttsStreamPlaybackRate = DEFAULT_TTS_STREAM_PLAYBACK_RATE;
+    let currentTaxPercent = DEFAULT_TAX_PERCENT;
     let chatClearAfterAbsenceMs = DEFAULT_CHAT_CLEAR_AFTER_ABSENCE_MS;
     let chatClearOnOrderComplete = DEFAULT_CHAT_CLEAR_ON_ORDER_COMPLETE;
     let voiceAlwaysListenMode = DEFAULT_VOICE_ALWAYS_LISTEN;
@@ -3275,6 +3518,7 @@
     let thinkingMotionTurnId = '';
     const chatHistory = [];
     let cartState = [];
+    let cartEmptyNotice = '';
     const menuSizeOptionsCache = new Map();
     const MENU_IMAGE_BY_ID = {
         'ts-tranchau': 'https://images.unsplash.com/photo-1558857563-b371033873b8?auto=format&fit=crop&w=1000&q=80',
@@ -3855,10 +4099,12 @@
         const columns = Math.max(1, Math.floor(usableWidth / minCardWidth));
         const rows = Math.max(1, Math.ceil(safeCount / columns));
         const rowsClamped = Math.min(3, rows);
-        const rowsHeight = rowsClamped * 294 + Math.max(0, rowsClamped - 1) * gap;
-        const chromeHeight = 258;
-        const minHeight = Math.round(window.innerHeight * 0.48);
-        const maxHeight = Math.round(window.innerHeight * 0.88);
+        const isSparseResult = safeCount <= columns;
+        const estimatedCardHeight = isSparseResult ? 252 : 294;
+        const rowsHeight = rowsClamped * estimatedCardHeight + Math.max(0, rowsClamped - 1) * gap;
+        const chromeHeight = isSparseResult ? 228 : 258;
+        const minHeight = Math.round(window.innerHeight * (isSparseResult ? 0.30 : 0.42));
+        const maxHeight = Math.round(window.innerHeight * (isSparseResult ? 0.74 : 0.88));
         const target = chromeHeight + rowsHeight;
         const finalHeight = Math.max(minHeight, Math.min(maxHeight, target));
         menu.style.height = `${finalHeight}px`;
@@ -3933,6 +4179,12 @@
         if (!Number.isFinite(numeric)) return null;
         if (numeric < min || numeric > max) return null;
         return Number(numeric.toFixed(2));
+    }
+
+    function normalizeTaxPercent(value, fallback = DEFAULT_TAX_PERCENT) {
+        const numeric = Number.parseFloat(String(value ?? '').trim());
+        if (!Number.isFinite(numeric)) return fallback;
+        return Math.max(0, Math.min(100, Number(numeric.toFixed(2))));
     }
 
     function toSafeBool(value, fallback) {
@@ -4019,6 +4271,27 @@
             voiceAlwaysListenMode,
             voiceTtsWsRealtimeEnabled,
         });
+    }
+
+    function refreshOrderTaxConfigFromAdmin(options = {}) {
+        const rerender = options?.rerender !== false;
+        const env = readAdminEnvFields();
+        const nextTaxPercent = normalizeTaxPercent(
+            env.VITE_TAX_PERCENT ?? env.TAX_PERCENT ?? DEFAULT_TAX_PERCENT,
+            DEFAULT_TAX_PERCENT,
+        );
+        const changed = Math.abs(nextTaxPercent - currentTaxPercent) > 0.001;
+        currentTaxPercent = nextTaxPercent;
+        if (changed) {
+            console.info('[order-tax-config]', { taxPercent: currentTaxPercent });
+        }
+        if (!rerender || (!changed && cartState.length === 0 && !orderReviewOpen)) {
+            return;
+        }
+        updateMiniCart(cartState);
+        if (orderReviewOpen && orderReviewSnapshot) {
+            renderOrderReviewSnapshot(orderReviewSnapshot);
+        }
     }
 
     function suspendVoiceCaptureForSequentialTurn() {
@@ -4334,6 +4607,16 @@
         return null;
     }
 
+    function applyCartUpdateFromPayload(nextCart, payload, options = {}) {
+        if (!Array.isArray(nextCart)) return false;
+        const isManualTurn = options?.isManualTurn === true;
+        if (isManualTurn) {
+            return false;
+        }
+        updateMiniCart(nextCart);
+        return true;
+    }
+
     const MOJIBAKE_MARKERS = ['Ã', 'Ä', 'á»', 'áº', 'Æ', 'â€'];
 
     const ASSISTANT_TONE_EXACT_ENTRIES = [
@@ -4614,12 +4897,16 @@
         if (transcript.length === 0) return;
 
         const orderItems = normalizeOrderItems(orderData?.items);
-        const total = orderItems.reduce((sum, item) => sum + Number(item.line_total || 0), 0);
+        const subtotal = orderItems.reduce((sum, item) => sum + Number(item.line_total || 0), 0);
+        const taxSummary = buildTaxSummary(subtotal);
         const payload = {
             archived_at: new Date().toISOString(),
             session_id: String(orderData?.sessionId || ''),
             order_id: String(orderData?.orderId || ''),
-            order_total: total,
+            order_subtotal: taxSummary.subtotal,
+            order_tax_percent: taxSummary.taxPercent,
+            order_tax_amount: taxSummary.taxAmount,
+            order_total: taxSummary.totalWithTax,
             item_count: orderItems.length,
             items: orderItems,
             transcript_history: transcript,
@@ -5111,14 +5398,15 @@
         const items = normalizeOrderItems(mergedOrder.items);
         if (items.length === 0) return;
 
-        const fallbackTotal = items.reduce((sum, item) => sum + Number(item.line_total || 0), 0);
+        const subtotal = items.reduce((sum, item) => sum + Number(item.line_total || 0), 0);
+        const taxSummary = buildTaxSummary(subtotal);
         const remotePaymentAmount = Number(
             mergedOrder?.paymentAmount ?? mergedOrder?.payment_amount ?? 0,
         );
-        const total = Number.isFinite(remotePaymentAmount) && remotePaymentAmount > 0
+        const totalWithTax = Number.isFinite(remotePaymentAmount) && remotePaymentAmount > 0
             ? remotePaymentAmount
-            : fallbackTotal;
-        const qrSeed = `${orderId}|${Math.round(total)}|${items.length}`;
+            : taxSummary.totalWithTax;
+        const qrSeed = `${orderId}|${Math.round(totalWithTax)}|${items.length}`;
         const paymentQrContent = String(
             mergedOrder?.paymentQrContent ?? mergedOrder?.payment_qr_content ?? '',
         ).trim();
@@ -5151,14 +5439,22 @@
         if (orderPopupLines) {
             orderPopupLines.innerHTML = items.map((item) => `
                 <article class="order-popup-line">
-                    <span>x${item.quantity}</span>
+                    <img
+                        class="order-popup-thumb"
+                        src="${toSafeText(resolveCartItemImage(item))}"
+                        alt="${toSafeText(item.name || 'Món')}"
+                        loading="lazy"
+                    >
+                    <span class="order-popup-line-qty">x${item.quantity}</span>
                     <strong>${toSafeInlineText(item.name)}</strong>
                     <span>${formatCurrencyVnd(item.line_total)}</span>
                 </article>
             `).join('');
         }
         if (orderPopupTotal) {
-            orderPopupTotal.textContent = `Tổng thanh toán: ${formatCurrencyVnd(total)}`;
+            orderPopupTotal.textContent = Number.isFinite(remotePaymentAmount) && remotePaymentAmount > 0
+                ? `Tổng thanh toán: ${formatCurrencyVnd(totalWithTax)}`
+                : `Tổng thanh toán (VAT ${formatTaxPercentCompact(taxSummary.taxPercent)}%): ${formatCurrencyVnd(totalWithTax)}`;
         }
         if (orderPopupQrLabel) {
             if (paymentQrImageUrl) {
@@ -5357,6 +5653,7 @@
                     cartCheckoutCooldownTimer = null;
                 }
                 clearChatHistory();
+                setCartEmptyNotice('Đơn trước đã hoàn tất nên giỏ được làm mới. Bạn có thể thêm đơn mới ngay.');
                 updateMiniCart([]);
                 hideOrderFlow();
             }
@@ -5373,9 +5670,10 @@
         if (orderReviewLines) {
             orderReviewLines.innerHTML = '';
         }
-        if (orderReviewTotal) {
-            orderReviewTotal.textContent = 'Tổng thanh toán: 0 đ';
-        }
+        if (orderReviewSubtotal) orderReviewSubtotal.textContent = '0 đ';
+        if (orderReviewVatLabel) orderReviewVatLabel.textContent = `VAT ${formatTaxPercentCompact(currentTaxPercent)}%`;
+        if (orderReviewVatAmount) orderReviewVatAmount.textContent = '0 đ';
+        if (orderReviewTotal) orderReviewTotal.textContent = '0 đ';
         refreshCartCheckoutButtonState();
         if (!keepStatus) {
             setVoiceStatus('Đã đóng xem hoá đơn.');
@@ -5385,7 +5683,8 @@
     function renderOrderReviewSnapshot(snapshot) {
         if (!orderReviewLines || !orderReviewTotal) return;
         const items = normalizeOrderItems(snapshot?.items);
-        const total = items.reduce((sum, item) => sum + Number(item.line_total || 0), 0);
+        const subtotal = items.reduce((sum, item) => sum + Number(item.line_total || 0), 0);
+        const taxSummary = buildTaxSummary(subtotal);
         orderReviewLines.innerHTML = items.map((item) => `
             <article class="order-review-line">
                 <img
@@ -5394,12 +5693,21 @@
                     alt="${toSafeText(item.name || 'Món')}"
                     loading="lazy"
                 >
-                <span>x${Math.max(1, Number(item.quantity || 1))}</span>
+                <span class="order-review-line-qty">x${Math.max(1, Number(item.quantity || 1))}</span>
                 <strong>${toSafeInlineText(item.name || 'Món')}</strong>
-                <span>${formatCurrencyVnd(Number(item.line_total || 0))}</span>
+                <span class="order-review-line-price">${formatCurrencyVnd(Number(item.line_total || 0))}</span>
             </article>
         `).join('');
-        orderReviewTotal.textContent = `Tổng thanh toán: ${formatCurrencyVnd(total)}`;
+        if (orderReviewSubtotal) {
+            orderReviewSubtotal.textContent = formatCurrencyVnd(taxSummary.subtotal);
+        }
+        if (orderReviewVatLabel) {
+            orderReviewVatLabel.textContent = `VAT ${formatTaxPercentCompact(taxSummary.taxPercent)}%`;
+        }
+        if (orderReviewVatAmount) {
+            orderReviewVatAmount.textContent = formatCurrencyVnd(taxSummary.taxAmount);
+        }
+        orderReviewTotal.textContent = formatCurrencyVnd(taxSummary.totalWithTax);
     }
 
     function openOrderReview() {
@@ -5484,7 +5792,23 @@
         openOrderReview();
     }
 
+    function setCartEmptyNotice(text = '') {
+        cartEmptyNotice = String(text || '').trim();
+    }
+
+    function renderCartEmptyState() {
+        if (!cartMiniList) return;
+        const noteHtml = cartEmptyNotice
+            ? `<p class="cart-mini-empty-note">${toSafeInlineText(cartEmptyNotice)}</p>`
+            : '';
+        cartMiniList.innerHTML = `
+            <p class="cart-mini-empty">Chưa có món nào trong giỏ.</p>
+            ${noteHtml}
+        `;
+    }
+
     function updateMiniCart(cart) {
+        const prevCartCount = Array.isArray(cartState) ? cartState.length : 0;
         cartState = normalizeOrderItems(Array.isArray(cart) ? cart : []);
         if (!cartMiniList || !cartMiniTotal) return;
         if (voiceOrderHint) {
@@ -5492,18 +5816,26 @@
         }
 
         if (cartState.length === 0) {
-            cartMiniList.innerHTML = '<p class="cart-mini-empty">Chưa có món nào trong giỏ.</p>';
-            cartMiniTotal.textContent = 'Tổng: 0 đ';
+            if (!cartEmptyNotice && prevCartCount > 0) {
+                setCartEmptyNotice('Giỏ vừa được làm mới bởi hệ thống. Nếu bạn vừa xác nhận đơn thì đây là bình thường.');
+            }
+            renderCartEmptyState();
+            cartMiniTotal.innerHTML = `<span>Tổng (VAT ${toSafeText(formatTaxPercentCompact(currentTaxPercent))}%)</span><strong>0 đ</strong>`;
             refreshCartCheckoutButtonState();
             return;
         }
+        setCartEmptyNotice('');
 
-        let total = 0;
+        let subtotal = 0;
         cartMiniList.innerHTML = cartState.map((item, index) => {
             const quantity = Number(item.quantity || 0);
             const lineTotal = Number(item.line_total || 0);
-            total += lineTotal;
-            const safeName = toSafeInlineText(item.name || 'Món');
+            subtotal += lineTotal;
+            const safeName = toSafeInlineText(item.base_name || item.name || 'Món');
+            const rawSizeLabel = String(item.size_label || '').trim();
+            const normalizedSize = normalizeSizeLabel(rawSizeLabel) || rawSizeLabel;
+            const sizeText = normalizedSize ? `Size ${normalizedSize}` : 'Size mặc định';
+            const safeSizeText = toSafeInlineText(sizeText);
             const thumb = toSafeText(resolveCartItemImage(item));
             return `
                 <article class="cart-mini-item">
@@ -5516,18 +5848,20 @@
                     <span class="cart-mini-item-qty">x${quantity}</span>
                     <div class="cart-mini-item-main">
                         <strong>${safeName}</strong>
-                        <span>${formatCurrencyVnd(lineTotal)}</span>
+                        <p class="cart-mini-item-size">${safeSizeText}</p>
+                        <span class="cart-mini-item-price">${formatCurrencyVnd(lineTotal)}</span>
                     </div>
                     <button
                         class="cart-mini-quick-add"
                         data-cart-index="${index}"
                         type="button"
-                        aria-label="Thêm nhanh ${safeName}"
+                        aria-label="Thêm nhanh ${safeName} ${safeSizeText}"
                     >+</button>
                 </article>
             `;
         }).join('');
-        cartMiniTotal.textContent = `Tổng: ${formatCurrencyVnd(total)}`;
+        const taxSummary = buildTaxSummary(subtotal);
+        cartMiniTotal.innerHTML = `<span>Tổng (VAT ${toSafeText(formatTaxPercentCompact(taxSummary.taxPercent))}%)</span><strong>${toSafeText(formatCurrencyVnd(taxSummary.totalWithTax))}</strong>`;
         cartMiniList.querySelectorAll('.cart-mini-quick-add').forEach((button) => {
             button.addEventListener('click', (event) => {
                 event.preventDefault();
@@ -5575,7 +5909,10 @@
         }
         const payload = await response.json();
         currentSessionId = payload?.session_id || currentSessionId;
-        updateMiniCart(payload?.cart);
+        const startupCart = extractCartItemsFromPayload(payload);
+        if (startupCart && source !== 'manual') {
+            updateMiniCart(startupCart);
+        }
         return payload;
     }
 
@@ -7220,7 +7557,7 @@
                                 tryStartEarlySpeechFromStream();
                                 const streamedCart = extractCartItemsFromPayload(chunk);
                                 if (streamedCart) {
-                                    updateMiniCart(streamedCart);
+                                    applyCartUpdateFromPayload(streamedCart, chunk, { isManualTurn });
                                 }
                                 const bridgeSource = String(chunk.bridge_source || '').trim();
                                 if (bridgeSource) {
@@ -7284,7 +7621,7 @@
                         replyText = String(replyPayload?.reply_text || '').trim();
                         const fallbackCart = extractCartItemsFromPayload(replyPayload);
                         if (fallbackCart) {
-                            updateMiniCart(fallbackCart);
+                            applyCartUpdateFromPayload(fallbackCart, replyPayload, { isManualTurn });
                         }
                     } finally {
                         if (streamPlayer) {
@@ -7341,9 +7678,26 @@
                         ensureNotStale();
                         const resolvedPayloadCart = extractCartItemsFromPayload(replyPayload);
                         if (resolvedPayloadCart) {
-                            updateMiniCart(resolvedPayloadCart);
-                        } else {
+                            const payloadApplied = applyCartUpdateFromPayload(
+                                resolvedPayloadCart,
+                                replyPayload,
+                                { isManualTurn },
+                            );
+                            if (!payloadApplied && !isManualTurn) {
+                                applyOptimisticCartUpdateFromReply(replyText);
+                            }
+                        } else if (!isManualTurn) {
                             applyOptimisticCartUpdateFromReply(replyText);
+                        }
+                        if (
+                            !isManualTurn
+                            && !isQuickCheckoutTurn
+                            && !replyPayload?.order_created
+                            && backendScene === 'ask_confirmation'
+                            && cartState.length > 0
+                            && !orderReviewOpen
+                        ) {
+                            openOrderReview();
                         }
                         if (isManualTurn && !replyPayload?.order_created) {
                             setVoiceStatus('Đã cập nhật giỏ hàng.');
@@ -8378,6 +8732,27 @@
         return `${new Intl.NumberFormat('vi-VN').format(Math.round(numeric))} d`;
     }
 
+    function buildTaxSummary(subtotal) {
+        const safeSubtotal = Math.max(0, Number(subtotal || 0));
+        const taxAmount = Math.max(0, safeSubtotal * (currentTaxPercent / 100));
+        const totalWithTax = safeSubtotal + taxAmount;
+        return {
+            subtotal: safeSubtotal,
+            taxPercent: currentTaxPercent,
+            taxAmount,
+            totalWithTax,
+        };
+    }
+
+    function formatTaxPercentCompact(value) {
+        const numeric = Number(value || 0);
+        if (!Number.isFinite(numeric)) return '10';
+        const rounded = Number(numeric.toFixed(2));
+        return Number.isInteger(rounded)
+            ? String(rounded)
+            : String(rounded).replace(/\.?0+$/, '');
+    }
+
     function toSafeText(value) {
         return String(value ?? '')
             .replaceAll('&', '&amp;')
@@ -8517,11 +8892,13 @@
             .map((option) => {
                 const sizeName = normalizeSizeLabel(option?.size_name || '');
                 const price = parseMenuNumber(option?.price, NaN);
+                const isAvailable = parseMenuBoolean(option?.available, true);
                 if (!sizeName) return '';
                 if (Number.isFinite(price) && price >= 0) {
-                    return `${sizeName}: ${formatCurrencyVnd(price)}`;
+                    const suffix = isAvailable ? '' : ' (hết)';
+                    return `${sizeName}: ${formatCurrencyVnd(price)}${suffix}`;
                 }
-                return sizeName;
+                return isAvailable ? sizeName : `${sizeName} (hết)`;
             })
             .filter(Boolean);
         return labels.join(' | ');
@@ -8571,6 +8948,13 @@
                         size_id: entry?.size_id ?? null,
                         is_default: Boolean(entry?.is_default),
                         price: parseMenuNumber(entry?.price, NaN),
+                        available: parseMenuBoolean(
+                            entry?.available
+                            ?? entry?.is_available
+                            ?? entry?.in_stock
+                            ?? entry?.isActive,
+                            true,
+                        ),
                     }))
                     .filter((entry) => entry.size_name.length > 0)
                 : [];
@@ -8663,11 +9047,16 @@
                 size_name: String(opt?.size_name || '').trim(),
                 is_default: Boolean(opt?.is_default),
                 price: parseMenuNumber(opt?.price, NaN),
+                available: parseMenuBoolean(opt?.available, true),
             }))
             .filter((opt) => opt.size_name.length > 0);
         if (normalizedOptions.length === 0) return '';
 
-        const defaultOption = normalizedOptions.find((opt) => opt.is_default) || normalizedOptions[0];
+        const availableOptions = normalizedOptions.filter((opt) => opt.available);
+        if (availableOptions.length === 0) {
+            return '';
+        }
+        const defaultOption = availableOptions.find((opt) => opt.is_default) || availableOptions[0];
         if (!sizePickerHud || !sizePickerOptions || !sizePickerItemName) {
             return String(defaultOption?.size_name || '').trim();
         }
@@ -8686,24 +9075,38 @@
                 const priceLabel = Number.isFinite(opt.price) && opt.price >= 0
                     ? formatCurrencyVnd(opt.price)
                     : '--';
-                const defaultTag = opt.is_default ? '<span class="size-picker-option-tag">Mặc định</span>' : '';
-                const defaultClass = opt.is_default ? 'size-picker-option--default' : '';
+                const defaultTag = opt.is_default && opt.available
+                    ? '<span class="size-picker-option-tag">Mặc định</span>'
+                    : '';
+                const offTag = !opt.available
+                    ? '<span class="size-picker-option-tag size-picker-option-tag--off">Tạm hết</span>'
+                    : '';
+                const defaultClass = opt.is_default && opt.available ? 'size-picker-option--default' : '';
+                const disabledClass = !opt.available ? 'size-picker-option--disabled' : '';
                 return `
                     <button
-                        class="size-picker-option ${defaultClass}"
+                        class="size-picker-option ${defaultClass} ${disabledClass}"
                         data-size-value="${encoded}"
+                        data-size-available="${opt.available ? '1' : '0'}"
                         type="button"
                         aria-label="Chọn size ${toSafeText(sizeLabel)}"
+                        ${opt.available ? '' : 'disabled'}
                     >
                         <span class="size-picker-option-size">Size ${toSafeText(sizeLabel)}</span>
                         <span class="size-picker-option-price">${toSafeText(priceLabel)}</span>
                         ${defaultTag}
+                        ${offTag}
                     </button>
                 `;
             }).join('');
 
             sizePickerOptions.querySelectorAll('.size-picker-option').forEach((button) => {
                 button.addEventListener('click', () => {
+                    const isAvailable = (button.getAttribute('data-size-available') || '1') === '1';
+                    if (!isAvailable) {
+                        setVoiceStatus('Size này tạm hết. Bạn chọn size khác nhé.');
+                        return;
+                    }
                     const raw = button.getAttribute('data-size-value') || '';
                     const picked = decodeURIComponent(raw || '');
                     closeSizePicker(picked);
@@ -8846,14 +9249,26 @@
         }
         const itemName = String(item.name || 'mon').trim();
         const sizeOptions = await fetchMenuItemSizes(item);
+        const availableSizeOptions = sizeOptions.filter((option) => parseMenuBoolean(option?.available, true));
+        if (sizeOptions.length > 0 && availableSizeOptions.length === 0) {
+            setVoiceStatus(`Món ${itemName} hiện tạm hết các size. Bạn chọn món khác giúp mình nhé.`);
+            showQuickAddToastMessage(`${itemName}: tạm hết size`);
+            return;
+        }
         let selectedSize = '';
         if (sizeOptions.length > 1) {
             selectedSize = await pickSizeFromPrompt(itemName, sizeOptions);
             if (!selectedSize) {
-                setVoiceStatus('Chưa chọn size, đã huỷ thêm món.');
+                setVoiceStatus('Chưa chọn size hợp lệ, đã huỷ thêm món.');
                 return;
             }
         } else if (sizeOptions.length === 1) {
+            if (!parseMenuBoolean(sizeOptions[0]?.available, true)) {
+                const blockedSize = normalizeSizeLabel(sizeOptions[0]?.size_name || 'này');
+                setVoiceStatus(`Size ${blockedSize} của món ${itemName} đang tạm hết.`);
+                showQuickAddToastMessage(`Size ${blockedSize} tạm hết`);
+                return;
+            }
             selectedSize = String(sizeOptions[0].size_name || '').trim();
         }
         let resolvedUnitPrice = Math.max(0, Number(item?.price || 0));
@@ -9168,6 +9583,7 @@
     
     // Initial reset
     refreshVoiceRuntimeConfigFromAdmin();
+    refreshOrderTaxConfigFromAdmin({ rerender: false });
     syncMicSensitivityFromAdmin({ restartBackend: false });
     loadRobotScalePercent();
     if (isAdminPreviewMode) {
@@ -9229,6 +9645,7 @@
     window.addEventListener('storage', (event) => {
         if (event.key === ADMIN_ENV_STORAGE_KEY) {
             refreshVoiceRuntimeConfigFromAdmin();
+            refreshOrderTaxConfigFromAdmin();
             void preloadGreetingAudioCache().catch(() => {});
             if (voiceListening && voiceInputMode === 'backend') {
                 void startBackendSpeechListening().catch(() => {});
@@ -9283,6 +9700,7 @@
         }
         if (event.data.type === 'orderrobot:admin-env-config') {
             refreshVoiceRuntimeConfigFromAdmin();
+            refreshOrderTaxConfigFromAdmin();
             void preloadGreetingAudioCache().catch(() => {});
             if (voiceListening && voiceInputMode === 'backend') {
                 void startBackendSpeechListening().catch(() => {});

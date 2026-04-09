@@ -76,6 +76,19 @@ def _serialize_env_value(raw_value: str) -> str:
     return clean_value
 
 
+def _safe_json_text(payload: object) -> str:
+    """Serialize JSON and replace invalid surrogate code points safely for streaming."""
+    return json.dumps(payload, ensure_ascii=False).encode("utf-8", errors="replace").decode("utf-8")
+
+
+def _safe_sse_data(payload: object) -> str:
+    return f"data: {_safe_json_text(payload)}\n\n"
+
+
+def _safe_ndjson_line(payload: object) -> bytes:
+    return _safe_json_text(payload).encode("utf-8") + b"\n"
+
+
 def _write_env_updates(env_path: Path, updates: dict[str, str]) -> None:
     env_path.parent.mkdir(parents=True, exist_ok=True)
     if env_path.exists():
@@ -261,7 +274,7 @@ async def chat_stream(session_id: str, text: str) -> StreamingResponse:
                 }
             )
             for sentence in split_sentences(fallback_reply):
-                yield f"data: {json.dumps({'sentence': sentence}, ensure_ascii=False)}\n\n"
+                yield _safe_sse_data({"sentence": sentence})
             yield "data: [DONE]\n\n"
             return
 
@@ -287,9 +300,9 @@ async def chat_stream(session_id: str, text: str) -> StreamingResponse:
                 clean_sentence = str(sentence or "").strip()
                 if not clean_sentence:
                     continue
-                yield f"data: {json.dumps({'sentence': clean_sentence}, ensure_ascii=False)}\n\n"
+                yield _safe_sse_data({"sentence": clean_sentence})
         except Exception as exc:
-            yield f"data: {json.dumps({'error': str(exc)}, ensure_ascii=False)}\n\n"
+            yield _safe_sse_data({"error": str(exc)})
         finally:
             yield "data: [DONE]\n\n"
 
@@ -745,7 +758,7 @@ async def handle_turn_stream(session_id: str, payload: TurnRequest) -> Streaming
                         session_id,
                         payload.turn_id or "",
                     )
-                yield json.dumps(chunk, ensure_ascii=False).encode("utf-8") + b"\n"
+                yield _safe_ndjson_line(chunk)
             logger.info(
                 "turn_total_ms=%s turn_first_text_ms=%s turn_first_audio_ms=%s session_id=%s turn_id=%s endpoint=turn_stream",
                 int((time.perf_counter() - started_at) * 1000),
@@ -756,31 +769,27 @@ async def handle_turn_stream(session_id: str, payload: TurnRequest) -> Streaming
             )
         except httpx.HTTPStatusError as exc:
             detail = exc.response.text or "Khong the tao don tu core backend."
-            yield json.dumps(
+            yield _safe_ndjson_line(
                 {"type": "error", "code": "core_http_error", "message": detail, "turn_id": payload.turn_id},
-                ensure_ascii=False,
-            ).encode("utf-8") + b"\n"
+            )
         except httpx.HTTPError:
-            yield json.dumps(
+            yield _safe_ndjson_line(
                 {
                     "type": "error",
                     "code": "core_connect_error",
                     "message": "Khong the ket noi toi core backend.",
                     "turn_id": payload.turn_id,
                 },
-                ensure_ascii=False,
-            ).encode("utf-8") + b"\n"
+            )
         except ProviderError as exc:
-            yield json.dumps(
+            yield _safe_ndjson_line(
                 {"type": "error", "code": "bridge_provider_error", "message": str(exc), "turn_id": payload.turn_id},
-                ensure_ascii=False,
-            ).encode("utf-8") + b"\n"
+            )
         except Exception as exc:
             logger.exception("turn stream unexpected error session_id=%s turn_id=%s", session_id, payload.turn_id)
-            yield json.dumps(
+            yield _safe_ndjson_line(
                 {"type": "error", "code": "turn_stream_unexpected_error", "message": str(exc), "turn_id": payload.turn_id},
-                ensure_ascii=False,
-            ).encode("utf-8") + b"\n"
+            )
 
     return StreamingResponse(response_stream(), media_type="application/x-ndjson")
 

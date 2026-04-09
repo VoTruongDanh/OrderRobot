@@ -194,6 +194,10 @@ _STT_ALIASES: dict[str, str] = {
     "gui y": "goi y",
     "gui i": "goi y",
     "goi i": "goi y",
+    # Size phrases frequently misheard by STT
+    "sai nho": "size nho",
+    "sai vua": "size vua",
+    "sai lon": "size lon",
     # Common drink-name STT variants
     "capuchino": "cappuccino",
     "capuccino": "cappuccino",
@@ -247,6 +251,17 @@ ORDERING_HINT_KEYWORDS = (
 )
 SIMPLE_GREETING_KEYWORDS = {"chao", "xin chao", "hello", "hi", "alo", "chao ban", "xin chao ban"}
 PROFANITY_KEYWORDS = {"cut", "dit", "dm", "dmm", "cl", "cac", "lon", "deo"}
+SHORT_NEGATIVE_REPLY_KEYWORDS = {
+    "khong",
+    "ko",
+    "khong can",
+    "khong them",
+    "khong can them",
+    "thoi",
+    "thoi khong",
+    "khong topping",
+    "khong can topping",
+}
 BRIDGE_LONG_QUERY_WORDS_THRESHOLD = 20
 BRIDGE_LONG_QUERY_CHARS_THRESHOLD = 120
 BRIDGE_ESCALATION_KEYWORDS = {
@@ -670,6 +685,35 @@ class ConversationEngine:
                     scene="remove_item",
                     reply_seed="Mình chưa thấy món đó trong giỏ hàng hiện tại. Bạn nói lại đúng tên món cần bớt giúp mình nhé.",
                 ),
+                    menu,
+                )
+
+        if state.cart and _is_short_negative_reply_text(normalized):
+            if state.awaiting_confirmation:
+                state.awaiting_confirmation = False
+                return await self._build_response(
+                    session_id,
+                    Decision(
+                        scene="cart_follow_up",
+                        reply_seed=(
+                            "Dạ ok, mình chưa chốt đơn. Giỏ hàng vẫn được giữ nguyên, "
+                            "khi nào bạn muốn đặt thì nói xác nhận nhé."
+                        ),
+                    ),
+                    menu,
+                    turn_id=turn_id,
+                )
+            state.awaiting_confirmation = True
+            return await self._build_response(
+                session_id,
+                Decision(
+                    scene="ask_confirmation",
+                    reply_seed=(
+                        "Dạ ok, mình giữ món hiện tại và không thêm topping. "
+                        "Mình đọc lại giỏ hàng để bạn xác nhận nhé."
+                    ),
+                    needs_confirmation=True,
+                ),
                 menu,
             )
 
@@ -831,8 +875,10 @@ class ConversationEngine:
             # Auto-add: best match confidence >= 85% -> add directly
             best_match, best_conf = max(available_matches, key=lambda x: x[1])
             high_conf_matches = [(item, conf) for item, conf in available_matches if conf >= _AUTO_ADD_THRESHOLD]
+            has_size_hint = bool(re.search(r"\bsize\s*[a-z0-9]+\b", normalized))
+            should_auto_add_single = len(available_matches) == 1 and (has_ordering_hint or has_size_hint)
             
-            if len(high_conf_matches) == 1 or (len(available_matches) >= 1 and best_conf >= _AUTO_ADD_THRESHOLD):
+            if should_auto_add_single or len(high_conf_matches) == 1 or best_conf >= _AUTO_ADD_THRESHOLD:
                 # Single high-confidence match or one clearly dominates -> auto-add
                 item = best_match
                 quantity = extract_quantity(normalized, item_name=normalize_text(item.name))
@@ -978,6 +1024,8 @@ class ConversationEngine:
         
         # Apply STT alias corrections to the transcript
         corrected = _apply_stt_aliases(normalized_transcript)
+        transcript_candidates = [normalized_transcript, corrected]
+        transcript_candidates = [candidate for candidate in dict.fromkeys(transcript_candidates) if candidate]
         
         for item in menu:
             if item.item_id in matched_ids:
@@ -985,20 +1033,20 @@ class ConversationEngine:
             normalized_name = normalize_text(item.name)
             
             # 1. Exact substring match -> confidence 1.0
-            if normalized_name in corrected:
+            if any(normalized_name in candidate for candidate in transcript_candidates):
                 exact_matches.append((item, 1.0))
                 matched_ids.add(item.item_id)
                 continue
             
             # 2. Token-based match (all significant tokens present) -> confidence 0.95
             name_tokens = [token for token in normalized_name.split() if len(token) > 2]
-            if name_tokens and all(token in corrected for token in name_tokens):
+            if name_tokens and any(all(token in candidate for token in name_tokens) for candidate in transcript_candidates):
                 exact_matches.append((item, 0.95))
                 matched_ids.add(item.item_id)
                 continue
             
             # 3. Fuzzy match -> confidence = actual similarity ratio
-            ratio = _fuzzy_match_ratio(corrected, normalized_name)
+            ratio = max(_fuzzy_match_ratio(candidate, normalized_name) for candidate in transcript_candidates)
             if ratio >= _FUZZY_THRESHOLD:
                 fuzzy_matches.append((item, ratio))
                 matched_ids.add(item.item_id)
@@ -2276,6 +2324,19 @@ def _is_simple_greeting_text(normalized_text: str) -> bool:
     return False
 
 
+def _is_short_negative_reply_text(normalized_text: str) -> bool:
+    compact = str(normalized_text or "").strip()
+    if not compact:
+        return False
+    if compact in SHORT_NEGATIVE_REPLY_KEYWORDS:
+        return True
+    tokens = [token for token in compact.split() if token]
+    if len(tokens) > 5:
+        return False
+    soft_tokens = {"khong", "ko", "can", "them", "topping", "thoi", "a", "nhe", "da", "roi", "ok", "oke"}
+    return bool(tokens) and all(token in soft_tokens for token in tokens)
+
+
 def extract_quantity(normalized_text: str, item_name: str | None = None) -> int:
     """Extract quantity from normalized text.
     
@@ -2522,6 +2583,12 @@ _CONSONANT_CLUSTER_SPLIT_PATTERN = re.compile(
     r"[a-zà-ỹđ]*)\b",
     re.IGNORECASE,
 )
+_COMMON_BROKEN_PHRASE_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"\buố\s+ng\b", re.IGNORECASE), "uống"),
+    (re.compile(r"\bmuốn?t\s+h[êe]m\b", re.IGNORECASE), "muốn thêm"),
+    (re.compile(r"\btênm\s+ón\b", re.IGNORECASE), "tên món"),
+    (re.compile(r"\bkhôngp?h\s+ục\b", re.IGNORECASE), "không phục"),
+)
 _SAFE_SCENE_REPLIES = {
     "greeting_intro": "Chào mừng bạn. Hôm nay bạn muốn thử món nào?",
     "greeting": "Xin chào. Bạn muốn gọi món gì hôm nay?",
@@ -2595,6 +2662,8 @@ def _repair_vietnamese_spacing_text(text: str) -> str:
         previous = repaired
         repaired = _SPACELESS_JOINED_WORD_PATTERN.sub(r"\1 ", repaired)
         repaired = _CONSONANT_CLUSTER_SPLIT_PATTERN.sub(r"\1\2", repaired)
+        for pattern, replacement in _COMMON_BROKEN_PHRASE_PATTERNS:
+            repaired = pattern.sub(replacement, repaired)
         repaired = re.sub(r"\s+", " ", repaired).strip()
     return repaired
 
@@ -2608,7 +2677,7 @@ def ensure_frontend_safe_reply(scene: str, value: object) -> str:
         return _SAFE_SCENE_REPLIES.get(scene, _SAFE_SCENE_REPLIES["fallback"])
     if scene in {"greeting", "recommendation", "fallback", "cart_follow_up"} and _looks_like_vietnamese_without_tone(repaired):
         return _SAFE_SCENE_REPLIES.get(scene, _SAFE_SCENE_REPLIES["fallback"])
-    if scene in {"greeting", "fallback", "cart_follow_up"} and _looks_like_broken_spacing_text(repaired):
+    if scene in {"greeting", "recommendation", "fallback", "cart_follow_up"} and _looks_like_broken_spacing_text(repaired):
         return _SAFE_SCENE_REPLIES.get(scene, _SAFE_SCENE_REPLIES["fallback"])
     return repaired
 

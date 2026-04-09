@@ -27,6 +27,7 @@ class MenuItemSizeOption(BaseModel):
     size_name: str
     price: Decimal = Field(ge=0)
     is_default: bool = False
+    available: bool = True
 
 
 class UpsertMenuItemRequest(BaseModel):
