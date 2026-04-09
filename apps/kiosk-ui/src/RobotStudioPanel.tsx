@@ -54,7 +54,7 @@ type LocalModelAnimationsMessage = {
 }
 
 const PACK_OPTIONS: Array<{ id: PackFilter; label: string }> = [
-  { id: 'all', label: 'Tat ca' },
+  { id: 'all', label: 'All' },
   { id: 'maid', label: 'Maid' },
   { id: 'waiter', label: 'Waiter' },
   { id: 'cute', label: 'Cute' },
@@ -344,12 +344,12 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
     } catch (error) {
       notify(
         'error',
-        error instanceof Error ? error.message : t('Khong tai duoc danh sach asset', 'Cannot load asset list'),
+        error instanceof Error ? error.message : 'Cannot load asset list',
       )
     } finally {
       setAssetLoading(false)
     }
-  }, [notify, t])
+  }, [notify])
 
   useEffect(() => {
     void refreshAssetCatalog()
@@ -533,15 +533,15 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
         await refreshAssetCatalog()
         notify(
           'success',
-          t('Da upload va luu asset vao IndexedDB.', 'Assets uploaded and saved to IndexedDB.'),
+          'Assets uploaded and saved to IndexedDB.',
         )
       } catch (error) {
-        notify('error', error instanceof Error ? error.message : t('Upload asset that bai.', 'Asset upload failed.'))
+        notify('error', error instanceof Error ? error.message : 'Asset upload failed.')
       } finally {
         setAssetLoading(false)
       }
     },
-    [notify, refreshAssetCatalog, t],
+    [notify, refreshAssetCatalog],
   )
 
   const handleRemoveAsset = useCallback(
@@ -608,17 +608,17 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
       ...config,
       graphBindings: [...config.graphBindings, graph],
     }
-    persistConfig(nextConfig, t('Da tao graph moi.', 'New graph created.'))
+    persistConfig(nextConfig, 'New graph created.')
     setSelectedGraphId(graph.id)
     setSelectedNodeId(graph.startNodeId)
-  }, [config, persistConfig, t])
+  }, [config, persistConfig])
 
   const removeGraph = useCallback(() => {
     if (!currentGraph) return
     if (config.graphBindings.length <= 1) {
       notify(
         'warning',
-        t('Can it nhat 1 graph de runtime hoat dong.', 'At least one graph is required for runtime.'),
+        'At least one graph is required for runtime.',
       )
       return
     }
@@ -629,8 +629,8 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
         : binding,
     )
     const nextConfig = { ...config, graphBindings: nextGraphs, triggerBindings: nextBindings }
-    persistConfig(nextConfig, t('Da xoa graph.', 'Graph deleted.'))
-  }, [config, currentGraph, notify, persistConfig, t])
+    persistConfig(nextConfig, 'Graph deleted.')
+  }, [config, currentGraph, notify, persistConfig])
 
   const addNode = useCallback(
     (type: RobotGraphNode['type']) => {
@@ -648,7 +648,7 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
   const removeNode = useCallback(() => {
     if (!currentGraph || !currentNode) return
     if (currentGraph.nodes.length <= 1) {
-      notify('warning', t('Graph can it nhat 1 node.', 'A graph must contain at least one node.'))
+      notify('warning', 'A graph must contain at least one node.')
       return
     }
 
@@ -666,7 +666,7 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
         })),
       }
     })
-  }, [currentGraph, currentNode, notify, t, updateGraph])
+  }, [currentGraph, currentNode, notify, updateGraph])
 
   const updateNode = useCallback(
     (nodeId: string, updater: (node: RobotGraphNode) => RobotGraphNode) => {
@@ -743,16 +743,16 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
   const handleImportJson = useCallback(() => {
     const parsed = parseRobotStudioConfigFromJson(importText)
     if (!parsed) {
-      notify('warning', t('JSON khong hop le, vui long kiem tra lai.', 'Invalid JSON, please check and try again.'))
+      notify('warning', 'Invalid JSON, please check and try again.')
       return
     }
-    persistConfig(parsed, t('Da import preset Robot Studio.', 'Robot Studio preset imported.'))
-  }, [importText, notify, persistConfig, t])
+    persistConfig(parsed, 'Robot Studio preset imported.')
+  }, [importText, notify, persistConfig])
 
   const resetConfig = useCallback(() => {
     const defaults = createDefaultRobotStudioConfig()
-    persistConfig(defaults, t('Da reset Robot Studio ve mac dinh.', 'Robot Studio reset to default.'))
-  }, [persistConfig, t])
+    persistConfig(defaults, 'Robot Studio reset to default.')
+  }, [persistConfig])
 
   const applyNow = useCallback(() => {
     const saved = setRobotStudioConfig(config)
@@ -761,19 +761,13 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
     setDraftDirty(false)
     notify(
       'success',
-      t(
-        'Da ap dung thay doi vao kiosk/index.',
-        'Changes have been applied to kiosk/index.',
-      ),
+      'Changes have been applied to kiosk/index.',
     )
 
     if (!kioskConnected) {
       notify(
         'warning',
-        t(
-          'Chua thay kiosk dang mo. Bam "Mo kiosk de xem live" de xem thay doi.',
-          'No active kiosk detected. Click "Open kiosk for live preview" to see updates.',
-        ),
+        'No active kiosk detected. Click "Open kiosk for live preview" to see updates.',
       )
       return
     }
@@ -781,20 +775,17 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
     if (quickActionId) {
       sendRobotStudioCommand({ type: 'preview-action', actionId: quickActionId })
     }
-  }, [config, kioskConnected, notify, quickActionId, t])
+  }, [config, kioskConnected, notify, quickActionId])
 
   const previewQuickAction = useCallback(() => {
     if (!quickActionId) {
-      notify('warning', t('Chua co action de preview.', 'No action available for preview.'))
+      notify('warning', 'No action available for preview.')
       return
     }
     if (draftDirty) {
       notify(
         'warning',
-        t(
-          'Ban co thay doi chua ap dung. Bam "Ap dung ngay" truoc khi test action tren kiosk.',
-          'You have unapplied changes. Click "Apply Now" before testing action on kiosk.',
-        ),
+        'You have unapplied changes. Click "Apply Now" before testing action on kiosk.',
       )
       return
     }
@@ -802,26 +793,20 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
     notify(
       kioskConnected ? 'success' : 'warning',
       kioskConnected
-        ? t(`Da gui lenh test action: ${quickActionId}.`, `Preview action command sent: ${quickActionId}.`)
-        : t(
-          `Da gui lenh test action: ${quickActionId}. Neu kiosk dang ngu, hay mo kiosk de nhan lenh moi nhat.`,
-          `Preview action command queued: ${quickActionId}. Open kiosk if it is currently inactive.`,
-        ),
+        ? `Preview action command sent: ${quickActionId}.`
+        : `Preview action command queued: ${quickActionId}. Open kiosk if it is currently inactive.`,
     )
-  }, [draftDirty, kioskConnected, notify, quickActionId, t])
+  }, [draftDirty, kioskConnected, notify, quickActionId])
 
   const runQuickGraph = useCallback(() => {
     if (!quickGraphId) {
-      notify('warning', t('Chua co graph de chay.', 'No graph available to run.'))
+      notify('warning', 'No graph available to run.')
       return
     }
     if (draftDirty) {
       notify(
         'warning',
-        t(
-          'Ban co thay doi chua ap dung. Bam "Ap dung ngay" truoc khi chay graph tren kiosk.',
-          'You have unapplied changes. Click "Apply Now" before running graph on kiosk.',
-        ),
+        'You have unapplied changes. Click "Apply Now" before running graph on kiosk.',
       )
       return
     }
@@ -829,26 +814,20 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
     notify(
       kioskConnected ? 'success' : 'warning',
       kioskConnected
-        ? t(`Da gui lenh chay graph: ${quickGraphId}.`, `Run graph command sent: ${quickGraphId}.`)
-        : t(
-          `Da gui lenh chay graph: ${quickGraphId}. Neu kiosk dang ngu, hay mo kiosk de nhan lenh moi nhat.`,
-          `Run graph command queued: ${quickGraphId}. Open kiosk if it is currently inactive.`,
-        ),
+        ? `Run graph command sent: ${quickGraphId}.`
+        : `Run graph command queued: ${quickGraphId}. Open kiosk if it is currently inactive.`,
     )
-  }, [draftDirty, kioskConnected, notify, quickGraphId, t])
+  }, [draftDirty, kioskConnected, notify, quickGraphId])
 
   const stopQuickGraph = useCallback(() => {
     sendRobotStudioCommand({ type: 'stop-graph' })
     notify(
       kioskConnected ? 'info' : 'warning',
       kioskConnected
-        ? t('Da gui lenh dung graph.', 'Stop graph command sent.')
-        : t(
-          'Da gui lenh dung graph. Neu kiosk chua mo, lenh se duoc ap dung khi kiosk nhan cap nhat.',
-          'Stop graph command queued. If kiosk is inactive, it will apply on next sync.',
-        ),
+        ? 'Stop graph command sent.'
+        : 'Stop graph command queued. If kiosk is inactive, it will apply on next sync.',
     )
-  }, [kioskConnected, notify, t])
+  }, [kioskConnected, notify])
 
   return (
     <section className="admin-panel admin-panel--stacked robot-studio-panel">
@@ -856,33 +835,33 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
         <header className="admin-subcard__head">
           <div>
             <h3>Quick Studio</h3>
-            <p>{t('Che do de chinh nhanh cho GLB: chon model, animation, goc xoay va test action/graph.', 'Quick GLB mode: pick model, animation, heading, and test actions/graphs.')}</p>
+            <p>Quick GLB mode: pick model, animation, heading, and test actions/graphs.</p>
             <div className="admin-chip-list">
               <p className={`admin-chip ${kioskConnected ? 'admin-chip--ok' : 'admin-chip--warning'}`}>
                 {kioskConnected
-                  ? t('Kiosk dang ket noi live', 'Kiosk live connection active')
-                  : t('Chua thay kiosk live', 'No live kiosk detected')}
+                  ? 'Kiosk live connection active'
+                  : 'No live kiosk detected'}
               </p>
               <p className={`admin-chip ${draftDirty ? 'admin-chip--warning' : 'admin-chip--ok'}`}>
                 {draftDirty
-                  ? t('Ban nhap chua ap dung', 'Draft not applied')
-                  : t('Da dong bo index', 'Index synced')}
+                  ? 'Draft not applied'
+                  : 'Index synced'}
               </p>
             </div>
           </div>
           <div className="admin-inline-actions">
             <button className="admin-btn" type="button" onClick={applyNow} disabled={!draftDirty}>
-              {draftDirty ? t('Ap dung ngay', 'Apply Now') : t('Da ap dung', 'Already Applied')}
+              {draftDirty ? 'Apply Now' : 'Already Applied'}
             </button>
             <button
               className="admin-btn admin-btn--ghost"
               type="button"
               onClick={() => setShowAdvanced((current) => !current)}
             >
-              {showAdvanced ? t('An nang cao', 'Hide Advanced') : t('Hien nang cao', 'Show Advanced')}
+              {showAdvanced ? 'Hide Advanced' : 'Show Advanced'}
             </button>
             <a className="admin-link" href="/" target="_blank" rel="noreferrer">
-              {t('Mo kiosk de xem live', 'Open kiosk for live preview')}
+              Open kiosk for live preview
             </a>
           </div>
         </header>
@@ -921,7 +900,7 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
             </select>
           </label>
           <label className="admin-field">
-            <span>{t('Do manh hieu ung', 'Effect intensity')} {config.effectIntensity}%</span>
+            <span>Effect intensity {config.effectIntensity}%</span>
             <input
               type="range"
               min={0}
@@ -935,16 +914,16 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
           </label>
         </div>
 
-        <article className="robot-studio-mini-preview" aria-label={t('Xem truoc robot trong admin', 'Robot preview in admin')}>
+        <article className="robot-studio-mini-preview" aria-label="Robot preview in admin">
           <div className="robot-studio-mini-preview__meta">
-            <strong>{t('Preview Robot GLB (Admin)', 'GLB Robot preview (Admin)')}</strong>
-            <span>{t('Chỉ dùng GLB cho toàn bộ kiosk web.', 'GLB-only mode is active for the whole kiosk web flow.')}</span>
+            <strong>GLB Robot preview (Admin)</strong>
+            <span>GLB-only mode is active for the whole kiosk web flow.</span>
           </div>
           <div className="robot-studio-mini-preview__stage robot-studio-mini-preview__stage--live">
             <iframe
               ref={previewIframeRef}
               className="robot-studio-mini-preview__iframe"
-              title={t('Xem truoc dong bo index', 'Index-synced preview')}
+              title="Index-synced preview"
               src={ADMIN_LIVE_PREVIEW_SRC}
               loading="lazy"
             />
@@ -953,12 +932,12 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
 
         <div className="admin-fields-grid robot-studio-quick-grid">
           <label className="admin-field admin-field--full">
-            <span>{t('🎬 Chế độ hiển thị robot', '🎬 Robot render mode')}</span>
-            <input value={t('Local GLB (cố định)', 'Local GLB (fixed)')} disabled />
+            <span>🎬 Robot render mode</span>
+            <input value="Local GLB (fixed)" disabled />
           </label>
           <>
               <label className="admin-field">
-                <span>{t('Model GLB từ thư mục', 'GLB model from folder')}</span>
+                <span>GLB model from folder</span>
                 <select
                   value={config.robotVisual?.localModelPath ?? ''}
                   onChange={(event) =>
@@ -967,7 +946,7 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
                       localModelAnimationName: '',
                     })}
                 >
-                  <option value="">{t('Chọn model từ /public/robot-models', 'Select model from /public/robot-models')}</option>
+                  <option value="">Select model from /public/robot-models</option>
                   {robotModelCatalog.map((item) => (
                     <option key={item.id} value={item.path}>
                       {item.name} ({item.format || 'glb'})
@@ -976,12 +955,12 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
                 </select>
               </label>
               <label className="admin-field">
-                <span>{t('Animation name (tùy chọn)', 'Animation name (optional)')}</span>
+                <span>Animation name (optional)</span>
                 <select
                   value={config.robotVisual?.localModelAnimationName ?? ''}
                   onChange={(event) => updateRobotVisual({ localModelAnimationName: event.target.value })}
                 >
-                  <option value="">{t('Mặc định animation đầu tiên trong file', 'Default to first animation in file')}</option>
+                  <option value="">Default to first animation in file</option>
                   {sortedLocalModelAnimations.map((animationName) => (
                     <option key={animationName} value={animationName}>
                       {animationName}
@@ -990,7 +969,7 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
                 </select>
               </label>
               <label className="admin-field admin-field--full">
-                <span>{t('Đường dẫn model (ghi đè dropdown)', 'Model path (override dropdown)')}</span>
+                <span>Model path (override dropdown)</span>
                 <input
                   type="text"
                   value={config.robotVisual?.localModelPath ?? ''}
@@ -1008,7 +987,7 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
                   checked={config.robotVisual?.localModelAutoRotate !== false}
                   onChange={(event) => updateRobotVisual({ localModelAutoRotate: event.target.checked })}
                 />
-                <span>{t('Auto rotate', 'Auto rotate')}</span>
+                <span>Auto rotate</span>
               </label>
               <label className="robot-inline-check">
                 <input
@@ -1016,7 +995,7 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
                   checked={config.robotVisual?.localModelCameraControls === true}
                   onChange={(event) => updateRobotVisual({ localModelCameraControls: event.target.checked })}
                 />
-                <span>{t('Camera controls', 'Camera controls')}</span>
+                <span>Camera controls</span>
               </label>
               <label className="robot-inline-check">
                 <input
@@ -1024,11 +1003,11 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
                   checked={config.robotVisual?.localModelFaceMaterialFix !== false}
                   onChange={(event) => updateRobotVisual({ localModelFaceMaterialFix: event.target.checked })}
                 />
-                <span>{t('Fix mặt đen/thiếu mắt', 'Fix black face/missing eyes')}</span>
+                <span>Fix black face/missing eyes</span>
               </label>
               <label className="admin-field admin-field--full">
                 <span>
-                  {t('Hướng model (Yaw)', 'Model heading (Yaw)')} {Number(config.robotVisual?.localModelYawDeg ?? 0)}°
+                  Model heading (Yaw) {Number(config.robotVisual?.localModelYawDeg ?? 0)}°
                 </span>
                 <input
                   type="range"
@@ -1040,7 +1019,7 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
                 />
               </label>
               <label className="admin-field">
-                <span>{t('Yaw số', 'Yaw numeric')}</span>
+                <span>Yaw numeric</span>
                 <input
                   type="number"
                   min={-180}
@@ -1053,27 +1032,24 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
               <div className="admin-inline-actions robot-studio-quick-actions">
                 <button className="admin-btn admin-btn--ghost" type="button" onClick={() => void refreshRobotModelCatalog()}>
                   {robotModelCatalogLoading
-                    ? t('Đang quét thư mục...', 'Scanning folder...')
-                    : t('Làm mới danh sách model', 'Refresh model catalog')}
+                    ? 'Scanning folder...'
+                    : 'Refresh model catalog'}
                 </button>
                 <button className="admin-btn admin-btn--ghost" type="button" onClick={() => updateRobotVisual({ localModelYawDeg: 0 })}>
-                  {t('Về hướng 0°', 'Reset to 0°')}
+                  Reset to 0°
                 </button>
                 <button className="admin-btn admin-btn--ghost" type="button" onClick={() => updateRobotVisual({ localModelYawDeg: 180 })}>
-                  {t('Đảo 180°', 'Flip 180°')}
+                  Flip 180°
                 </button>
               </div>
               {sortedLocalModelAnimations.length > 0 && sortedLocalModelAnimations.every((name) => isLikelyPoseAnimation(name)) ? (
                 <p className="admin-service-card__detail">
-                  {t(
-                    'Model hiện chỉ có clip dạng pose tĩnh (T-Pose/A-Pose). Nếu muốn hành động đúng, cần model có clip anim động (idle/walk/talk...).',
-                    'This model currently exposes pose clips only (T-Pose/A-Pose). For real actions, use a model that includes dynamic clips (idle/walk/talk...).',
-                  )}
+                  This model currently exposes pose clips only (T-Pose/A-Pose). For real actions, use a model that includes dynamic clips (idle/walk/talk...).
                 </p>
               ) : null}
             </>
           <label className="admin-field">
-            <span>{t('Test nhanh action', 'Quick action test')}</span>
+            <span>Quick action test</span>
             <select value={quickActionId} onChange={(event) => setQuickActionId(event.target.value)}>
               {config.enabledActions.map((actionId) => (
                 <option key={actionId} value={actionId}>
@@ -1083,7 +1059,7 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
             </select>
           </label>
           <label className="admin-field">
-            <span>{t('Test nhanh graph', 'Quick graph test')}</span>
+            <span>Quick graph test</span>
             <select value={quickGraphId} onChange={(event) => setQuickGraphId(event.target.value)}>
               {config.graphBindings.map((graph) => (
                 <option key={graph.id} value={graph.id}>
@@ -1094,13 +1070,13 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
           </label>
           <div className="admin-inline-actions robot-studio-quick-actions">
             <button className="admin-btn admin-btn--ghost" type="button" onClick={previewQuickAction}>
-              {t('Test action', 'Test action')}
+              Test action
             </button>
             <button className="admin-btn admin-btn--ghost" type="button" onClick={runQuickGraph}>
-              {t('Chay graph', 'Run graph')}
+              Run graph
             </button>
             <button className="admin-btn admin-btn--ghost" type="button" onClick={stopQuickGraph}>
-              {t('Dung graph', 'Stop graph')}
+              Stop graph
             </button>
           </div>
         </div>
@@ -1108,17 +1084,14 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
         <article className="admin-subcard robot-studio-subcard">
           <header className="admin-subcard__head">
             <div>
-              <h3>{t('Outfit Manager', 'Outfit Manager')}</h3>
+              <h3>Outfit Manager</h3>
               <p>
-                {t(
-                  'Tạo profile trang phục riêng: skin + texture + model, rồi chọn profile active để robot áp dụng ngay.',
-                  'Create dedicated outfit profiles (skin + texture + model), then activate one for live robot.',
-                )}
+                Create dedicated outfit profiles (skin + texture + model), then activate one for live robot.
               </p>
             </div>
             <div className="admin-inline-actions">
               <button className="admin-btn admin-btn--ghost" type="button" onClick={addOutfitProfile}>
-                {t('Thêm profile', 'Add profile')}
+                Add profile
               </button>
               <button
                 className="admin-btn admin-btn--ghost"
@@ -1126,13 +1099,13 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
                 disabled={outfitProfiles.length <= 1}
                 onClick={removeActiveOutfitProfile}
               >
-                {t('Xóa profile', 'Delete profile')}
+                Delete profile
               </button>
             </div>
           </header>
           <div className="admin-fields-grid robot-studio-quick-grid">
             <label className="admin-field">
-              <span>{t('Profile active', 'Active profile')}</span>
+              <span>Active profile</span>
               <select value={activeOutfitProfileId} onChange={(event) => setActiveOutfitProfile(event.target.value)}>
                 {outfitProfiles.map((profile) => (
                   <option key={profile.id} value={profile.id}>
@@ -1142,16 +1115,16 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
               </select>
             </label>
             <label className="admin-field">
-              <span>{t('Tên profile', 'Profile name')}</span>
+              <span>Profile name</span>
               <input
                 type="text"
                 value={activeOutfitProfile?.name ?? ''}
                 onChange={(event) => patchActiveOutfitProfile({ name: event.target.value })}
-                placeholder={t('Ví dụ: Maid Pink', 'e.g. Maid Pink')}
+                placeholder="e.g. Maid Pink"
               />
             </label>
             <label className="admin-field">
-              <span>{t('Skin', 'Skin')}</span>
+              <span>Skin</span>
               <select
                 value={activeOutfitProfile?.skinId ?? config.activeSkinId}
                 onChange={(event) => patchActiveOutfitProfile({ skinId: event.target.value })}
@@ -1164,7 +1137,7 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
               </select>
             </label>
             <label className="admin-field">
-              <span>{t('Outfit style', 'Outfit style')}</span>
+              <span>Outfit style</span>
               <select
                 value={activeOutfitProfile?.outfitStyle ?? avatarParts.outfitStyle}
                 onChange={(event) =>
@@ -1179,12 +1152,12 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
               </select>
             </label>
             <label className="admin-field">
-              <span>{t('Texture asset', 'Texture asset')}</span>
+              <span>Texture asset</span>
               <select
                 value={activeOutfitProfile?.textureAssetId ?? ''}
                 onChange={(event) => patchActiveOutfitProfile({ textureAssetId: event.target.value })}
               >
-                <option value="">{t('Không dùng texture', 'No texture')}</option>
+                <option value="">No texture</option>
                 {config.uploadedAssets.map((asset) => (
                   <option key={asset.id} value={asset.id}>
                     {asset.name}
@@ -1198,16 +1171,13 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
                 checked={activeOutfitProfile?.enabled !== false}
                 onChange={(event) => patchActiveOutfitProfile({ enabled: event.target.checked })}
               />
-              <span>{t('Bật profile này', 'Enable this profile')}</span>
+              <span>Enable this profile</span>
             </label>
           </div>
         </article>
 
         <p className="admin-service-card__detail">
-          {t(
-            'Luu y: thay doi o day la ban nhap. Chi khi bam "Ap dung ngay" moi dong bo sang kiosk/index.',
-            'Note: changes here are draft only. They sync to kiosk/index only after clicking "Apply Now".',
-          )}
+          Note: changes here are draft only. They sync to kiosk/index only after clicking "Apply Now".
         </p>
       </article>
 
@@ -1216,27 +1186,27 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
       <article className="admin-subcard robot-studio-subcard">
         <header className="admin-subcard__head">
           <div>
-            <h3>{t('Legacy Palette + Asset', 'Legacy palette + assets')}</h3>
-            <p>{t('Skin cu de lam nen mau + upload texture PNG/WEBP/SVG cho body.', 'Legacy skins as color base + PNG/WEBP/SVG body texture upload.')}</p>
+            <h3>Legacy palette + assets</h3>
+            <p>Legacy skins as color base + PNG/WEBP/SVG body texture upload.</p>
           </div>
           <div className="admin-inline-actions">
             <label className="admin-btn admin-btn--ghost robot-upload-btn">
-              {assetLoading ? t('Dang xu ly asset...', 'Processing assets...') : t('Upload Asset', 'Upload Asset')}
+              {assetLoading ? 'Processing assets...' : 'Upload Asset'}
               <input type="file" accept=".png,.webp,.svg,image/png,image/webp,image/svg+xml" multiple onChange={(event) => void handleAssetUpload(event.target.files)} />
             </label>
             <button className="admin-btn" type="button" onClick={() => void refreshAssetCatalog()}>
-              {t('Lam moi asset', 'Refresh assets')}
+              Refresh assets
             </button>
           </div>
         </header>
 
         <div className="robot-studio-toolbar">
           <label className="admin-field">
-            <span>{t('Loc pack', 'Filter pack')}</span>
+            <span>Filter pack</span>
             <select value={packFilter} onChange={(event) => setPackFilter(event.target.value as PackFilter)}>
               {PACK_OPTIONS.map((item) => (
                 <option key={item.id} value={item.id}>
-                  {item.id === 'all' ? t('Tat ca', 'All') : item.label}
+                  {item.label}
                 </option>
               ))}
             </select>
@@ -1251,17 +1221,17 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
               <p>{skin.pack}</p>
               <div className="robot-skin-card__actions">
                 <button className="admin-btn admin-btn--ghost" type="button" onClick={() => persistConfig({ ...config, activeSkinId: skin.id })}>
-                  {t('Chon skin', 'Select skin')}
+                  Select skin
                 </button>
                 <label className="robot-inline-check">
                   <input type="checkbox" checked={config.enabledSkinIds.includes(skin.id)} onChange={(event) => setSkinEnabled(skin.id, event.target.checked)} />
-                  {t('Bat skin', 'Enable skin')}
+                  Enable skin
                 </label>
               </div>
               <label className="admin-field">
                 <span>Texture bind</span>
                 <select value={config.skinAssetBindings[skin.id] ?? ''} onChange={(event) => bindSkinAsset(skin.id, event.target.value)}>
-                  <option value="">{t('Khong', 'None')}</option>
+                  <option value="">None</option>
                   {config.uploadedAssets.map((asset) => (
                     <option key={asset.id} value={asset.id}>{asset.name}</option>
                   ))}
@@ -1272,7 +1242,7 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
         </div>
 
         <div className="robot-asset-list">
-          {config.uploadedAssets.length === 0 ? <p className="robot-empty">{t('Chua co asset upload.', 'No uploaded assets yet.')}</p> : null}
+          {config.uploadedAssets.length === 0 ? <p className="robot-empty">No uploaded assets yet.</p> : null}
           {config.uploadedAssets.map((asset) => (
             <article key={asset.id} className="robot-asset-item">
               {assetPreviewById[asset.id] ? <img src={assetPreviewById[asset.id]} alt={asset.name} /> : <div className="robot-asset-placeholder">IMG</div>}
@@ -1281,7 +1251,7 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
                 <p>{asset.kind.toUpperCase()} · {Math.round(asset.size / 1024)} KB</p>
               </div>
               <button className="admin-btn admin-btn--ghost" type="button" onClick={() => void handleRemoveAsset(asset.id)}>
-                {t('Xoa', 'Delete')}
+                Delete
               </button>
             </article>
           ))}
@@ -1292,7 +1262,7 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
         <header className="admin-subcard__head">
           <div>
             <h3>Action Library</h3>
-            <p>{t('Bat/tat 25 action va chinh intensity, speed, cooldown.', 'Enable/disable 25 actions and tune intensity, speed, and cooldown.')}</p>
+            <p>Enable/disable 25 actions and tune intensity, speed, and cooldown.</p>
           </div>
         </header>
         <div className="robot-action-grid">
@@ -1329,16 +1299,16 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
         <header className="admin-subcard__head">
           <div>
             <h3>Graph Timeline Editor</h3>
-            <p>{t('Canvas node-graph co branch dieu kien theo scene/intent/menu/presence.', 'Node-graph canvas with condition branches by scene/intent/menu/presence.')}</p>
+            <p>Node-graph canvas with condition branches by scene/intent/menu/presence.</p>
           </div>
           <div className="admin-inline-actions">
-            <button className="admin-btn" type="button" onClick={addGraph}>{t('Them graph', 'Add graph')}</button>
-            <button className="admin-btn admin-btn--ghost" type="button" onClick={removeGraph}>{t('Xoa graph', 'Delete graph')}</button>
+            <button className="admin-btn" type="button" onClick={addGraph}>Add graph</button>
+            <button className="admin-btn admin-btn--ghost" type="button" onClick={removeGraph}>Delete graph</button>
           </div>
         </header>
         <div className="robot-studio-toolbar">
           <label className="admin-field">
-            <span>Graph hien tai</span>
+            <span>Current graph</span>
             <select value={selectedGraphId} onChange={(event) => setSelectedGraphId(event.target.value)}>
               {config.graphBindings.map((graph) => (
                 <option key={graph.id} value={graph.id}>{graph.name}</option>
@@ -1347,7 +1317,7 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
           </label>
           {currentGraph ? (
             <label className="admin-field">
-              <span>Ten graph</span>
+              <span>Graph name</span>
               <input
                 value={currentGraph.name}
                 onChange={(event) => {
@@ -1381,7 +1351,7 @@ export function RobotStudioPanel({ onNotice, uiLanguage = 'vi' }: RobotStudioPan
             <button className="admin-btn admin-btn--ghost" type="button" onClick={() => addNode('action')}>+ Action node</button>
             <button className="admin-btn admin-btn--ghost" type="button" onClick={() => addNode('wait')}>+ Wait node</button>
             <button className="admin-btn admin-btn--ghost" type="button" onClick={() => addNode('condition')}>+ Condition node</button>
-            <button className="admin-btn admin-btn--ghost" type="button" onClick={removeNode}>Xoa node</button>
+            <button className="admin-btn admin-btn--ghost" type="button" onClick={removeNode}>Delete node</button>
           </div>
         </div>
 
