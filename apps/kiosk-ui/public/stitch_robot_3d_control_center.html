@@ -5211,9 +5211,14 @@
         return items
             .map((item) => {
                 const itemId = String(item?.item_id || item?.id || '').trim();
-                const sizeLabel = String(item?.size_label || item?.size || '').trim();
-                const baseName = String(item?.base_name || item?.name || 'Món').trim() || 'Món';
-                const displayName = String(item?.name || baseName || 'Món').trim() || 'Món';
+                const rawSizeLabel = String(item?.size_label || item?.size || '').trim();
+                const nameContext = extractCartNameContext(
+                    String(item?.name || item?.base_name || 'Món').trim() || 'Món',
+                    rawSizeLabel,
+                );
+                const sizeLabel = nameContext.sizeLabel;
+                const baseName = nameContext.baseName;
+                const displayName = nameContext.displayName;
                 const quantity = Math.max(0, Number(item?.quantity || 0));
                 const rawUnitPrice = Number(item?.unit_price);
                 const rawLineTotal = Number(item?.line_total);
@@ -5300,6 +5305,51 @@
         return wordMap[firstWord] || 1;
     }
 
+    function extractCartNameContext(rawName, explicitSize = '') {
+        const originalName = String(rawName || 'Món').trim() || 'Món';
+        let baseName = originalName;
+        let sizeLabel = normalizeSizeLabel(explicitSize);
+
+        if (!sizeLabel) {
+            const parenMatch = originalName.match(/\(([^)]+)\)\s*$/);
+            const parenSize = normalizeSizeLabel(parenMatch?.[1] || '');
+            if (parenMatch && ['S', 'M', 'L', 'XL'].includes(parenSize)) {
+                sizeLabel = parenSize;
+                baseName = originalName.slice(0, parenMatch.index).trim() || originalName;
+            }
+        }
+
+        if (!sizeLabel) {
+            const normalizedName = normalizeNoToneKey(originalName);
+            const sizeWordMatch = normalizedName.match(/\bsize\s+(xl|x l|s|m|l|small|medium|large|nho|vua|lon)\b/);
+            const matchedSizeRaw = sizeWordMatch?.[1] || '';
+            const normalizedSize = normalizeSizeLabel(matchedSizeRaw);
+            if (['S', 'M', 'L', 'XL'].includes(normalizedSize)) {
+                sizeLabel = normalizedSize;
+                baseName = originalName
+                    .replace(/\s*[-–]?\s*size\s+(xl|x\s*l|s|m|l|small|medium|large|nho|vua|lon)\s*$/i, '')
+                    .trim() || originalName;
+            }
+        }
+
+        if (sizeLabel) {
+            const explicitParenMatch = baseName.match(/\(([^)]+)\)\s*$/);
+            const explicitParenSize = normalizeSizeLabel(explicitParenMatch?.[1] || '');
+            if (explicitParenMatch && explicitParenSize === sizeLabel) {
+                baseName = baseName.slice(0, explicitParenMatch.index).trim() || baseName;
+            }
+            baseName = baseName
+                .replace(/\s*[-–]?\s*size\s+(xl|x\s*l|s|m|l|small|medium|large|nho|vua|lon)\s*$/i, '')
+                .trim() || baseName;
+        }
+
+        return {
+            baseName,
+            sizeLabel,
+            displayName: sizeLabel ? `${baseName} (${sizeLabel})` : originalName,
+        };
+    }
+
     function inferAddedItemFromReplyText(replyText) {
         const normalizedReply = normalizeNoToneKey(replyText);
         if (!normalizedReply.includes('da them') || !normalizedReply.includes('vao gio hang')) {
@@ -5311,8 +5361,9 @@
         if (!addedPartRaw) return null;
 
         const quantity = parseLeadingQuantityFromText(addedPartRaw);
+        const inferredNameContext = extractCartNameContext(addedPartRaw);
         const menuCandidates = Array.isArray(currentMenuItems) ? currentMenuItems : [];
-        const normalizedAddedPart = normalizeNoToneKey(addedPartRaw);
+        const normalizedAddedPart = normalizeNoToneKey(inferredNameContext.baseName || addedPartRaw);
 
         let bestItem = null;
         let bestScore = 0;
@@ -5335,7 +5386,10 @@
                 bestScore = score;
                 bestItem = {
                     item_id: itemId,
-                    name: itemName,
+                    item_key: buildManualAddKey(itemId, inferredNameContext.sizeLabel),
+                    name: inferredNameContext.sizeLabel ? `${itemName} (${inferredNameContext.sizeLabel})` : itemName,
+                    base_name: itemName,
+                    size_label: inferredNameContext.sizeLabel,
                     quantity,
                     unit_price: Math.max(0, Number(menuItem?.price || 0)),
                 };
@@ -5350,7 +5404,16 @@
         if (!inferred) return false;
 
         const nextCart = normalizeOrderItems(cartState);
-        const existingIndex = nextCart.findIndex((item) => item.item_id === inferred.item_id);
+        const inferredKey = String(inferred.item_key || '').trim()
+            || buildManualAddKey(inferred.item_id, inferred.size_label || '');
+        const existingIndex = nextCart.findIndex((item) => {
+            const itemKey = String(item?.item_key || '').trim()
+                || buildManualAddKey(item?.item_id, item?.size_label || '');
+            if (inferredKey && itemKey) {
+                return itemKey === inferredKey;
+            }
+            return item.item_id === inferred.item_id;
+        });
         if (existingIndex >= 0) {
             const existing = nextCart[existingIndex];
             const unitPrice = Math.max(0, Number(existing.unit_price || inferred.unit_price || 0));
@@ -5365,7 +5428,10 @@
             const unitPrice = Math.max(0, Number(inferred.unit_price || 0));
             nextCart.push({
                 item_id: inferred.item_id,
+                item_key: inferredKey,
                 name: inferred.name,
+                base_name: inferred.base_name || inferred.name,
+                size_label: inferred.size_label || '',
                 quantity: inferred.quantity,
                 unit_price: unitPrice,
                 line_total: unitPrice * inferred.quantity,
@@ -6171,6 +6237,14 @@
         const normalized = normalizeTranscriptForDedup(text);
         if (!normalized) return false;
         return /(xac nhan|xac nhan don|dat hang|len don|chot don|thanh toan)/i.test(normalized);
+    }
+
+    function shouldHandleCheckoutConfirmLocally(options = {}) {
+        if (options?.isQuickCheckoutSource) return false;
+        if (cartState.length === 0) return false;
+        if (sizePickerHud && !sizePickerHud.hidden) return false;
+        if (orderStatusHud && !orderStatusHud.hidden) return false;
+        return true;
     }
 
     function shouldIgnoreAutoTranscript(text, source) {
@@ -7235,6 +7309,27 @@
         const tokenCount = normalizedTranscript.split(' ').filter(Boolean).length;
         const busy = isConversationTurnBusy();
         const criticalConfirmIntent = isLikelyCheckoutConfirm(finalText);
+
+        if (criticalConfirmIntent && shouldHandleCheckoutConfirmLocally({ isQuickCheckoutSource })) {
+            if (!isManualSource) {
+                lastQueuedUserTranscriptNorm = normalizedTranscript;
+                lastQueuedUserTranscriptRaw = finalText;
+                lastQueuedUserTranscriptAt = now;
+                appendChat('user', finalText);
+            }
+            lastAcceptedUserTurnAt = now;
+            markSpeechActivity();
+            prioritizeUserSpeech();
+            if (orderReviewOpen) {
+                submitReviewedCheckout();
+            } else if (cartCheckoutLocked) {
+                setVoiceStatus('Đang gửi yêu cầu đặt hàng...');
+            } else {
+                openOrderReview();
+            }
+            return;
+        }
+
         if (
             !isManualSource
             && source !== 'browser-interim'
