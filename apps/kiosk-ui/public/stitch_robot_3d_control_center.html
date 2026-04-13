@@ -1113,15 +1113,16 @@
         }
         .voice-mini-panel.content-only .chat-mini-list {
             gap: 8px;
-            max-height: 184px;
+            max-height: 162px;
             padding: 0 2px 0 0;
         }
         .chat-mini-list {
             display: grid;
             gap: 4px;
-            max-height: 196px;
+            max-height: 162px;
             overflow: auto;
             padding-right: 2px;
+            overscroll-behavior: contain;
         }
         .chat-mini-empty {
             margin: 0;
@@ -1381,57 +1382,101 @@
         .size-picker-card {
             position: relative;
             pointer-events: auto;
-            width: min(94vw, 560px);
-            border-radius: 24px;
-            border: 1px solid rgba(131, 170, 196, 0.36);
-            background: linear-gradient(165deg, rgba(255, 255, 255, 0.98), rgba(236, 248, 255, 0.94));
-            box-shadow: 0 24px 64px rgba(8, 44, 78, 0.34);
-            padding: 20px;
+            width: min(94vw, 700px);
+            border-radius: 28px;
+            border: 1px solid rgba(131, 170, 196, 0.28);
+            background:
+                radial-gradient(circle at top right, rgba(34, 211, 238, 0.18), transparent 34%),
+                linear-gradient(165deg, rgba(255, 255, 255, 0.98), rgba(236, 248, 255, 0.94));
+            box-shadow: 0 28px 72px rgba(8, 44, 78, 0.34);
+            padding: 22px;
             display: grid;
-            gap: 12px;
+            gap: 16px;
+        }
+        .size-picker-card::before {
+            content: '';
+            position: absolute;
+            inset: 0 0 auto 0;
+            height: 5px;
+            border-radius: 28px 28px 0 0;
+            background: linear-gradient(90deg, #06b6d4, #2563eb, #14b8a6);
+        }
+        .size-picker-hero {
+            display: grid;
+            grid-template-columns: 124px minmax(0, 1fr);
+            gap: 16px;
+            align-items: center;
+        }
+        .size-picker-media {
+            width: 124px;
+            height: 124px;
+            border-radius: 22px;
+            object-fit: cover;
+            background: linear-gradient(145deg, rgba(206, 250, 254, 0.96), rgba(226, 240, 255, 0.9));
+            box-shadow:
+                0 16px 34px rgba(14, 116, 144, 0.22),
+                inset 0 0 0 1px rgba(255, 255, 255, 0.7);
+        }
+        .size-picker-copy {
+            display: grid;
+            gap: 8px;
+        }
+        .size-picker-kicker {
+            margin: 0;
+            font-size: 0.72rem;
+            font-weight: 800;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: #0e7490;
         }
         .size-picker-title {
             margin: 0;
-            font-size: 1.14rem;
+            font-size: 1.28rem;
             font-weight: 800;
             color: #0f2b3b;
         }
         .size-picker-sub {
             margin: 0;
-            font-size: 0.9rem;
+            font-size: 0.95rem;
+            line-height: 1.45;
             color: #355468;
         }
         .size-picker-item {
             margin: 0;
-            font-size: 1.02rem;
+            font-size: 1.18rem;
             font-weight: 800;
             color: #0f4c66;
         }
         .size-picker-options {
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 10px;
+            gap: 12px;
         }
         .size-picker-option {
             display: grid;
-            gap: 4px;
-            border-radius: 14px;
-            border: 1px solid rgba(120, 162, 188, 0.35);
-            background: linear-gradient(145deg, rgba(255, 255, 255, 0.97), rgba(239, 248, 255, 0.93));
-            padding: 11px 12px;
+            gap: 8px;
+            border-radius: 18px;
+            border: 1px solid rgba(120, 162, 188, 0.26);
+            background: linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(239, 248, 255, 0.94));
+            padding: 14px;
             text-align: left;
             cursor: pointer;
-            transition: transform var(--ui-fast) ease, box-shadow var(--ui-fast) ease, border-color var(--ui-fast) ease;
+            transition:
+                transform var(--ui-fast) ease,
+                box-shadow var(--ui-fast) ease,
+                border-color var(--ui-fast) ease,
+                background var(--ui-fast) ease;
         }
         .size-picker-option:hover,
         .size-picker-option:focus-visible {
-            transform: translateY(-1px);
-            box-shadow: 0 10px 20px rgba(20, 88, 161, 0.2);
-            border-color: rgba(14, 116, 144, 0.54);
+            transform: translateY(-2px) scale(1.01);
+            box-shadow: 0 18px 30px rgba(20, 88, 161, 0.18);
+            border-color: rgba(14, 116, 144, 0.42);
             outline: none;
         }
         .size-picker-option--default {
             border-color: rgba(20, 184, 166, 0.42);
+            background: linear-gradient(145deg, rgba(240, 253, 250, 0.98), rgba(232, 255, 251, 0.94));
         }
         .size-picker-option--disabled {
             cursor: not-allowed;
@@ -1447,14 +1492,18 @@
             border-color: rgba(148, 163, 184, 0.36);
         }
         .size-picker-option-size {
-            font-size: 0.95rem;
+            font-size: 1rem;
             font-weight: 800;
             color: #0f2b3b;
         }
         .size-picker-option-price {
-            font-size: 0.84rem;
+            font-size: 1rem;
             font-weight: 700;
             color: #0e7490;
+        }
+        .size-picker-option-note {
+            font-size: 0.79rem;
+            color: #547084;
         }
         .size-picker-option-tag {
             justify-self: start;
@@ -2913,7 +2962,7 @@
             }
 
             .chat-mini-list {
-                max-height: 158px;
+                max-height: 144px;
             }
 
             #menu-toggle-dock button {
@@ -2930,6 +2979,15 @@
                 width: calc(100vw - 20px);
                 padding: 16px;
                 gap: 10px;
+            }
+
+            .size-picker-hero {
+                grid-template-columns: 1fr;
+            }
+
+            .size-picker-media {
+                width: 100%;
+                height: 156px;
             }
 
             .size-picker-options {
@@ -2958,7 +3016,7 @@
             }
 
             .chat-mini-list {
-                max-height: 18vh;
+                max-height: min(18vh, 162px);
             }
 
             .cart-mini-panel {
@@ -3156,9 +3214,15 @@
 <section class="size-picker-hud" id="size-picker-hud" hidden aria-label="Size picker">
 <div class="size-picker-backdrop" id="size-picker-backdrop"></div>
 <article class="size-picker-card" role="dialog" aria-modal="true" aria-labelledby="size-picker-title">
+<div class="size-picker-hero">
+<img class="size-picker-media" id="size-picker-item-image" src="" alt="Món đang chọn" loading="lazy">
+<div class="size-picker-copy">
+<p class="size-picker-kicker">Chọn size nhanh</p>
 <p class="size-picker-title" id="size-picker-title">Chọn size</p>
-<p class="size-picker-sub">Chọn size để thêm món nhanh hơn.</p>
+<p class="size-picker-sub" id="size-picker-subtitle">Chọn size để thêm món nhanh hơn.</p>
 <p class="size-picker-item" id="size-picker-item-name">--</p>
+</div>
+</div>
 <div class="size-picker-options" id="size-picker-options"></div>
 <div class="size-picker-actions">
 <button class="size-picker-cancel" id="size-picker-cancel" type="button">Huỷ</button>
@@ -3321,6 +3385,8 @@
     const quickAddToast = document.getElementById('quick-add-toast');
     const sizePickerHud = document.getElementById('size-picker-hud');
     const sizePickerBackdrop = document.getElementById('size-picker-backdrop');
+    const sizePickerItemImage = document.getElementById('size-picker-item-image');
+    const sizePickerSubtitle = document.getElementById('size-picker-subtitle');
     const sizePickerItemName = document.getElementById('size-picker-item-name');
     const sizePickerOptions = document.getElementById('size-picker-options');
     const sizePickerCancel = document.getElementById('size-picker-cancel');
@@ -4610,7 +4676,8 @@
     function applyCartUpdateFromPayload(nextCart, payload, options = {}) {
         if (!Array.isArray(nextCart)) return false;
         const isManualTurn = options?.isManualTurn === true;
-        if (isManualTurn) {
+        const allowManualCartSync = options?.allowManualCartSync === true;
+        if (isManualTurn && !allowManualCartSync) {
             return false;
         }
         updateMiniCart(nextCart);
@@ -4759,8 +4826,12 @@
 
     function renderChatMini() {
         if (!chatMiniList) return;
-        const latest = chatHistory.slice(-8);
-        const displayItems = [...latest];
+        const distanceFromBottom = Math.max(
+            0,
+            chatMiniList.scrollHeight - chatMiniList.scrollTop - chatMiniList.clientHeight,
+        );
+        const shouldStickToBottom = distanceFromBottom <= 28;
+        const displayItems = [...chatHistory];
         if (thinkingTurnId && isTurnStillLatest(thinkingTurnId)) {
             displayItems.push({
                 role: 'assistant',
@@ -4778,7 +4849,9 @@
                 <span class="chat-mini-line-label">${entry.role === 'user' ? 'Khach' : 'Robot'}:</span> ${toSafeInlineText(entry.text)}
             </p>
         `).join('');
-        chatMiniList.scrollTop = chatMiniList.scrollHeight;
+        if (shouldStickToBottom) {
+            chatMiniList.scrollTop = chatMiniList.scrollHeight;
+        }
     }
 
     function showThinkingIndicator(turnId) {
@@ -7413,6 +7486,7 @@
             text: finalText,
             source,
             queuedAt: Date.now(),
+            allowManualCartSync: options?.allowManualCartSync === true,
         };
 
         if (isQuickCheckoutSource) {
@@ -7489,6 +7563,7 @@
                 const turnSource = String(queuedTurn.source || 'auto').trim().toLowerCase();
                 const isManualTurn = turnSource === 'manual';
                 const isQuickCheckoutTurn = turnSource === 'quick-checkout';
+                const allowManualCartSync = queuedTurn.allowManualCartSync === true;
                 if (!turnId || !userText) continue;
                 activeProcessingTurnId = turnId;
                 if (!isTurnStillLatest(turnId)) {
@@ -7672,7 +7747,7 @@
                                 tryStartEarlySpeechFromStream();
                                 const streamedCart = extractCartItemsFromPayload(chunk);
                                 if (streamedCart) {
-                                    applyCartUpdateFromPayload(streamedCart, chunk, { isManualTurn });
+                                    applyCartUpdateFromPayload(streamedCart, chunk, { isManualTurn, allowManualCartSync });
                                 }
                                 const bridgeSource = String(chunk.bridge_source || '').trim();
                                 if (bridgeSource) {
@@ -7737,7 +7812,7 @@
                         replyText = String(replyPayload?.reply_text || '').trim();
                         const fallbackCart = extractCartItemsFromPayload(replyPayload);
                         if (fallbackCart) {
-                            applyCartUpdateFromPayload(fallbackCart, replyPayload, { isManualTurn });
+                            applyCartUpdateFromPayload(fallbackCart, replyPayload, { isManualTurn, allowManualCartSync });
                         }
                     } finally {
                         if (streamPlayer) {
@@ -7797,7 +7872,7 @@
                             const payloadApplied = applyCartUpdateFromPayload(
                                 resolvedPayloadCart,
                                 replyPayload,
-                                { isManualTurn },
+                                { isManualTurn, allowManualCartSync },
                             );
                             if (!payloadApplied && !isManualTurn) {
                                 applyOptimisticCartUpdateFromReply(replyText);
@@ -7820,6 +7895,9 @@
                         }
                         if (!isManualTurn) {
                             appendChat('assistant', replyText);
+                        }
+                        if (!isManualTurn && !isQuickCheckoutTurn && backendScene === 'clarify_size') {
+                            void maybeOpenVoiceClarifySizePicker(replyPayload, replyText);
                         }
                         if (!isManualTurn && streamedAudioChunks === 0 && !turnAbortController.signal.aborted) {
                             clearFillerTimer();
@@ -8883,7 +8961,15 @@
     }
 
     function buildPlaceholderImage(name, category) {
-        const label = `${category || 'Menu'} • ${name || 'Món'}`;
+        const safeName = String(name || 'Món').trim() || 'Món';
+        const safeCategory = String(category || 'Menu').trim() || 'Menu';
+        const initials = safeName
+            .split(/\s+/)
+            .filter(Boolean)
+            .slice(0, 2)
+            .map((part) => part[0]?.toUpperCase() || '')
+            .join('') || 'MN';
+        const label = `${safeCategory} • ${safeName}`;
         const svg = `
             <svg xmlns='http://www.w3.org/2000/svg' width='640' height='480'>
                 <defs>
@@ -8891,10 +8977,19 @@
                         <stop offset='0%' stop-color='#0f766e'/>
                         <stop offset='100%' stop-color='#155e75'/>
                     </linearGradient>
+                    <linearGradient id='card' x1='0' x2='1' y1='0' y2='1'>
+                        <stop offset='0%' stop-color='rgba(255,255,255,0.22)'/>
+                        <stop offset='100%' stop-color='rgba(255,255,255,0.08)'/>
+                    </linearGradient>
                 </defs>
                 <rect width='100%' height='100%' fill='url(#g)'/>
                 <circle cx='500' cy='100' r='120' fill='rgba(255,255,255,0.18)'/>
-                <text x='36' y='405' fill='white' font-size='30' font-family='Arial, sans-serif' opacity='0.92'>${toSafeText(label)}</text>
+                <circle cx='150' cy='96' r='58' fill='rgba(255,255,255,0.16)'/>
+                <rect x='64' y='72' rx='28' ry='28' width='512' height='336' fill='url(#card)' stroke='rgba(255,255,255,0.22)'/>
+                <circle cx='320' cy='208' r='84' fill='rgba(255,255,255,0.16)'/>
+                <text x='320' y='228' text-anchor='middle' fill='white' font-size='68' font-weight='700' font-family='Arial, sans-serif'>${toSafeText(initials)}</text>
+                <text x='320' y='316' text-anchor='middle' fill='white' font-size='24' font-family='Arial, sans-serif' opacity='0.9'>${toSafeText(safeName)}</text>
+                <text x='36' y='446' fill='white' font-size='24' font-family='Arial, sans-serif' opacity='0.88'>${toSafeText(label)}</text>
             </svg>
         `;
         return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
@@ -9108,6 +9203,13 @@
         if (sizePickerItemName) {
             sizePickerItemName.textContent = '--';
         }
+        if (sizePickerSubtitle) {
+            sizePickerSubtitle.textContent = 'Chọn size để thêm món nhanh hơn.';
+        }
+        if (sizePickerItemImage instanceof HTMLImageElement) {
+            sizePickerItemImage.src = buildPlaceholderImage('Món', 'Menu');
+            sizePickerItemImage.alt = 'Món đang chọn';
+        }
         if (typeof resolve === 'function') {
             resolve(String(value || ''));
         }
@@ -9156,7 +9258,7 @@
         });
     }
 
-    async function pickSizeFromPrompt(itemName, options) {
+    async function pickSizeFromPrompt(itemName, options, meta = {}) {
         if (!Array.isArray(options) || options.length === 0) return '';
         const normalizedOptions = options
             .map((opt) => ({
@@ -9184,6 +9286,14 @@
         return new Promise((resolve) => {
             activeSizePickerResolver = resolve;
             sizePickerItemName.textContent = String(itemName || 'Món').trim() || 'Món';
+            if (sizePickerSubtitle) {
+                sizePickerSubtitle.textContent = String(meta?.subtitle || 'Chọn size phù hợp để thêm món nhanh hơn.').trim();
+            }
+            if (sizePickerItemImage instanceof HTMLImageElement) {
+                const imageSrc = String(meta?.image || buildPlaceholderImage(itemName, 'Menu')).trim();
+                sizePickerItemImage.src = imageSrc;
+                sizePickerItemImage.alt = String(itemName || 'Món').trim() || 'Món đang chọn';
+            }
             sizePickerOptions.innerHTML = normalizedOptions.map((opt) => {
                 const sizeValue = String(opt.size_name || '').trim();
                 const encoded = encodeURIComponent(sizeValue);
@@ -9191,6 +9301,9 @@
                 const priceLabel = Number.isFinite(opt.price) && opt.price >= 0
                     ? formatCurrencyVnd(opt.price)
                     : '--';
+                const noteLabel = opt.is_default
+                    ? 'Size mặc định, dễ chọn nhất'
+                    : 'Chạm để thêm nhanh vào giỏ';
                 const defaultTag = opt.is_default && opt.available
                     ? '<span class="size-picker-option-tag">Mặc định</span>'
                     : '';
@@ -9210,6 +9323,7 @@
                     >
                         <span class="size-picker-option-size">Size ${toSafeText(sizeLabel)}</span>
                         <span class="size-picker-option-price">${toSafeText(priceLabel)}</span>
+                        <span class="size-picker-option-note">${toSafeText(noteLabel)}</span>
                         ${defaultTag}
                         ${offTag}
                     </button>
@@ -9239,6 +9353,79 @@
                     defaultButton.focus();
                 }
             }, 0);
+        });
+    }
+
+    function findMenuItemById(itemId) {
+        const safeItemId = String(itemId || '').trim();
+        if (!safeItemId || !Array.isArray(currentMenuItems)) return null;
+        return currentMenuItems.find((entry) => {
+            const entryId = String(entry?.item_id || entry?.id || '').trim();
+            return entryId && entryId === safeItemId;
+        }) || null;
+    }
+
+    function inferClarifySizeItemName(replyText, fallback = 'Món đã chọn') {
+        const text = String(replyText || '').trim();
+        if (!text) return fallback;
+        const match = text.match(/m[oó]n\s+(.+?)\s+c[oó]\s+(?:c[aá]c|nhi[ềe]u)\s+size/i);
+        if (match && match[1]) {
+            return String(match[1]).trim() || fallback;
+        }
+        return fallback;
+    }
+
+    async function maybeOpenVoiceClarifySizePicker(replyPayload, replyText) {
+        const backendScene = String(replyPayload?.scene || '').trim();
+        if (backendScene !== 'clarify_size') return;
+        if (!replyPayload || orderStatusHud?.hidden === false) return;
+        const recommendedIds = Array.isArray(replyPayload?.recommended_item_ids)
+            ? replyPayload.recommended_item_ids
+            : [];
+        const itemId = String(recommendedIds[0] || '').trim();
+        if (!itemId) return;
+        const menuItem = findMenuItemById(itemId);
+        const fallbackName = inferClarifySizeItemName(replyText, 'Món đã chọn');
+        const itemName = String(menuItem?.name || fallbackName).trim() || fallbackName;
+        const sizeOptions = await fetchMenuItemSizes({ item_id: itemId });
+        const availableSizeOptions = sizeOptions.filter((option) => parseMenuBoolean(option?.available, true));
+        if (availableSizeOptions.length === 0) {
+            return;
+        }
+        setVoiceStatus(`Chọn nhanh size cho ${itemName} hoặc nói size để tiếp tục.`);
+        const selectedSize = await pickSizeFromPrompt(itemName, sizeOptions, {
+            image: getItemImage(
+                menuItem || { item_id: itemId },
+                itemName,
+                normalizeCategory(menuItem || {}),
+            ),
+            subtitle: 'Bạn có thể chạm chọn size để thêm vào giỏ ngay, không cần nói lại.',
+        });
+        if (!selectedSize) {
+            setVoiceStatus('Bạn có thể chạm chọn size hoặc nói size S, M, L, XL.');
+            return;
+        }
+        const normalizedPickedSize = normalizeSizeLabel(selectedSize) || String(selectedSize || '').trim();
+        const matchedSize = sizeOptions.find(
+            (option) => normalizeSizeLabel(option?.size_name) === normalizedPickedSize,
+        );
+        const resolvedUnitPrice = Math.max(
+            0,
+            Number(matchedSize?.price ?? menuItem?.price ?? 0),
+        );
+        const resolvedMenuItem = {
+            ...(menuItem || {}),
+            item_id: itemId,
+            name: itemName,
+            image_url: String(menuItem?.image_url || menuItem?.image || '').trim(),
+            price: resolvedUnitPrice,
+            available: true,
+        };
+        setVoiceStatus(`Đã chọn size ${normalizedPickedSize}. Đang thêm vào giỏ...`);
+        queueManualCartAdd(resolvedMenuItem, {
+            quantity: 1,
+            sizeLabel: normalizedPickedSize,
+            unitPrice: resolvedUnitPrice,
         });
     }
 
@@ -9373,7 +9560,10 @@
         }
         let selectedSize = '';
         if (sizeOptions.length > 1) {
-            selectedSize = await pickSizeFromPrompt(itemName, sizeOptions);
+            selectedSize = await pickSizeFromPrompt(itemName, sizeOptions, {
+                image: getItemImage(item, itemName, normalizeCategory(item)),
+                subtitle: 'Chạm vào size bạn muốn để thêm món ngay vào giỏ.',
+            });
             if (!selectedSize) {
                 setVoiceStatus('Chưa chọn size hợp lệ, đã huỷ thêm món.');
                 return;
@@ -9715,6 +9905,7 @@
     renderChatMini();
     hideOrderFlow();
     updateMiniCart([]);
+    void ensureMenuLoaded();
     bindSizePickerEvents();
     bindOrderReviewEvents();
     if (cartMiniCheckoutBtn) {

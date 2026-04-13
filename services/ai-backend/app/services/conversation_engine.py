@@ -1301,6 +1301,8 @@ class ConversationEngine:
             "bridge_source": bridge_source,
             "cart": [item.model_dump() for item in response.cart],
             "scene": response.scene,
+            "recommended_item_ids": list(response.recommended_item_ids),
+            "needs_confirmation": response.needs_confirmation,
             "emotion_hint": response.emotion_hint,
             "action_hints": list(response.action_hints),
             "order_created": response.order_created,
