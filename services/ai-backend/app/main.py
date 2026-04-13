@@ -710,12 +710,14 @@ async def handle_turn(session_id: str, payload: TurnRequest) -> ConversationResp
             session_id,
             payload.transcript,
             turn_id=payload.turn_id,
+            quick_checkout=payload.quick_checkout,
         )
         logger.info(
-            "turn_total_ms=%s session_id=%s turn_id=%s endpoint=turn",
+            "turn_total_ms=%s session_id=%s turn_id=%s endpoint=turn quick_checkout=%s",
             int((time.perf_counter() - started_at) * 1000),
             session_id,
             payload.turn_id or "",
+            payload.quick_checkout,
         )
         return response
     except httpx.HTTPStatusError as exc:
@@ -740,32 +742,36 @@ async def handle_turn_stream(session_id: str, payload: TurnRequest) -> Streaming
                 payload.transcript,
                 turn_id=payload.turn_id,
                 include_audio=payload.include_audio,
+                quick_checkout=payload.quick_checkout,
             ):
                 chunk_type = str(chunk.get("type") or "").lower() if isinstance(chunk, dict) else ""
                 if chunk_type in {"text", "text_final"} and not first_text_at:
                     first_text_at = time.perf_counter()
                     logger.info(
-                        "turn_first_text_ms=%s session_id=%s turn_id=%s endpoint=turn_stream",
+                        "turn_first_text_ms=%s session_id=%s turn_id=%s endpoint=turn_stream quick_checkout=%s",
                         int((first_text_at - started_at) * 1000),
                         session_id,
                         payload.turn_id or "",
+                        payload.quick_checkout,
                     )
                 elif chunk_type == "audio" and not first_audio_at:
                     first_audio_at = time.perf_counter()
                     logger.info(
-                        "turn_first_audio_ms=%s session_id=%s turn_id=%s endpoint=turn_stream",
+                        "turn_first_audio_ms=%s session_id=%s turn_id=%s endpoint=turn_stream quick_checkout=%s",
                         int((first_audio_at - started_at) * 1000),
                         session_id,
                         payload.turn_id or "",
+                        payload.quick_checkout,
                     )
                 yield _safe_ndjson_line(chunk)
             logger.info(
-                "turn_total_ms=%s turn_first_text_ms=%s turn_first_audio_ms=%s session_id=%s turn_id=%s endpoint=turn_stream",
+                "turn_total_ms=%s turn_first_text_ms=%s turn_first_audio_ms=%s session_id=%s turn_id=%s endpoint=turn_stream quick_checkout=%s",
                 int((time.perf_counter() - started_at) * 1000),
                 int((first_text_at - started_at) * 1000) if first_text_at else -1,
                 int((first_audio_at - started_at) * 1000) if first_audio_at else -1,
                 session_id,
                 payload.turn_id or "",
+                payload.quick_checkout,
             )
         except httpx.HTTPStatusError as exc:
             detail = exc.response.text or "Khong the tao don tu core backend."

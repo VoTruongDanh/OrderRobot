@@ -451,6 +451,7 @@ class ConversationEngine:
         session_id: str,
         transcript: str,
         turn_id: str | None = None,
+        quick_checkout: bool = False,
     ) -> ConversationResponse:
         async with self.lock:
             self._cleanup_expired_sessions()
@@ -551,8 +552,12 @@ class ConversationEngine:
             )
 
         if state.cart and (
-            contains_any(normalized, CONFIRM_KEYWORDS) or contains_any(normalized, CHECKOUT_KEYWORDS)
+            quick_checkout
+            or contains_any(normalized, CONFIRM_KEYWORDS)
+            or contains_any(normalized, CHECKOUT_KEYWORDS)
         ):
+            if quick_checkout:
+                logger.info("quick_checkout_requested session_id=%s turn_id=%s cart_items=%s", session_id, turn_id or "", len(state.cart))
             pruned_items = self._prune_non_orderable_cart_items(state, menu)
             if pruned_items:
                 removed_summary = ", ".join(pruned_items[:2])
@@ -585,6 +590,9 @@ class ConversationEngine:
                     ),
                     menu,
                 )
+
+            if quick_checkout:
+                state.awaiting_confirmation = True
 
             if state.awaiting_confirmation:
                 for item_id, quantity in list(state.cart.items()):
@@ -1198,13 +1206,19 @@ class ConversationEngine:
         transcript: str,
         turn_id: str | None = None,
         include_audio: bool = True,
+        quick_checkout: bool = False,
     ):
         """Stream conversation response with incremental text and optional audio chunks."""
         local_only_turn_id = str(turn_id or "").strip()
         if local_only_turn_id:
             self._local_only_turn_ids.add(local_only_turn_id)
         try:
-            response = await self.handle_turn(session_id, transcript, turn_id=turn_id)
+            response = await self.handle_turn(
+                session_id,
+                transcript,
+                turn_id=turn_id,
+                quick_checkout=quick_checkout,
+            )
         finally:
             if local_only_turn_id:
                 self._local_only_turn_ids.discard(local_only_turn_id)

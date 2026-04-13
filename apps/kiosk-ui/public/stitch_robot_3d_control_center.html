@@ -5819,6 +5819,11 @@
         }, 3600);
         closeOrderReview({ keepStatus: true });
         refreshCartCheckoutButtonState();
+        console.info('[quick-checkout] review confirmed locally, sending forced checkout turn', {
+            itemCount: reviewedItems.length,
+            cartSize: cartState.length,
+            sessionId: currentSessionId || '',
+        });
         setVoiceStatus('Đang gửi yêu cầu đặt hàng...');
         enqueueUserTurn('xác nhận đặt hàng ngay', { source: 'quick-checkout' });
     }
@@ -5982,12 +5987,17 @@
         return payload;
     }
 
-    async function sendConversationTurn(sessionId, transcript, turnId = '', signal = undefined) {
+    async function sendConversationTurn(sessionId, transcript, turnId = '', signal = undefined, options = {}) {
         const aiApiUrl = await ensureAiApiUrlReady();
+        const quickCheckout = Boolean(options?.quickCheckout);
         const response = await fetch(`${aiApiUrl}/sessions/${encodeURIComponent(sessionId)}/turn`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ transcript, turn_id: turnId || undefined }),
+            body: JSON.stringify({
+                transcript,
+                turn_id: turnId || undefined,
+                quick_checkout: quickCheckout,
+            }),
             signal,
         });
         if (!response.ok) {
@@ -5996,8 +6006,9 @@
         return response.json();
     }
 
-    async function streamConversationTurn(sessionId, transcript, turnId = '', onChunk, signal = undefined) {
+    async function streamConversationTurn(sessionId, transcript, turnId = '', onChunk, signal = undefined, options = {}) {
         const aiApiUrl = await ensureAiApiUrlReady();
+        const quickCheckout = Boolean(options?.quickCheckout);
         const response = await fetch(`${aiApiUrl}/sessions/${encodeURIComponent(sessionId)}/turn/stream`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -6005,6 +6016,7 @@
                 transcript,
                 turn_id: turnId || undefined,
                 include_audio: false,
+                quick_checkout: quickCheckout,
             }),
             signal,
         });
@@ -7403,6 +7415,14 @@
             queuedAt: Date.now(),
         };
 
+        if (isQuickCheckoutSource) {
+            console.info('[quick-checkout] queued confirm turn', {
+                turnId,
+                transcript: finalText,
+                queueSize: pendingUserTurns.length + 1,
+            });
+        }
+
         if (isManualSource) {
             pendingUserTurns.push(queuedTurn);
         } else {
@@ -7694,7 +7714,7 @@
                                 streamedAudioChunks += 1;
                                 streamPlayer.appendChunk(audioBytes);
                             }
-                        }, turnAbortController.signal);
+                        }, turnAbortController.signal, { quickCheckout: isQuickCheckoutTurn });
                         if (streamChunkErrorMessage) {
                             throw new Error(
                                 `stream chunk error${streamChunkErrorCode ? ` (${streamChunkErrorCode})` : ''}: ${streamChunkErrorMessage}`,
@@ -7711,6 +7731,7 @@
                             userText,
                             turnId,
                             turnAbortController.signal,
+                            { quickCheckout: isQuickCheckoutTurn },
                         );
                         ensureNotStale();
                         replyText = String(replyPayload?.reply_text || '').trim();
