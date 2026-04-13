@@ -1594,6 +1594,41 @@
             font-size: 0.8rem;
             color: #475569;
         }
+        .order-status-actions {
+            display: flex;
+            justify-content: flex-end;
+            margin-top: -2px;
+        }
+        .order-status-close-btn,
+        .order-popup-reopen-btn {
+            border-radius: 12px;
+            border: 1px solid rgba(120, 162, 188, 0.34);
+            background: rgba(255, 255, 255, 0.92);
+            color: #25526a;
+            font-size: 0.84rem;
+            font-weight: 800;
+            padding: 8px 14px;
+            cursor: pointer;
+            transition: all var(--ui-fast) ease;
+            box-shadow: 0 10px 20px rgba(37, 82, 106, 0.12);
+        }
+        .order-status-close-btn:hover,
+        .order-popup-reopen-btn:hover {
+            background: rgba(226, 240, 255, 0.94);
+            border-color: rgba(96, 165, 250, 0.46);
+            transform: translateY(-1px);
+        }
+        .order-popup-reopen-btn {
+            position: fixed;
+            right: 18px;
+            bottom: 22px;
+            z-index: 162;
+            pointer-events: auto;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.96), rgba(235, 248, 255, 0.94));
+        }
+        .order-popup-reopen-btn[hidden] {
+            display: none !important;
+        }
         .order-popup-lines {
             display: grid;
             gap: 6px;
@@ -3250,10 +3285,13 @@
 </article>
 </section>
 <section class="order-status-hud" id="order-status-hud" hidden aria-label="Order status popup">
-<div class="order-status-backdrop"></div>
+<div class="order-status-backdrop" id="order-status-backdrop"></div>
 <article class="order-status-card" id="order-popup-card">
 <p class="order-status-title">Đơn hàng đã tạo</p>
 <p class="order-status-sub" id="order-popup-order-id">Mã đơn: --</p>
+<div class="order-status-actions">
+<button class="order-status-close-btn" id="order-popup-close-btn" type="button">Tắt</button>
+</div>
 <div class="order-popup-lines" id="order-popup-lines"></div>
 <p class="order-popup-total" id="order-popup-total">Tổng: 0 đ</p>
 <div class="order-payment-success" id="order-payment-success" hidden>
@@ -3283,6 +3321,7 @@
 <p class="rating-popup-countdown" id="rating-popup-countdown">Tự động gửi sau 6s</p>
 </article>
 </section>
+<button class="order-popup-reopen-btn" id="order-popup-reopen-btn" type="button" hidden>Mở lại hoá đơn</button>
 <p class="voice-order-hint" id="voice-order-hint" hidden>Nói xác nhận đơn hàng để đặt</p>
 <!-- Top Layers -->
 <div class="fixed top-0 left-1/2 z-[60] pointer-events-none -translate-x-1/2" id="disco-ball">
@@ -3401,10 +3440,13 @@
     const orderReviewCancelBtn = document.getElementById('order-review-cancel-btn');
     const voiceOrderHint = document.getElementById('voice-order-hint');
     const orderStatusHud = document.getElementById('order-status-hud');
+    const orderStatusBackdrop = document.getElementById('order-status-backdrop');
     const orderPopupCard = document.getElementById('order-popup-card');
     const orderPopupOrderId = document.getElementById('order-popup-order-id');
     const orderPopupLines = document.getElementById('order-popup-lines');
     const orderPopupTotal = document.getElementById('order-popup-total');
+    const orderPopupCloseBtn = document.getElementById('order-popup-close-btn');
+    const orderPopupReopenBtn = document.getElementById('order-popup-reopen-btn');
     const orderPaymentSuccess = document.getElementById('order-payment-success');
     const orderPopupQr = document.getElementById('order-popup-qr');
     const orderPopupQrLabel = document.getElementById('order-popup-qr-label');
@@ -3453,7 +3495,7 @@
     const AUTO_GREETING_SUPPRESS_AFTER_USER_MS = 12000;
     const AUTO_GREETING_RETRY_BASE_MS = 900;
     const AUTO_GREETING_MAX_RETRIES = 5;
-    const ORDER_POPUP_COUNTDOWN_SEC = 6;
+    const ORDER_POPUP_COUNTDOWN_SEC = 180;
     const ORDER_RATING_COUNTDOWN_SEC = 6;
     const PRESENCE_CHECK_INTERVAL_MS = 700;
     const PRESENCE_MOTION_THRESHOLD = 16;
@@ -3543,6 +3585,7 @@
     let kioskHeartbeatTimer = null;
     let orderPopupTimer = null;
     let ratingPopupTimer = null;
+    let orderPopupCanReopen = false;
     let quickAddToastTimer = null;
     let manualAddFlushTimer = null;
     let cartCheckoutCooldownTimer = null;
@@ -5015,6 +5058,31 @@
         }
     }
 
+    function updateOrderPopupReopenButton() {
+        if (!orderPopupReopenBtn) return;
+        orderPopupReopenBtn.hidden = !orderPopupCanReopen;
+    }
+
+    function hideOrderPopupTemporarily() {
+        if (!orderStatusHud || !orderPopupCard || orderPopupCard.hidden) return;
+        orderStatusHud.hidden = true;
+        orderPopupCanReopen = true;
+        updateOrderPopupReopenButton();
+    }
+
+    function reopenOrderPopupTemporarily() {
+        if (!orderStatusHud || !orderPopupCard || !orderPopupCanReopen) return;
+        orderStatusHud.hidden = false;
+        orderPopupCard.hidden = false;
+        orderPopupCanReopen = false;
+        updateOrderPopupReopenButton();
+        if (ratingPopupCard) {
+            ratingPopupCard.hidden = true;
+        }
+        orderPopupCanReopen = false;
+        updateOrderPopupReopenButton();
+    }
+
     function hideOrderFlow() {
         clearOrderFlowTimers();
         if (orderStatusHud) {
@@ -5035,6 +5103,8 @@
         }
         orderReviewOpen = false;
         orderReviewSnapshot = null;
+        orderPopupCanReopen = false;
+        updateOrderPopupReopenButton();
         refreshCartCheckoutButtonState();
     }
 
@@ -5610,7 +5680,7 @@
         }
 
         await new Promise((resolve) => {
-            const maxSeconds = isPaymentMode ? 90 : ORDER_POPUP_COUNTDOWN_SEC;
+            const maxSeconds = ORDER_POPUP_COUNTDOWN_SEC;
             let remaining = maxSeconds;
             let checkInFlight = false;
             let resolved = false;
@@ -5690,6 +5760,9 @@
     async function showRatingPopupStep(orderData, flowToken) {
         if (!orderStatusHud || !ratingPopupCard || !ratingStars) return;
 
+        orderStatusHud.hidden = false;
+        orderPopupCanReopen = false;
+        updateOrderPopupReopenButton();
         ratingPopupCard.hidden = false;
         let selectedRating = 5;
         if (ratingCommentInput) {
@@ -9908,6 +9981,21 @@
     void ensureMenuLoaded();
     bindSizePickerEvents();
     bindOrderReviewEvents();
+    if (orderPopupCloseBtn) {
+        orderPopupCloseBtn.addEventListener('click', () => {
+            hideOrderPopupTemporarily();
+        });
+    }
+    if (orderPopupReopenBtn) {
+        orderPopupReopenBtn.addEventListener('click', () => {
+            reopenOrderPopupTemporarily();
+        });
+    }
+    if (orderStatusBackdrop) {
+        orderStatusBackdrop.addEventListener('click', () => {
+            hideOrderPopupTemporarily();
+        });
+    }
     if (cartMiniCheckoutBtn) {
         cartMiniCheckoutBtn.addEventListener('click', () => {
             triggerCartCheckout();
