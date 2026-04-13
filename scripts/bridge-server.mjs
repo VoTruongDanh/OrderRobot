@@ -20,7 +20,10 @@ const BRIDGE_HIDE_WINDOW = isTruthyEnv(process.env.BRIDGE_HIDE_WINDOW, BRIDGE_HI
 const BRIDGE_HIDDEN_WINDOW_X = Number(process.env.BRIDGE_HIDDEN_WINDOW_X || -50000);
 const BRIDGE_HIDDEN_WINDOW_Y = Number(process.env.BRIDGE_HIDDEN_WINDOW_Y || -50000);
 const CHAT_URL = 'https://chatgpt.com/?temporary-chat=true';
-const PROFILE_DIR = path.resolve(process.cwd(), '.bridge-chrome-profile');
+const PROFILE_DIR = path.resolve(
+  process.env.BRIDGE_PROFILE_DIR || process.cwd(),
+  process.env.BRIDGE_PROFILE_DIR ? '' : '.bridge-chrome-profile',
+);
 
 let browser = null;
 let chatPage = null;

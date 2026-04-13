@@ -1069,6 +1069,11 @@
             justify-content: space-between;
             gap: 8px;
         }
+        .voice-mini-actions {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
         .voice-mini-title {
             margin: 0;
             font-size: 0.72rem;
@@ -1077,7 +1082,8 @@
             text-transform: uppercase;
             color: #0f172a;
         }
-        .voice-mini-toggle {
+        .voice-mini-toggle,
+        .voice-mini-refresh {
             border: 1px solid rgba(148, 163, 184, 0.34);
             background: white;
             border-radius: 999px;
@@ -1092,6 +1098,9 @@
             background: #0f766e;
             border-color: transparent;
             color: #ecfeff;
+        }
+        .voice-mini-refresh {
+            min-width: 46px;
         }
         .voice-mini-status {
             margin: 0;
@@ -3227,7 +3236,10 @@
 <section class="voice-mini-panel" id="voice-mini-panel" aria-label="Voice va chat panel">
 <div class="voice-mini-head">
 <p class="voice-mini-title">Hội thoại voice</p>
+<div class="voice-mini-actions">
+<button class="voice-mini-refresh" id="voice-mini-refresh" type="button" title="Làm mới trạng thái kiosk">F5</button>
 <button class="voice-mini-toggle" id="voice-mini-toggle" type="button">Bật nghe</button>
+</div>
 </div>
 <p class="voice-mini-status" id="voice-mini-status">Đang sẵn sàng STT/TTS...</p>
 <div class="chat-mini-list" id="chat-mini-list">
@@ -3416,6 +3428,7 @@
     const cameraMiniPanel = document.getElementById('camera-mini-panel');
     const cameraMiniVideo = document.getElementById('camera-mini-video');
     const voiceMiniToggle = document.getElementById('voice-mini-toggle');
+    const voiceMiniRefresh = document.getElementById('voice-mini-refresh');
     const voiceMiniStatus = document.getElementById('voice-mini-status');
     const chatMiniList = document.getElementById('chat-mini-list');
     const cartMiniList = document.getElementById('cart-mini-list');
@@ -9959,6 +9972,13 @@
             startPresenceGreetingDetection();
         } catch {}
     }
+
+    function refreshKioskStatus() {
+        setVoiceStatus('Đang làm mới trạng thái...');
+        window.setTimeout(() => {
+            window.location.reload();
+        }, 180);
+    }
     
     // Initial reset
     refreshVoiceRuntimeConfigFromAdmin();
@@ -9999,6 +10019,11 @@
     if (cartMiniCheckoutBtn) {
         cartMiniCheckoutBtn.addEventListener('click', () => {
             triggerCartCheckout();
+        });
+    }
+    if (voiceMiniRefresh) {
+        voiceMiniRefresh.addEventListener('click', () => {
+            refreshKioskStatus();
         });
     }
     if (isAdminPreviewMode) {

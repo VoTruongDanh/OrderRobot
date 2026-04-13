@@ -7,7 +7,14 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 
-ROOT_DIR = Path(__file__).resolve().parents[3]
+def _resolve_root_dir() -> Path:
+    override = os.getenv("ORDERROBOT_ROOT_DIR", "").strip()
+    if override:
+        return Path(override).expanduser().resolve()
+    return Path(__file__).resolve().parents[3]
+
+
+ROOT_DIR = _resolve_root_dir()
 load_dotenv(ROOT_DIR / ".env")
 DEFAULT_VIENEU_CPU_MODEL = "pnnbao-ump/VieNeu-TTS-v2-Turbo-GGUF"
 DEFAULT_VIENEU_CPU_CODEC_REPO = ""
