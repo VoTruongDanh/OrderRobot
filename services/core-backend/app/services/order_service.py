@@ -136,13 +136,18 @@ class OrderService:
         return enriched_items
 
     def create_order(self, payload: CreateOrderRequest) -> OrderRecord:
+        # When remote_menu_strict_enabled, ALWAYS use remote API for menu validation
+        use_remote_menu = self.remote_menu_strict_enabled
         remote_live_mode = self.remote_pos_enabled and self.remote_menu_strict_enabled
+        
         logger.info(
-            "create_order: remote_live_mode=%s (remote_pos_enabled=%s, remote_menu_strict_enabled=%s)",
+            "create_order: use_remote_menu=%s remote_live_mode=%s (remote_pos_enabled=%s, remote_menu_strict_enabled=%s)",
+            use_remote_menu,
             remote_live_mode,
             self.remote_pos_enabled,
             self.remote_menu_strict_enabled,
         )
+        
         quantities = Counter[str]()
         size_name_by_item: dict[str, str] = {}
         size_id_by_item: dict[str, int] = {}
@@ -153,10 +158,12 @@ class OrderService:
             if item.size_id is not None and item.item_id not in size_id_by_item:
                 size_id_by_item[item.item_id] = int(item.size_id)
 
-        if remote_live_mode:
+        # Use remote API if remote_menu_strict_enabled, regardless of remote_pos_enabled
+        if use_remote_menu:
             menu_items = self._get_remote_menu_items_by_ids(list(quantities.keys()))
         else:
             menu_items = self.menu_repository.get_items_by_ids(list(quantities.keys()))
+            
         missing_items = [item_id for item_id in quantities if item_id not in menu_items]
         if missing_items:
             missing_text = ", ".join(missing_items)
