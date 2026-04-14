@@ -24,12 +24,12 @@ $aiPort = if ($Port) {
 $fallbackAiPort = '18012'
 $allowReuseExisting = $ReuseExisting.IsPresent -or ($env:AI_DEV_REUSE_EXISTING -eq '1')
 
-# Force bridge-only defaults for local dev unless user explicitly overrides.
+# Force lite defaults for local dev unless user explicitly overrides.
 if (-not $env:LLM_MODE) {
-  $env:LLM_MODE = 'bridge_only'
+  $env:LLM_MODE = 'disabled'
 }
-if (-not $env:BRIDGE_BASE_URL) {
-  $env:BRIDGE_BASE_URL = 'http://127.0.0.1:1122'
+if ($env:BRIDGE_BASE_URL) {
+  Remove-Item Env:BRIDGE_BASE_URL -ErrorAction SilentlyContinue
 }
 # Prefer VieNeu realtime TTS by default for local kiosk voice.
 if (-not $env:TTS_ENGINE) {
@@ -153,12 +153,12 @@ foreach ($candidatePort in $candidatePorts) {
 
   Write-Host "[ai] detected existing listener on $candidateUrl (pid=$($listener.ProcessId), process=$($listener.ProcessName))"
   $health = Get-AiHealth -BaseUrl $candidateUrl
-  $compatibleBridge = (Test-AiRuntimeCompatible -Health $health) -and ($health.llm_mode -eq 'bridge_only')
-  if ($compatibleBridge -and $allowReuseExisting) {
-    Write-Host "[ai] existing ai-backend is compatible (realtime + bridge_only). Reusing current instance."
+  $compatibleLite = (Test-AiRuntimeCompatible -Health $health) -and ($health.llm_mode -eq 'disabled')
+  if ($compatibleLite -and $allowReuseExisting) {
+    Write-Host "[ai] existing ai-backend is compatible (realtime + lite). Reusing current instance."
     exit 0
   }
-  if ($compatibleBridge -and -not $allowReuseExisting) {
+  if ($compatibleLite -and -not $allowReuseExisting) {
     Write-Host "[ai] existing ai-backend is compatible but reuse is disabled. restarting to load latest code..."
   }
 
@@ -210,7 +210,6 @@ if ($aiPort -ne [string]$Port -and $Port) {
 
 Write-Host "[ai] starting ai-backend on http://127.0.0.1:$aiPort"
 Write-Host "[ai] LLM_MODE=$env:LLM_MODE"
-Write-Host "[ai] BRIDGE_BASE_URL=$env:BRIDGE_BASE_URL"
 
 $previousErrorActionPreference = $ErrorActionPreference
 $ErrorActionPreference = 'Continue'

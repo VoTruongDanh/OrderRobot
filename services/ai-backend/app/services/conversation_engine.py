@@ -2084,7 +2084,13 @@ class ConversationEngine:
                 force_local=is_local_only_turn,
             )
 
-            if self.provider_client is not None and should_use_bridge:
+            if should_use_bridge and self.provider_client is None:
+                reply_text = render_lite_bridge_required_reply(prompt_payload)
+                voice_style = self.settings.voice_style
+                reply_source = "fallback"
+                route_reason = "bridge_required_lite_reply"
+
+            elif self.provider_client is not None and should_use_bridge:
                 try:
                     bridge_started_at = time.perf_counter()
                     scene_budget = BRIDGE_SCENE_BUDGET_SECONDS.get(decision.scene, 3.5)
@@ -2541,6 +2547,12 @@ _FALLBACK_REPLIES = [
     "Xin lỗi, mình nghe không rõ. Bạn nói lại tên món hoặc hỏi mình gợi ý nhé.",
 ]
 
+_LITE_BRIDGE_REQUIRED_REPLIES = [
+    "Mình chỉ hiểu được yêu cầu gọi món. Bạn nói lại tên sản phẩm bạn muốn đặt giúp mình nhé.",
+    "Mình chỉ hỗ trợ đặt món trong menu. Bạn nói lại món bạn muốn đặt giúp mình nhé.",
+    "Mình chưa xử lý được yêu cầu này. Bạn nói lại đúng tên món hoặc sản phẩm bạn muốn đặt nhé.",
+]
+
 _SOFT_REDIRECT_PATTERNS = {
     "sing": [re.compile(r"\bhat\b"), re.compile(r"\bbai hat\b"), re.compile(r"\bhat cho\b")],
     "poem": [re.compile(r"\btho\b"), re.compile(r"\blam tho\b")],
@@ -2768,6 +2780,10 @@ def render_fallback_reply(payload: dict[str, object]) -> str:
             return repair_mojibake_text(f"{seed} Giỏ hàng hiện có {details}.")
         return repair_mojibake_text(seed)
     return repair_mojibake_text(seed)
+
+
+def render_lite_bridge_required_reply(_: dict[str, object]) -> str:
+    return repair_mojibake_text(random.choice(_LITE_BRIDGE_REQUIRED_REPLIES))
 
 
 def _render_soft_redirect(user_text: str) -> str | None:

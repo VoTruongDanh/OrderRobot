@@ -6,7 +6,7 @@ from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
@@ -278,6 +278,64 @@ def _fetch_price_from_size_api(
         return _pick_size_price(content, size_name=size_name)
     except Exception:
         return None
+
+
+def _extract_http_error_detail(exc: HTTPError, fallback: str) -> str:
+    detail = fallback
+    try:
+        raw = exc.read().decode("utf-8", errors="replace")
+    except Exception:
+        raw = ""
+    if not raw.strip():
+        return detail
+    try:
+        payload = json.loads(raw)
+        if isinstance(payload, dict):
+            return str(payload.get("message") or payload.get("error") or payload.get("detail") or detail)
+        return detail
+    except json.JSONDecodeError:
+        return raw.strip() or detail
+
+
+@app.post("/auth/login/proxy")
+def proxy_auth_login(payload: dict[str, str] = Body(...)) -> object:
+    username = str(payload.get("username") or "").strip()
+    password = str(payload.get("password") or "")
+    if not username or not password:
+        raise HTTPException(status_code=400, detail="username and password are required")
+
+    target_url = str(settings.pos_auth_login_url or "").strip()
+    if not target_url:
+        raise HTTPException(status_code=500, detail="POS_AUTH_LOGIN_URL is not configured")
+
+    body = json.dumps({"username": username, "password": password}).encode("utf-8")
+    request = Request(
+        target_url,
+        data=body,
+        method="POST",
+        headers={
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "User-Agent": "OrderRobot-Core/1.0",
+        },
+    )
+
+    try:
+        with urlopen(request, timeout=12) as response:
+            raw = response.read().decode("utf-8", errors="replace")
+        if not raw.strip():
+            return {}
+        return json.loads(raw)
+    except HTTPError as exc:
+        detail = _extract_http_error_detail(exc, f"Remote auth HTTP {exc.code}")
+        status = exc.code if 400 <= exc.code <= 599 else 502
+        raise HTTPException(status_code=status, detail=detail) from exc
+    except URLError as exc:
+        raise HTTPException(status_code=502, detail=f"Remote auth unreachable: {exc.reason}") from exc
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=502, detail="Remote auth returned invalid JSON") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Remote auth request failed: {exc}") from exc
 
 
 @app.get("/menu/proxy", response_model=list[MenuItem])

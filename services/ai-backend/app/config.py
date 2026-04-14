@@ -87,7 +87,7 @@ class Settings:
 
 def get_settings() -> Settings:
     default_cpu_threads = max(1, min(os.cpu_count() or 4, 8))
-    llm_mode = os.getenv("LLM_MODE", "bridge_only").strip().lower() or "bridge_only"
+    llm_mode = os.getenv("LLM_MODE", "disabled").strip().lower() or "disabled"
     raw_bridge_base_url = os.getenv("BRIDGE_BASE_URL", "").strip()
     bridge_base_url = raw_bridge_base_url or "http://127.0.0.1:1122"
     if llm_mode == "bridge_only":

@@ -19,6 +19,7 @@ from app.services.conversation_engine import (
     ensure_frontend_safe_reply,
     normalize_text,
     render_fallback_reply,
+    render_lite_bridge_required_reply,
 )
 from app.services.provider_client import append_stream_content, split_completed_sentences
 
@@ -158,6 +159,13 @@ def test_get_settings_migrates_legacy_bridge_url_in_bridge_only(monkeypatch: pyt
     monkeypatch.setenv("BRIDGE_BASE_URL", "http://127.0.0.1:1111")
     settings = get_settings()
     assert settings.bridge_base_url == "http://127.0.0.1:1122"
+
+
+def test_get_settings_defaults_to_lite_mode_when_llm_mode_not_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("LLM_MODE", raising=False)
+    settings = get_settings()
+    assert settings.llm_mode == "disabled"
+    assert settings.provider_enabled is False
 
 
 def test_get_settings_keeps_custom_bridge_url(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1335,4 +1343,11 @@ def test_greeting_reply_can_softly_handle_heart_to_heart_chat() -> None:
         keyword in normalized_reply
         for keyword in ("tam trang", "noi chuyen", "goi y mon", "hop gu")
     )
+
+
+def test_render_lite_bridge_required_reply_redirects_to_ordering_product() -> None:
+    reply = render_lite_bridge_required_reply({"scene": "fallback", "user_text": "hat cho toi mot bai"})
+    normalized_reply = normalize_text(reply)
+    assert "chi hieu duoc yeu cau goi mon" in normalized_reply or "chi ho tro dat mon" in normalized_reply
+    assert "san pham" in normalized_reply or "mon" in normalized_reply
 

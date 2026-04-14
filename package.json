@@ -2,7 +2,7 @@
   "name": "order-robot-demo",
   "private": true,
   "version": "1.0.0",
-  "description": "OrderRobot desktop kiosk with AI backend, core backend, and hidden browser bridge.",
+  "description": "OrderRobot desktop kiosk with AI backend, core backend, and lite local conversation flow.",
   "author": "CNX",
   "main": "desktop/main.mjs",
   "scripts": {
@@ -11,16 +11,12 @@
     "install:all": "npm run install:ui && npm run install:python",
     "dev:ui": "npm --prefix apps/kiosk-ui run dev:with-models",
     "dev:core": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-core.ps1",
-    "dev:ai": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-ai.ps1",
-    "dev:ai:bridge": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-ai.ps1 -ForceRestart",
-    "dev:ai:lite": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-ai-lite.ps1",
-    "dev:bridge": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-bridge.ps1",
-    "dev:bridge:dev": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-bridge.ps1 -ForceRestart",
-    "dev:bridge:show": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"$env:BRIDGE_HIDE_WINDOW='false'; $env:BRIDGE_LAUNCH_OFFSCREEN='false'; $env:BRIDGE_LAUNCH_MINIMIZED='false'; & ./scripts/dev-bridge.ps1 -ForceRestart\"",
+    "dev:ai": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-ai-lite.ps1",
+    "dev:ai:lite": "npm run dev:ai",
     "debug:chrome-mcp": "npx chrome-devtools-mcp@latest",
-    "dev": "npm run dev:full",
-    "dev:full": "concurrently --kill-others-on-fail \"npm:dev:bridge\" \"npm:dev:core\" \"npm:dev:ai\" \"npm:dev:ui\"",
-    "dev:show": "concurrently --kill-others-on-fail \"npm:dev:bridge:show\" \"npm:dev:core\" \"npm:dev:ai:bridge\" \"npm:dev:ui\"",
+    "dev": "npm run dev:lite",
+    "dev:full": "concurrently --kill-others-on-fail \"npm:dev:core\" \"npm:dev:ai:lite\" \"npm:dev:ui\"",
+    "dev:show": "concurrently --kill-others-on-fail \"npm:dev:core\" \"npm:dev:ai:lite\" \"npm:dev:ui\"",
     "dev:lite": "concurrently --kill-others-on-fail \"npm:dev:core\" \"npm:dev:ai:lite\" \"npm:dev:ui\"",
     "test:core": "powershell -NoProfile -Command \"Set-Location 'services/core-backend'; python -m pytest tests\"",
     "test:ai": "powershell -NoProfile -Command \"Set-Location 'services/ai-backend'; python -m pytest tests\"",
@@ -40,9 +36,6 @@
     "electron-builder": "^25.1.8"
   },
   "dependencies": {
-    "puppeteer": "^24.40.0",
-    "puppeteer-extra": "^3.3.6",
-    "puppeteer-extra-plugin-stealth": "^2.11.2",
     "uuid": "^13.0.0"
   }
 }

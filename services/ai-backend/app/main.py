@@ -39,6 +39,7 @@ from app.models import (
 )
 from app.services.conversation_engine import ConversationEngine
 from app.services.conversation_engine import render_fallback_reply
+from app.services.conversation_engine import render_lite_bridge_required_reply
 from app.services.core_backend_client import CoreBackendClient
 from app.services.provider_client import ProviderError, split_sentences
 from app.services.speech_service import SpeechNotHeardError, SpeechService
@@ -261,7 +262,7 @@ async def chat_stream(session_id: str, text: str) -> StreamingResponse:
             return
 
         if provider_client is None:
-            fallback_reply = render_fallback_reply(
+            fallback_reply = render_lite_bridge_required_reply(
                 {
                     "scene": "fallback",
                     "seed": "",
@@ -334,7 +335,7 @@ async def debug_bridge_chat(payload: BridgeDebugChatRequest) -> BridgeDebugChatR
 
     provider_client = conversation_engine.provider_client
     if provider_client is None:
-        fallback_text = render_fallback_reply(prompt_payload)
+        fallback_text = render_lite_bridge_required_reply(prompt_payload)
         latency_ms = int((time.perf_counter() - started_at) * 1000)
         return BridgeDebugChatResponse(
             reply_text=fallback_text,
