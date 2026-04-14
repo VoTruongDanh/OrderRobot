@@ -6137,11 +6137,19 @@
                 const cartItem = cartState[cartIndex];
                 const itemId = String(cartItem?.item_id || '').trim();
                 if (!itemId) return;
-                const fallbackName = String(cartItem?.base_name || cartItem?.name || 'Món').trim() || 'Món';
-                const sizeLabel = String(cartItem?.size_label || '').trim();
-                const spokenName = sizeLabel ? `${fallbackName} size ${sizeLabel}` : fallbackName;
-                const text = `bỏ 1 ${spokenName}`;
-                enqueueUserTurn(text, { source: 'manual' });
+                
+                // Trừ trực tiếp trong local cart (không gọi backend)
+                const currentQty = Number(cartItem?.quantity || 0);
+                if (currentQty <= 1) {
+                    // Xóa món khỏi cart nếu số lượng = 1
+                    cartState.splice(cartIndex, 1);
+                } else {
+                    // Giảm số lượng đi 1
+                    cartItem.quantity = currentQty - 1;
+                }
+                
+                // Cập nhật UI ngay lập tức
+                updateMiniCart(cartState);
             });
         });
         

@@ -465,6 +465,8 @@ class ConversationEngine:
         menu = await self._get_menu()
         normalized_raw = normalize_text(transcript)
         normalized = _apply_stt_aliases(normalized_raw)
+        
+        logger.info(f"[HANDLE_TURN] session={session_id} transcript='{transcript}' normalized='{normalized}' cart={dict(state.cart)}")
 
         if (state.cart or state.pending_size_item_id) and contains_any(normalized, RESET_KEYWORDS):
             state.cart.clear()
@@ -1193,9 +1195,12 @@ class ConversationEngine:
 
     def _remove_from_cart(self, state: SessionState, normalized_transcript: str, menu: list[MenuItem]) -> str | None:
         menu_map = {item.item_id: item for item in menu}
+        logger.info(f"[REMOVE_DEBUG] normalized_transcript='{normalized_transcript}' cart_before={dict(state.cart)}")
         for item, _conf in self._match_explicit_items(normalized_transcript, menu):
+            logger.info(f"[REMOVE_DEBUG] matched item={item.name} (id={item.item_id}) in_cart={item.item_id in state.cart}")
             if item.item_id in state.cart:
                 quantity_to_remove = extract_quantity(normalized_transcript, item_name=normalize_text(item.name))
+                logger.info(f"[REMOVE_DEBUG] quantity_to_remove={quantity_to_remove} current_qty={state.cart[item.item_id]}")
                 remaining = state.cart[item.item_id] - quantity_to_remove
                 if remaining > 0:
                     state.cart[item.item_id] = remaining
@@ -1205,16 +1210,19 @@ class ConversationEngine:
                     state.cart_size_by_item.pop(item.item_id, None)
                     state.cart_size_id_by_item.pop(item.item_id, None)
                 state.awaiting_confirmation = False
+                logger.info(f"[REMOVE_DEBUG] cart_after={dict(state.cart)} removed={item.name}")
                 if quantity_to_remove > 1:
                     return f"{quantity_to_remove} {item.name}"
                 return item.name
 
         if state.cart:
             if not _is_generic_remove_request_text(normalized_transcript):
+                logger.info(f"[REMOVE_DEBUG] not generic remove, no match found")
                 return None
             last_item_id = next(reversed(state.cart))
             item_name = menu_map.get(last_item_id).name if last_item_id in menu_map else "món vừa chọn"
             quantity_to_remove = extract_quantity(normalized_transcript)
+            logger.info(f"[REMOVE_DEBUG] generic remove last_item={item_name} qty_to_remove={quantity_to_remove} current_qty={state.cart[last_item_id]}")
             remaining = state.cart[last_item_id] - quantity_to_remove
             if remaining > 0:
                 state.cart[last_item_id] = remaining
@@ -1224,9 +1232,11 @@ class ConversationEngine:
                 state.cart_size_by_item.pop(last_item_id, None)
                 state.cart_size_id_by_item.pop(last_item_id, None)
             state.awaiting_confirmation = False
+            logger.info(f"[REMOVE_DEBUG] cart_after={dict(state.cart)}")
             if quantity_to_remove > 1:
                 return f"{quantity_to_remove} {item_name}"
             return item_name
+        logger.info(f"[REMOVE_DEBUG] cart is empty, nothing to remove")
         return None
 
     def _prune_non_orderable_cart_items(self, state: SessionState, menu: list[MenuItem]) -> list[str]:
