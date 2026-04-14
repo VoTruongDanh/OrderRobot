@@ -463,8 +463,32 @@ def upsert_menu_item(item_id: str, payload: UpsertMenuItemRequest) -> MenuItem:
 @app.post("/orders", response_model=OrderRecord)
 def create_order(payload: CreateOrderRequest) -> OrderRecord:
     try:
+        logger.info(
+            "Creating order",
+            extra={
+                "session_id": payload.session_id,
+                "items": [
+                    {
+                        "item_id": item.item_id,
+                        "quantity": item.quantity,
+                        "size_name": item.size_name,
+                        "size_id": item.size_id,
+                    }
+                    for item in payload.items
+                ],
+            },
+        )
         return order_service.create_order(payload)
     except ValueError as exc:
+        logger.error(
+            "Order creation failed: %s",
+            str(exc),
+            extra={
+                "session_id": payload.session_id,
+                "item_count": len(payload.items),
+                "error": str(exc),
+            },
+        )
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
