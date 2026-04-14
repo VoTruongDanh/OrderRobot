@@ -26,23 +26,30 @@ npm run install:all
 Tạo file `.env` từ `.env.example`:
 
 ```env
+# AI / Backend
+AI_BASE_URL=http://127.0.0.1:11434/v1
+AI_API_KEY=
+AI_MODEL=gpt-4o-mini
+CORE_BACKEND_URL=http://127.0.0.1:8011
+
+# POS
+POS_API_BASE_URL=http://cnxvn.ddns.net:8080/api/v1
+POS_API_TOKEN=
+POS_API_USERNAME=
+POS_API_PASSWORD=
+POS_AUTH_LOGIN_URL=http://cnxvn.ddns.net:8080/api/v1/auth/login
+POS_AUTH_REFRESH_URL=http://cnxvn.ddns.net:8080/api/v1/auth/refresh
+POS_STORE_ID=
+
 # Lite LLM mode (default)
 LLM_MODE=disabled
 
-# Backend URLs
-CORE_BACKEND_URL=http://127.0.0.1:8011
-AI_BACKEND_URL=http://127.0.0.1:8012
-
-# Data paths
-MENU_CSV_PATH=data/menu.csv
-ORDERS_CSV_PATH=data/orders.csv
-
 # Voice settings
 VOICE_LANG=vi-VN
-TTS_ENGINE=vieneu
+TTS_ENGINE=edge
 TTS_STREAM_PLAYBACK_RATE=1.15
-VOICE_LISTEN_MODE=always
-VOICE_ALWAYS_LISTEN=true
+VOICE_LISTEN_MODE=sequential
+VOICE_ALWAYS_LISTEN=false
 
 # Session
 SESSION_TIMEOUT_MINUTES=15
@@ -59,6 +66,8 @@ VITE_AI_API_URL=http://127.0.0.1:8012
 ORDERROBOT_ROOT_DIR=
 POS_AUTH_LOGIN_URL=
 ```
+
+Khuyến nghị: giữ `.env.example` là nguồn chuẩn và chỉ điền giá trị thật trong `.env` khi chạy môi trường local/production.
 
 ## Chạy demo
 
@@ -137,7 +146,7 @@ Schema:
 
 ### Kiosk UI
 - Robot 3D (GLB model) với animation
-- Voice-first UX: luôn lắng nghe và phản hồi bằng giọng nói
+- Voice-first UX: hỗ trợ nghe tuần tự và phản hồi bằng giọng nói
 - Giỏ hàng thông minh: phân biệt size, merge đúng logic
 - Size picker modal: chọn size bằng tap, hiển thị trạng thái hết hàng
 - Mini chat panel: hiển thị lịch sử hội thoại (mặc định 3 tin nhắn gần nhất)
@@ -206,7 +215,7 @@ Schema:
 - Stream responses phải an toàn với invalid Unicode surrogate data
 
 ### TTS/STT
-- TTS engine: VieNeu
+- TTS engine mặc định: Edge (có thể chuyển VieNeu qua biến môi trường)
 - Compatibility: old VieNeu runtime + Turbo model gây slow/noisy → có safe fallback
 - Frontend WS playback phải respect backend `sample_rate`, không assume fixed 24k
 - STT: Faster Whisper local
