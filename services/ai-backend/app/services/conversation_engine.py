@@ -626,21 +626,72 @@ class ConversationEngine:
                         if size_options[0].size_id is not None:
                             state.cart_size_id_by_item[item_id] = int(size_options[0].size_id)
 
-                order = await self.core_client.create_order(
-                    CreateOrderRequest(
-                        session_id=session_id,
-                        customer_text=transcript,
-                        items=[
-                            CreateOrderLineItem(
-                                item_id=item_id,
-                                quantity=quantity,
-                                size_name=state.cart_size_by_item.get(item_id),
-                                size_id=state.cart_size_id_by_item.get(item_id),
-                            )
-                            for item_id, quantity in state.cart.items()
-                        ],
+                # Log cart data before creating order
+                order_items = [
+                    CreateOrderLineItem(
+                        item_id=item_id,
+                        quantity=quantity,
+                        size_name=state.cart_size_by_item.get(item_id),
+                        size_id=state.cart_size_id_by_item.get(item_id),
                     )
+                    for item_id, quantity in state.cart.items()
+                ]
+                logger.info(
+                    "Creating order with cart items",
+                    extra={
+                        "session_id": session_id,
+                        "cart_items": [
+                            {
+                                "item_id": item.item_id,
+                                "quantity": item.quantity,
+                                "size_name": item.size_name,
+                                "size_id": item.size_id,
+                            }
+                            for item in order_items
+                        ],
+                        "quick_checkout": quick_checkout,
+                    },
                 )
+
+                try:
+                    order = await self.core_client.create_order(
+                        CreateOrderRequest(
+                            session_id=session_id,
+                            customer_text=transcript,
+                            items=order_items,
+                        )
+                    )
+                except Exception as create_order_error:
+                    logger.error(
+                        "Failed to create order: %s",
+                        create_order_error,
+                        exc_info=True,
+                        extra={
+                            "session_id": session_id,
+                            "cart_items": list(state.cart.keys()),
+                            "cart_size": len(state.cart),
+                        },
+                    )
+                    error_detail = str(create_order_error)
+                    if "Khong tim thay mon" in error_detail or "not found" in error_detail.lower():
+                        error_msg = "Có món trong giỏ không còn trong menu. Bạn thử lại hoặc chọn món khác nhé."
+                    elif "tam het hang" in error_detail or "unavailable" in error_detail.lower():
+                        error_msg = "Có món trong giỏ hiện đang hết hàng. Bạn chọn món khác giúp mình nhé."
+                    else:
+                        error_msg = "Mình gặp lỗi khi tạo đơn hàng. Bạn thử lại sau nhé."
+                    
+                    # Keep cart intact so user can retry
+                    state.awaiting_confirmation = False
+                    return await self._build_response(
+                        session_id,
+                        Decision(
+                            scene="order_failed",
+                            reply_seed=error_msg,
+                            order_created=False,
+                        ),
+                        menu,
+                    )
+                
                 state.cart.clear()
                 state.cart_unit_price_by_item.clear()
                 state.cart_size_by_item.clear()
