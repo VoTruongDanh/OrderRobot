@@ -1415,7 +1415,7 @@ class ConversationEngine:
         }
 
         backend_root = Path(__file__).resolve().parents[2]
-        log_path = backend_root / "data" / "feedback.jsonl"
+        log_path = backend_root / "services" / "ai-backend" / "data" / "feedback.jsonl"
         log_path.parent.mkdir(parents=True, exist_ok=True)
         with log_path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(feedback_data, ensure_ascii=False) + "\n")
@@ -1660,7 +1660,7 @@ class ConversationEngine:
     @staticmethod
     def _feedback_log_path() -> Path:
         backend_root = Path(__file__).resolve().parents[2]
-        return backend_root / "data" / "feedback.jsonl"
+        return backend_root / "services" / "ai-backend" / "data" / "feedback.jsonl"
 
     @staticmethod
     def _normalize_feedback_review_status(review_status: str | None) -> str:

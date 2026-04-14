@@ -8,7 +8,6 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
 $aiBackendDir = Join-Path $repoRoot 'services\ai-backend'
-$dataDir = Join-Path $repoRoot 'data'
 
 if (-not (Test-Path $aiBackendDir)) {
   throw "AI backend source not found at: $aiBackendDir"
@@ -222,7 +221,6 @@ try {
   & python -m uvicorn app.main:app `
     --reload `
     --reload-dir $aiBackendDir `
-    --reload-dir $dataDir `
     --port $aiPort `
     --app-dir $aiBackendDir
 } finally {

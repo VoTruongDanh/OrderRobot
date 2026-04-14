@@ -2260,6 +2260,32 @@
             font-weight: 700;
         }
 
+        .cart-mini-item-actions {
+            display: flex;
+            gap: 4px;
+            flex-direction: column;
+        }
+
+        .cart-mini-quick-remove {
+            width: 32px;
+            height: 32px;
+            border-radius: 10px;
+            border: 1px solid rgba(239, 68, 68, 0.36);
+            background: linear-gradient(145deg, rgba(254, 242, 242, 0.96), rgba(254, 226, 226, 0.92));
+            color: #dc2626;
+            font-size: 1rem;
+            font-weight: 900;
+            line-height: 1;
+            cursor: pointer;
+            transition: transform var(--ui-fast) ease, box-shadow var(--ui-fast) ease, border-color var(--ui-fast) ease;
+        }
+
+        .cart-mini-quick-remove:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 8px 14px rgba(239, 68, 68, 0.2);
+            border-color: rgba(220, 38, 38, 0.5);
+        }
+
         .cart-mini-quick-add {
             width: 32px;
             height: 32px;
@@ -6081,17 +6107,44 @@
                         <p class="cart-mini-item-size">${safeSizeText}</p>
                         <span class="cart-mini-item-price">${formatCurrencyVnd(lineTotal)}</span>
                     </div>
-                    <button
-                        class="cart-mini-quick-add"
-                        data-cart-index="${index}"
-                        type="button"
-                        aria-label="Thêm nhanh ${safeName} ${safeSizeText}"
-                    >+</button>
+                    <div class="cart-mini-item-actions">
+                        <button
+                            class="cart-mini-quick-remove"
+                            data-cart-index="${index}"
+                            type="button"
+                            aria-label="Bớt ${safeName} ${safeSizeText}"
+                        >-</button>
+                        <button
+                            class="cart-mini-quick-add"
+                            data-cart-index="${index}"
+                            type="button"
+                            aria-label="Thêm nhanh ${safeName} ${safeSizeText}"
+                        >+</button>
+                    </div>
                 </article>
             `;
         }).join('');
         const taxSummary = buildTaxSummary(subtotal);
         cartMiniTotal.innerHTML = `<span>Tổng (VAT ${toSafeText(formatTaxPercentCompact(taxSummary.taxPercent))}%)</span><strong>${toSafeText(formatCurrencyVnd(taxSummary.totalWithTax))}</strong>`;
+        
+        cartMiniList.querySelectorAll('.cart-mini-quick-remove').forEach((button) => {
+            button.addEventListener('click', (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                const rawIndex = button.getAttribute('data-cart-index') || '-1';
+                const cartIndex = Number.parseInt(rawIndex, 10);
+                if (!Number.isFinite(cartIndex) || cartIndex < 0 || cartIndex >= cartState.length) return;
+                const cartItem = cartState[cartIndex];
+                const itemId = String(cartItem?.item_id || '').trim();
+                if (!itemId) return;
+                const fallbackName = String(cartItem?.base_name || cartItem?.name || 'Món').trim() || 'Món';
+                const sizeLabel = String(cartItem?.size_label || '').trim();
+                const spokenName = sizeLabel ? `${fallbackName} size ${sizeLabel}` : fallbackName;
+                const text = `bỏ 1 ${spokenName}`;
+                enqueueUserTurn(text, { source: 'manual' });
+            });
+        });
+        
         cartMiniList.querySelectorAll('.cart-mini-quick-add').forEach((button) => {
             button.addEventListener('click', (event) => {
                 event.preventDefault();

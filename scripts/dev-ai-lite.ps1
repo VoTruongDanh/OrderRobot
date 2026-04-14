@@ -6,7 +6,6 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
 $aiBackendDir = Join-Path $repoRoot 'services\ai-backend'
-$dataDir = Join-Path $repoRoot 'data'
 
 if (-not (Test-Path $aiBackendDir)) {
   throw "AI backend source not found at: $aiBackendDir"

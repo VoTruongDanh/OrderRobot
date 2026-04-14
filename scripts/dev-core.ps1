@@ -6,7 +6,6 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
 $coreBackendDir = Join-Path $repoRoot 'services\core-backend'
-$dataDir = Join-Path $repoRoot 'data'
 
 if (-not (Test-Path $coreBackendDir)) {
   throw "Core backend source not found at: $coreBackendDir"
