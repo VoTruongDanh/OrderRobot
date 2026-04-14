@@ -2,7 +2,7 @@
   "appId": "com.cnx.orderrobot",
   "productName": "OrderRobot",
   "directories": {
-    "output": "dist/desktop/installer"
+    "output": "dist/desktop/installer-new"
   },
   "files": [
     "desktop/**/*",

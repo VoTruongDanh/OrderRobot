@@ -3607,6 +3607,7 @@
     let orderReviewSnapshot = null;
     let activeSizePickerResolver = null;
     let activeOrderFlowToken = 0;
+    let lastOrderReviewConfirmActionAt = 0;
     const handledOrderIds = [];
     const pendingUserTurns = [];
     const manualTurnIds = new Set();
@@ -5314,13 +5315,18 @@
         return false;
     }
 
-    async function fetchOrderSnapshot(orderId) {
+    async function fetchOrderSnapshot(orderId, timeoutMs = 1500) {
         const safeOrderId = String(orderId || '').trim();
         if (!safeOrderId) return null;
+        const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        const timeoutId = controller
+            ? window.setTimeout(() => controller.abort(), Math.max(300, Number(timeoutMs) || 1500))
+            : null;
         try {
             const coreApiBase = resolveCoreApiBaseUrl();
             const response = await fetch(`${coreApiBase}/orders/${encodeURIComponent(safeOrderId)}`, {
                 method: 'GET',
+                signal: controller?.signal,
             });
             if (!response.ok) return null;
             const payload = await response.json();
@@ -5328,6 +5334,10 @@
             return payload;
         } catch {
             return null;
+        } finally {
+            if (timeoutId) {
+                window.clearTimeout(timeoutId);
+            }
         }
     }
 
@@ -5615,7 +5625,12 @@
         }
 
         const orderId = String(orderData.orderId || '--');
-        const snapshot = await fetchOrderSnapshot(orderId);
+        const hasInlinePaymentData = Boolean(
+            String(orderData?.paymentQrImageUrl ?? orderData?.payment_qr_image_url ?? '').trim()
+            || String(orderData?.paymentQrContent ?? orderData?.payment_qr_content ?? '').trim()
+            || Number(orderData?.paymentAmount ?? orderData?.payment_amount ?? 0) > 0,
+        );
+        const snapshot = hasInlinePaymentData ? null : await fetchOrderSnapshot(orderId, 1200);
         const mergedOrder = snapshot ? { ...orderData, ...snapshot } : { ...orderData };
         const items = normalizeOrderItems(mergedOrder.items);
         if (items.length === 0) return;
@@ -5942,6 +5957,16 @@
             refreshCartCheckoutButtonState();
             return;
         }
+        if (cartCheckoutLocked && !isConversationTurnBusy()) {
+            console.warn('[quick-checkout] recovered stale checkout lock before opening review', {
+                sessionId: currentSessionId || '',
+            });
+            cartCheckoutLocked = false;
+            if (cartCheckoutCooldownTimer) {
+                window.clearTimeout(cartCheckoutCooldownTimer);
+                cartCheckoutCooldownTimer = null;
+            }
+        }
         orderReviewSnapshot = {
             createdAt: Date.now(),
             items,
@@ -5956,15 +5981,35 @@
     }
 
     function submitReviewedCheckout() {
+        console.info('[quick-checkout] review confirm pressed', {
+            orderReviewOpen,
+            cartCheckoutLocked,
+            activeProcessingTurnId: activeProcessingTurnId || '',
+            pendingTurns: pendingUserTurns.length,
+            sessionId: currentSessionId || '',
+        });
         const reviewedItems = normalizeOrderItems(orderReviewSnapshot?.items);
         if (reviewedItems.length === 0) {
+            console.warn('[quick-checkout] confirm ignored because review snapshot is empty');
             closeOrderReview();
             setVoiceStatus('Giỏ hàng đang trống. Bạn thêm món trước nhé.');
             return;
         }
         if (cartCheckoutLocked) {
-            setVoiceStatus('Đang gửi yêu cầu đặt hàng...');
-            return;
+            if (!isConversationTurnBusy()) {
+                console.warn('[quick-checkout] recovered stale checkout lock on confirm', {
+                    sessionId: currentSessionId || '',
+                });
+                cartCheckoutLocked = false;
+                if (cartCheckoutCooldownTimer) {
+                    window.clearTimeout(cartCheckoutCooldownTimer);
+                    cartCheckoutCooldownTimer = null;
+                }
+            } else {
+                console.info('[quick-checkout] confirm ignored because checkout is already in progress');
+                setVoiceStatus('Đang gửi yêu cầu đặt hàng...');
+                return;
+            }
         }
         cartCheckoutLocked = true;
         if (cartCheckoutCooldownTimer) {
@@ -5984,7 +6029,22 @@
             sessionId: currentSessionId || '',
         });
         setVoiceStatus('Đang gửi yêu cầu đặt hàng...');
-        enqueueUserTurn('xác nhận đặt hàng ngay', { source: 'quick-checkout' });
+        enqueueUserTurn('xác nhận đặt hàng ngay', {
+            source: 'quick-checkout',
+            hydrateCartSnapshot: reviewedItems,
+            forceFreshSession: true,
+        });
+    }
+
+    function handleOrderReviewConfirmAction(event) {
+        event?.preventDefault?.();
+        const now = Date.now();
+        if (now - lastOrderReviewConfirmActionAt < 450) {
+            console.info('[quick-checkout] deduped rapid review confirm action');
+            return;
+        }
+        lastOrderReviewConfirmActionAt = now;
+        submitReviewedCheckout();
     }
 
     function refreshCartCheckoutButtonState() {
@@ -6163,6 +6223,67 @@
             throw new Error(`turn failed: HTTP ${response.status}`);
         }
         return response.json();
+    }
+
+    function buildCheckoutHydrationTranscript(item) {
+        const normalizedItem = normalizeOrderItems([item])[0];
+        if (!normalizedItem) return '';
+        const quantity = Math.max(1, Number(normalizedItem.quantity || 1));
+        const baseName = String(normalizedItem.base_name || normalizedItem.name || 'Món').trim() || 'Món';
+        const sizeLabel = String(normalizedItem.size_label || '').trim();
+        const spokenName = sizeLabel ? `${baseName} size ${sizeLabel}` : baseName;
+        return quantity > 1 ? `cho mình ${quantity} ${spokenName}` : `cho mình 1 ${spokenName}`;
+    }
+
+    async function hydrateBackendCartForQuickCheckout(items, signal = undefined, options = {}) {
+        const normalizedItems = normalizeOrderItems(items);
+        if (normalizedItems.length === 0) return;
+        const previousSessionId = currentSessionId || '';
+        const shouldForceFreshSession = options?.forceFreshSession !== false;
+        if (shouldForceFreshSession) {
+            currentSessionId = '';
+        }
+        try {
+            if (!currentSessionId) {
+                await startConversationSession('manual', signal);
+            }
+        } catch (error) {
+            currentSessionId = previousSessionId;
+            throw error;
+        }
+        if (!currentSessionId) {
+            currentSessionId = previousSessionId;
+            throw new Error('Không tạo được session checkout.');
+        }
+        console.info('[quick-checkout] hydrating backend cart from local review snapshot', {
+            previousSessionId,
+            checkoutSessionId: currentSessionId,
+            itemCount: normalizedItems.length,
+        });
+        for (const item of normalizedItems) {
+            const transcript = buildCheckoutHydrationTranscript(item);
+            if (!transcript) continue;
+            const hydrateTurnId = createTurnId();
+            manualTurnIds.add(hydrateTurnId);
+            try {
+                const hydratePayload = await sendConversationTurn(
+                    currentSessionId,
+                    transcript,
+                    hydrateTurnId,
+                    signal,
+                    { quickCheckout: false },
+                );
+                const syncedCart = extractCartItemsFromPayload(hydratePayload);
+                console.info('[quick-checkout] hydrated item into backend cart', {
+                    hydrateTurnId,
+                    transcript,
+                    checkoutSessionId: currentSessionId,
+                    backendCartSize: Array.isArray(syncedCart) ? syncedCart.length : null,
+                });
+            } finally {
+                manualTurnIds.delete(hydrateTurnId);
+            }
+        }
     }
 
     async function streamConversationTurn(sessionId, transcript, turnId = '', onChunk, signal = undefined, options = {}) {
@@ -7573,6 +7694,10 @@
             source,
             queuedAt: Date.now(),
             allowManualCartSync: options?.allowManualCartSync === true,
+            hydrateCartSnapshot: Array.isArray(options?.hydrateCartSnapshot)
+                ? normalizeOrderItems(options.hydrateCartSnapshot)
+                : null,
+            forceFreshSession: options?.forceFreshSession === true,
         };
 
         if (isQuickCheckoutSource) {
@@ -7652,7 +7777,13 @@
                 const allowManualCartSync = queuedTurn.allowManualCartSync === true;
                 if (!turnId || !userText) continue;
                 activeProcessingTurnId = turnId;
-                if (!isTurnStillLatest(turnId)) {
+                const shouldBypassLatestGate = isManualTurn || isQuickCheckoutTurn;
+                if (!shouldBypassLatestGate && !isTurnStillLatest(turnId)) {
+                    console.info('[voice-turn] dropped stale queued turn', {
+                        turnId,
+                        source: turnSource,
+                        latestIssuedTurnId,
+                    });
                     activeProcessingTurnId = '';
                     continue;
                 }
@@ -7777,6 +7908,14 @@
 
                 try {
                     ensureNotStale();
+                    if (isQuickCheckoutTurn && Array.isArray(queuedTurn.hydrateCartSnapshot) && queuedTurn.hydrateCartSnapshot.length > 0) {
+                        await hydrateBackendCartForQuickCheckout(
+                            queuedTurn.hydrateCartSnapshot,
+                            turnAbortController.signal,
+                            { forceFreshSession: queuedTurn.forceFreshSession === true },
+                        );
+                        ensureNotStale();
+                    }
                     if (!currentSessionId) {
                         const sessionPayload = await startConversationSession('manual', turnAbortController.signal);
                         ensureNotStale();
@@ -9332,8 +9471,10 @@
             });
         }
         if (orderReviewConfirmBtn) {
-            orderReviewConfirmBtn.addEventListener('click', () => {
-                submitReviewedCheckout();
+            orderReviewConfirmBtn.addEventListener('click', handleOrderReviewConfirmAction);
+            orderReviewConfirmBtn.addEventListener('pointerup', (event) => {
+                if (event.pointerType === 'mouse') return;
+                handleOrderReviewConfirmAction(event);
             });
         }
         window.addEventListener('keydown', (event) => {
@@ -9341,6 +9482,11 @@
             if (!orderReviewHud || orderReviewHud.hidden) return;
             event.preventDefault();
             closeOrderReview();
+        });
+        window.addEventListener('keydown', (event) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            if (!orderReviewHud || orderReviewHud.hidden) return;
+            handleOrderReviewConfirmAction(event);
         });
     }
 

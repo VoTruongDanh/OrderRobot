@@ -460,20 +460,24 @@ function createMainWindow() {
   mainWindow = new BrowserWindow({
     width: 1440,
     height: 960,
-    show: true,
+    show: false, // Start hidden, will show manually
     autoHideMenuBar: true,
     backgroundColor: '#edf7ff',
     icon: fs.existsSync(getDesktopIconPath()) ? getDesktopIconPath() : undefined,
     webPreferences: {
       contextIsolation: true,
       sandbox: false,
-      devTools: !app.isPackaged,
+      devTools: true, // Force enable devTools for debugging
       preload: path.join(getAppRoot(), 'desktop', 'preload.cjs'),
     },
   });
 
   mainWindow.setMenuBarVisibility(false);
   mainWindow.removeMenu();
+
+  // Force show immediately after creation
+  mainWindow.show();
+  writeBootstrapLog('info', 'mainWindow-shown-immediately');
 
   mainWindow.once('ready-to-show', () => {
     writeDesktopLog('info', 'main-window-ready-to-show');
@@ -540,7 +544,7 @@ function hardenWindow(targetWindow) {
   });
 
   if (!app.isPackaged) {
-    return;
+    return; // Only harden in production
   }
 
   contents.on('context-menu', (event) => {
@@ -566,7 +570,8 @@ function hardenWindow(targetWindow) {
   });
 
   contents.on('devtools-opened', () => {
-    contents.closeDevTools();
+    // Allow devTools for debugging
+    // contents.closeDevTools();
   });
 }
 
@@ -740,25 +745,45 @@ app.on('before-quit', async () => {
 });
 
 await app.whenReady();
+writeBootstrapLog('info', 'app-whenReady-completed');
 desktopLogFilePath = path.join(app.getPath('userData'), 'logs', 'desktop-runtime.log');
 writeDesktopLog('info', 'app-ready', { userData: app.getPath('userData'), appPath: getAppRoot() });
+writeBootstrapLog('info', 'desktopLogFilePath-set', desktopLogFilePath);
 configurePermissions();
+writeBootstrapLog('info', 'permissions-configured');
 createMainWindow();
+writeBootstrapLog('info', 'mainWindow-created');
 registerDesktopIpc();
+writeBootstrapLog('info', 'ipc-registered');
 
 try {
+  writeBootstrapLog('info', 'starting-runtime-setup');
   runtimeRootDir = path.join(app.getPath('userData'), 'runtime');
   writeDesktopLog('info', 'runtime-root', runtimeRootDir);
+  writeBootstrapLog('info', 'runtime-root-set', runtimeRootDir);
   await seedRuntimeFiles(runtimeRootDir);
+  writeBootstrapLog('info', 'runtime-files-seeded');
   runtimeLoginConfig = resolveLoginConfig(await readRuntimeEnv(runtimeRootDir));
   writeDesktopLog('info', 'runtime-login-config', runtimeLoginConfig);
+  writeBootstrapLog('info', 'login-config-resolved', runtimeLoginConfig);
   await loadLoginScreen();
+  writeBootstrapLog('info', 'login-screen-loaded');
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);
   writeDesktopLog('error', 'desktop-bootstrap-failed', {
     message,
     stack: error instanceof Error ? error.stack || '' : '',
   });
+  writeBootstrapLog('error', 'desktop-bootstrap-failed', {
+    message,
+    stack: error instanceof Error ? error.stack || '' : '',
+  });
+  
+  // Force show window before showing error
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.show();
+  }
+  
   dialog.showErrorBox('OrderRobot khong khoi dong duoc', message);
   await shutdownAll();
   app.quit();
