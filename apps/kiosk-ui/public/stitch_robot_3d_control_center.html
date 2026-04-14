@@ -6010,7 +6010,7 @@
             sessionId: currentSessionId || '',
         });
         setVoiceStatus('Đang gửi yêu cầu đặt hàng...');
-        enqueueUserTurn('xác nhận đặt hàng ngay', { source: 'quick-checkout' });
+        enqueueUserTurn('xác nhận đặt hàng ngay', { source: 'quick-checkout', reviewedItems });
     }
 
     function refreshCartCheckoutButtonState() {
@@ -7626,6 +7626,7 @@
             source,
             queuedAt: Date.now(),
             allowManualCartSync: options?.allowManualCartSync === true,
+            reviewedItems: options?.reviewedItems || null,
         };
 
         if (isQuickCheckoutSource) {
@@ -7712,7 +7713,7 @@
                 suspendVoiceCaptureForSequentialTurn();
                 const cartSnapshotBeforeTurn = normalizeOrderItems(cartState);
 
-                if (!isManualTurn) {
+                if (!isManualTurn && !isQuickCheckoutTurn) {
                     appendChat('user', userText);
                 }
                 setVoiceStatus(
@@ -7770,7 +7771,7 @@
                     fillerTimer = null;
                 };
                 const scheduleFastFiller = () => {
-                    if (isManualTurn) return;
+                    if (isManualTurn || isQuickCheckoutTurn) return;
                     clearFillerTimer();
                     fillerTimer = window.setTimeout(() => {
                         if (turnAbortController.signal.aborted) return;
@@ -7785,7 +7786,7 @@
                     }, FAST_FILLER_DELAY_MS);
                 };
                 const tryStartEarlySpeechFromStream = () => {
-                    if (isManualTurn) return;
+                    if (isManualTurn || isQuickCheckoutTurn) return;
                     if (streamedAudioChunks > 0) return;
                     if (!streamReplyBuffer || turnAbortController.signal.aborted) return;
                     if (!isTurnStillLatest(turnId)) return;
@@ -7821,7 +7822,7 @@
                         .catch(() => {})
                         .then(playbackTask);
                 };
-                if (!isManualTurn) {
+                if (!isManualTurn && !isQuickCheckoutTurn) {
                     showThinkingIndicator(turnId);
                     startThinkingMotion(turnId);
                     setVoiceStatus('Robot đang suy nghĩ', { thinking: true });
@@ -7836,13 +7837,49 @@
                         const opening = String(sessionPayload?.reply_text || '').trim();
                         const skipOpening = suppressNextSessionOpening;
                         suppressNextSessionOpening = false;
-                        if (!isManualTurn && !skipOpening && opening && chatHistory.length < 3) {
+                        if (!isManualTurn && !isQuickCheckoutTurn && !skipOpening && opening && chatHistory.length < 3) {
                             appendChat('assistant', opening);
                         }
                     }
 
                     if (!currentSessionId) {
                         throw new Error('Không tao duoc session.');
+                    }
+
+                    // Rehydrate backend cart from reviewed items before quick_checkout
+                    if (isQuickCheckoutTurn && queuedTurn.reviewedItems && Array.isArray(queuedTurn.reviewedItems)) {
+                        const reviewedItems = normalizeOrderItems(queuedTurn.reviewedItems);
+                        if (reviewedItems.length > 0) {
+                            console.info('[quick-checkout] rehydrating backend cart from reviewed items', {
+                                itemCount: reviewedItems.length,
+                                sessionId: currentSessionId,
+                            });
+                            try {
+                                // Send each item as a manual add to rebuild the cart
+                                for (const item of reviewedItems) {
+                                    const baseName = String(item.base_name || item.name || 'Món').trim() || 'Món';
+                                    const sizeLabel = String(item.size_label || '').trim();
+                                    const quantity = Math.max(1, Number(item.quantity || 1));
+                                    const spokenName = sizeLabel ? `${baseName} size ${sizeLabel}` : baseName;
+                                    const rehydrateText = quantity > 1
+                                        ? `cho minh ${quantity} ${spokenName}`
+                                        : `cho minh 1 ${spokenName}`;
+                                    
+                                    // Send synchronous turn to rebuild cart
+                                    await sendConversationTurn(
+                                        currentSessionId,
+                                        rehydrateText,
+                                        createTurnId(),
+                                        turnAbortController.signal,
+                                        { quickCheckout: false },
+                                    );
+                                    ensureNotStale();
+                                }
+                                console.info('[quick-checkout] cart rehydration complete');
+                            } catch (rehydrateError) {
+                                console.warn('[quick-checkout] cart rehydration failed, proceeding anyway:', rehydrateError);
+                            }
+                        }
                     }
 
                     let replyPayload = null;
@@ -7905,7 +7942,7 @@
                                 return;
                             }
                             if (chunk?.type === 'audio' && chunk.content) {
-                                if (isManualTurn) {
+                                if (isManualTurn || isQuickCheckoutTurn) {
                                     return;
                                 }
                                 const audioBytes = decodeBase64AudioChunk(chunk.content);
@@ -8013,10 +8050,10 @@
                                 replyPayload,
                                 { isManualTurn, allowManualCartSync },
                             );
-                            if (!payloadApplied && !isManualTurn) {
+                            if (!payloadApplied && !isManualTurn && !isQuickCheckoutTurn) {
                                 applyOptimisticCartUpdateFromReply(replyText);
                             }
-                        } else if (!isManualTurn) {
+                        } else if (!isManualTurn && !isQuickCheckoutTurn) {
                             applyOptimisticCartUpdateFromReply(replyText);
                         }
                         if (
@@ -8029,16 +8066,16 @@
                         ) {
                             openOrderReview();
                         }
-                        if (isManualTurn && !replyPayload?.order_created) {
-                            setVoiceStatus('Đã cập nhật giỏ hàng.');
+                        if ((isManualTurn || isQuickCheckoutTurn) && !replyPayload?.order_created) {
+                            setVoiceStatus(isQuickCheckoutTurn ? 'Đang xử lý đơn hàng...' : 'Đã cập nhật giỏ hàng.');
                         }
-                        if (!isManualTurn) {
+                        if (!isManualTurn && !isQuickCheckoutTurn) {
                             appendChat('assistant', replyText);
                         }
                         if (!isManualTurn && !isQuickCheckoutTurn && backendScene === 'clarify_size') {
                             void maybeOpenVoiceClarifySizePicker(replyPayload, replyText);
                         }
-                        if (!isManualTurn && streamedAudioChunks === 0 && !turnAbortController.signal.aborted) {
+                        if (!isManualTurn && !isQuickCheckoutTurn && streamedAudioChunks === 0 && !turnAbortController.signal.aborted) {
                             clearFillerTimer();
                             if (fillerSpoken) {
                                 interruptBotSpeech();
@@ -8060,7 +8097,7 @@
                                 await playBotSpeech(tailReplyText);
                             }
                         }
-                        if (!isManualTurn) {
+                        if (!isManualTurn && !isQuickCheckoutTurn) {
                             robotController.reactToConversation({
                                 scene: backendScene || inferVoiceIntent(replyText),
                                 emotionHint: backendEmotionHint || (inferVoiceIntent(replyText) === 'cute' ? 'cute' : 'happy'),
@@ -8093,7 +8130,7 @@
                         turnTotalMs,
                         mode: voiceInputMode,
                     });
-                    if (!isManualTurn) {
+                    if (!isManualTurn && !isQuickCheckoutTurn) {
                         showVoiceLatencyStatus(firstTextMs, speechStartMs, turnTotalMs);
                     }
                 } catch (error) {
@@ -8110,12 +8147,12 @@
                     }
                     if (turnTimedOut) {
                         setVoiceStatus(
-                            isManualTurn
+                            (isManualTurn || isQuickCheckoutTurn)
                                 ? 'Cập nhật giỏ hàng hơi chậm, hệ thống vẫn đang xử lý...'
                                 : 'Backend đang chậm. Thử lại câu ngắn gọn hơn nhé.',
                         );
                     } else if (isAbortError(error)) {
-                        setVoiceStatus(isManualTurn ? 'Đang tiếp tục cập nhật giỏ hàng...' : 'Đang ưu tiên lời nói mới...');
+                        setVoiceStatus((isManualTurn || isQuickCheckoutTurn) ? 'Đang tiếp tục cập nhật giỏ hàng...' : 'Đang ưu tiên lời nói mới...');
                     } else {
                         console.warn('[voice-turn] failed:', error);
                         const errorText = String(error?.message || '').trim();
