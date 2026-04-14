@@ -7627,6 +7627,7 @@
             queuedAt: Date.now(),
             allowManualCartSync: options?.allowManualCartSync === true,
             reviewedItems: options?.reviewedItems || null,
+            forceFreshSession: options?.forceFreshSession === true,
         };
 
         if (isQuickCheckoutSource) {
@@ -7850,10 +7851,25 @@
                     if (isQuickCheckoutTurn && queuedTurn.reviewedItems && Array.isArray(queuedTurn.reviewedItems)) {
                         const reviewedItems = normalizeOrderItems(queuedTurn.reviewedItems);
                         if (reviewedItems.length > 0) {
-                            console.info('[quick-checkout] rehydrating backend cart from reviewed items', {
+                            console.info('[quick-checkout] rehydrating backend cart from local review snapshot', {
                                 itemCount: reviewedItems.length,
                                 sessionId: currentSessionId,
+                                willCreateFreshSession: queuedTurn.forceFreshSession === true,
                             });
+                            
+                            // Optionally create fresh session for clean slate
+                            if (queuedTurn.forceFreshSession === true) {
+                                console.info('[quick-checkout] forcing fresh session for clean cart state');
+                                currentSessionId = '';
+                            }
+                            
+                            // Ensure we have a session
+                            if (!currentSessionId) {
+                                const sessionPayload = await startConversationSession('manual', turnAbortController.signal);
+                                ensureNotStale();
+                                console.info('[quick-checkout] fresh session created:', currentSessionId);
+                            }
+                            
                             try {
                                 // Send each item as a manual add to rebuild the cart
                                 for (const item of reviewedItems) {
@@ -7864,6 +7880,13 @@
                                     const rehydrateText = quantity > 1
                                         ? `cho minh ${quantity} ${spokenName}`
                                         : `cho minh 1 ${spokenName}`;
+                                    
+                                    console.info('[quick-checkout] hydrating item into backend cart', {
+                                        itemId: item.item_id,
+                                        name: baseName,
+                                        quantity,
+                                        sizeLabel,
+                                    });
                                     
                                     // Send synchronous turn to rebuild cart
                                     await sendConversationTurn(
@@ -8020,6 +8043,14 @@
                             : (payloadCartForOrder || []);
                         currentSessionId = null;
                         setVoiceStatus(`Đã chốt đơn ${finishedOrderId || ''}`.trim());
+                        
+                        console.info('[quick-checkout] order created successfully', {
+                            orderId: finishedOrderId,
+                            itemCount: orderItemsForPopup.length,
+                            hasPaymentQr: Boolean(replyPayload?.payment_qr_content || replyPayload?.payment_qr_image_url),
+                            paymentStatus: replyPayload?.payment_status,
+                        });
+                        
                         void runOrderCompletionFlow({
                             sessionId: finishedSessionId,
                             orderId: finishedOrderId,
@@ -8031,6 +8062,12 @@
                             paymentExpiresAt: String(replyPayload?.payment_expires_at || '').trim(),
                         });
                     } else if (isQuickCheckoutTurn) {
+                        console.warn('[quick-checkout] no order created despite quick_checkout turn', {
+                            turnId,
+                            sessionId: currentSessionId,
+                            cartSize: cartState.length,
+                            replyText: replyText.slice(0, 100),
+                        });
                         cartCheckoutLocked = false;
                         if (cartCheckoutCooldownTimer) {
                             window.clearTimeout(cartCheckoutCooldownTimer);
