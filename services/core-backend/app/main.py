@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from decimal import Decimal, InvalidOperation
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 from urllib.error import HTTPError, URLError
@@ -14,6 +15,7 @@ from app.models import CreateOrderRequest, MenuItem, MenuItemSizeOption, OrderRe
 from app.repositories.csv_repositories import CsvMenuRepository, CsvOrderRepository
 from app.services.order_service import OrderService
 
+logger = logging.getLogger(__name__)
 
 settings = get_settings()
 menu_repository = CsvMenuRepository(settings.menu_csv_path)
