@@ -144,7 +144,6 @@ try {
   & python -m uvicorn app.main:app `
     --reload `
     --reload-dir $coreBackendDir `
-    --reload-dir $dataDir `
     --port $corePort `
     --app-dir $coreBackendDir
 } finally {

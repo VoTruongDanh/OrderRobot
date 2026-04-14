@@ -99,7 +99,6 @@ try {
   & python -m uvicorn app.main:app `
     --reload `
     --reload-dir $aiBackendDir `
-    --reload-dir $dataDir `
     --port $aiPort `
     --app-dir $aiBackendDir
 } finally {
