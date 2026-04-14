@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import unicodedata
 from collections import Counter
@@ -15,6 +16,8 @@ from uuid import uuid4
 from app.config import Settings
 from app.models import CreateOrderRequest, MenuItem, MenuItemSizeOption, OrderLineItem, OrderRecord
 from app.repositories.contracts import MenuRepository, OrderRepository
+
+logger = logging.getLogger(__name__)
 
 
 def _parse_decimal(value: object, fallback: Decimal = Decimal("0")) -> Decimal:
@@ -134,6 +137,12 @@ class OrderService:
 
     def create_order(self, payload: CreateOrderRequest) -> OrderRecord:
         remote_live_mode = self.remote_pos_enabled and self.remote_menu_strict_enabled
+        logger.info(
+            "create_order: remote_live_mode=%s (remote_pos_enabled=%s, remote_menu_strict_enabled=%s)",
+            remote_live_mode,
+            self.remote_pos_enabled,
+            self.remote_menu_strict_enabled,
+        )
         quantities = Counter[str]()
         size_name_by_item: dict[str, str] = {}
         size_id_by_item: dict[str, int] = {}
