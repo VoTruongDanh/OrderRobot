@@ -8,6 +8,9 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
+      // Allow local dev UI (:5173) to reach dockerized nginx/api routes (:8080).
+      '/api/core': 'http://127.0.0.1:8080',
+      '/api/ai': 'http://127.0.0.1:8080',
       '/menu': 'http://127.0.0.1:8011',
       '/orders': 'http://127.0.0.1:8011',
       '/health': 'http://127.0.0.1:8011',

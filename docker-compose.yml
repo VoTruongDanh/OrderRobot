@@ -1,0 +1,55 @@
+services:
+  core:
+    image: orderrobot-core:latest
+    env_file:
+      - .env.docker
+    environment:
+      ORDERROBOT_ROOT_DIR: /app
+      MENU_CSV_PATH: /app/data/menu.csv
+      ORDERS_CSV_PATH: /app/data/orders.csv
+    volumes:
+      - ./data:/app/data
+    expose:
+      - "8011"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8011/health', timeout=2)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  ai:
+    image: orderrobot-ai:latest
+    env_file:
+      - .env.docker
+    environment:
+      ORDERROBOT_ROOT_DIR: /app
+      ORDERROBOT_ENV_FILE: /app/.env.docker
+      CORE_BACKEND_URL: http://core:8011
+      LLM_MODE: disabled
+      STT_PRELOAD: "false"
+      STT_DEVICE: cpu
+      STT_COMPUTE_TYPE: int8
+      STT_MODEL: small
+    volumes:
+      - ./data:/app/data
+      - ./.env.docker:/app/.env.docker
+    expose:
+      - "8012"
+    depends_on:
+      core:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8012/health', timeout=2)"]
+      interval: 20s
+      timeout: 5s
+      retries: 6
+
+  ui:
+    image: orderrobot-ui:latest
+    ports:
+      - "8080:80"
+    depends_on:
+      core:
+        condition: service_healthy
+      ai:
+        condition: service_healthy

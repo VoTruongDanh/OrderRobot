@@ -229,6 +229,8 @@ def test_split_streaming_segments_breaks_long_sentence() -> None:
 def test_should_use_vieneu_honors_engine_override() -> None:
     service = SpeechService(build_settings())
     service.settings.tts_engine = "vieneu"
+    service._vieneu_import_checked = True
+    service._vieneu_import_ok = True
 
     assert service._should_use_vieneu({"engine": "edge"}) is False
     assert service._should_use_vieneu({"engine": "vieneu"}) is True

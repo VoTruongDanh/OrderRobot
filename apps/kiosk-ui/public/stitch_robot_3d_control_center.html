@@ -3554,7 +3554,9 @@
     ]);
     const DEFAULT_TTS_STREAM_PLAYBACK_RATE = 1.15;
     const DEFAULT_TAX_PERCENT = 10;
-    const AI_RUNTIME_FALLBACK_URL = 'http://127.0.0.1:8012';
+    const isLocalDevPort = (port) => ['5173', '4173', '3000'].includes(String(port || ''));
+    const CORE_RUNTIME_FALLBACK_URL = isLocalDevPort(window.location.port) ? 'http://127.0.0.1:8011' : '/api/core';
+    const AI_RUNTIME_FALLBACK_URL = isLocalDevPort(window.location.port) ? 'http://127.0.0.1:8012' : '/api/ai';
     const AI_RUNTIME_PROBE_TIMEOUT_MS = 1600;
     const isAdminPreviewMode = new URLSearchParams(window.location.search).get('adminPreview') === '1';
     if (isAdminPreviewMode) {
@@ -4312,7 +4314,7 @@
             .replace('://127.0.0.1:8001', '://127.0.0.1:8011')
             .replace('://localhost:8001', '://localhost:8011')
             .replace(/\/$/, '');
-        return configured || 'http://127.0.0.1:8011';
+        return configured || CORE_RUNTIME_FALLBACK_URL;
     }
 
     function toSafeInt(value, min, max) {
@@ -9947,16 +9949,34 @@
     }
 
     function readMenuApiCandidates() {
-        const defaults = [
+        const coreMenuUrl = `${String(CORE_RUNTIME_FALLBACK_URL || '').replace(/\/$/, '')}/menu`;
+        const defaultsLocal = [
+            '/api/core/menu',
             '/menu',
+            coreMenuUrl,
             'http://127.0.0.1:8011/menu',
             'http://localhost:8011/menu',
             'http://127.0.0.1:18011/menu',
             'http://localhost:18011/menu',
         ];
+        const defaultsProd = ['/api/core/menu', '/menu', coreMenuUrl];
+        const defaults = isLocalDevPort(window.location.port) ? defaultsLocal : defaultsProd;
         const isLocalLikeHost = (hostname) => {
             const host = String(hostname || '').trim().toLowerCase();
             return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+        };
+        const rewriteLocalCoreToProxy = (value) => {
+            const raw = String(value || '').trim();
+            if (!raw || isLocalDevPort(window.location.port)) return raw;
+            if (raw.startsWith('/')) return raw;
+            try {
+                const parsed = new URL(raw, window.location.href);
+                const p = String(parsed.port || '');
+                if (isLocalLikeHost(parsed.hostname) && (p === '8011' || p === '18011')) {
+                    return CORE_RUNTIME_FALLBACK_URL;
+                }
+            } catch {}
+            return raw;
         };
         const toBrowserSafeMenuUrl = (menuUrl, coreApiUrl) => {
             const raw = String(menuUrl || '').trim();
@@ -9964,10 +9984,22 @@
             if (raw.startsWith('/')) return raw;
             try {
                 const parsed = new URL(raw, window.location.href);
-                if (parsed.origin === window.location.origin || isLocalLikeHost(parsed.hostname)) {
+                const p = String(parsed.port || '');
+                if (
+                    !isLocalDevPort(window.location.port)
+                    && isLocalLikeHost(parsed.hostname)
+                    && (p === '8011' || p === '18011')
+                    && String(parsed.pathname || '').startsWith('/menu')
+                ) {
+                    return `${String(CORE_RUNTIME_FALLBACK_URL || '').replace(/\/$/, '')}${parsed.pathname}${parsed.search || ''}`;
+                }
+                if (
+                    parsed.origin === window.location.origin
+                    || (isLocalLikeHost(parsed.hostname) && isLocalDevPort(window.location.port))
+                ) {
                     return parsed.toString();
                 }
-                const safeCore = String(coreApiUrl || '').trim().replace(/\/$/, '');
+                const safeCore = String(coreApiUrl || CORE_RUNTIME_FALLBACK_URL || '').trim().replace(/\/$/, '');
                 if (!safeCore) return parsed.toString();
                 return `${safeCore}/menu/proxy?source=${encodeURIComponent(parsed.toString())}`;
             } catch {
@@ -9982,9 +10014,10 @@
             const menuApi = String(parsed.VITE_MENU_API_URL || '').trim()
                 .replace('://127.0.0.1:8001/', '://127.0.0.1:8011/')
                 .replace('://localhost:8001/', '://localhost:8011/');
-            const coreApi = String(parsed.VITE_CORE_API_URL || '').trim()
+            let coreApi = String(parsed.VITE_CORE_API_URL || '').trim()
                 .replace('://127.0.0.1:8001', '://127.0.0.1:8011')
                 .replace('://localhost:8001', '://localhost:8011');
+            coreApi = rewriteLocalCoreToProxy(coreApi);
             const safeMenuApi = toBrowserSafeMenuUrl(menuApi, coreApi);
             if (safeMenuApi) {
                 // When operator explicitly sets menu URL, do not silently fall back to other endpoints.
@@ -10064,7 +10097,12 @@
                         .map((record, index) => normalizeMenuRecord(record, index))
                         .filter(Boolean);
                     if (items.length === 0) {
-                        throw new Error('Menu payload has no supported item records');
+                        renderMenuItems([]);
+                        menuLoaded = true;
+                        if (menuStatus) {
+                            menuStatus.textContent = 'Menu trống (API trả về 0 món). Kiểm tra data/menu.csv hoặc cấu hình core.';
+                        }
+                        return;
                     }
                     await enrichMenuItemsWithSizeData(items);
                     renderMenuItems(items);

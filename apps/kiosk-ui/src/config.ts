@@ -6,6 +6,24 @@ const LEGACY_ENV_VALUE_MIGRATIONS: Record<string, Record<string, string>> = {
   VITE_PRODUCT_SIZE_API_URL: { 'http://127.0.0.1:8001/product-size/filter': 'http://127.0.0.1:8011/product-size/filter' },
 }
 
+function isLocalDevPort(port: string): boolean {
+  return port === '5173' || port === '4173' || port === '3000'
+}
+
+function getDefaultCoreApiFallback(): string {
+  if (typeof window !== 'undefined') {
+    return isLocalDevPort(String(window.location.port || '')) ? 'http://127.0.0.1:8011' : '/api/core'
+  }
+  return '/api/core'
+}
+
+function getDefaultAiApiFallback(): string {
+  if (typeof window !== 'undefined') {
+    return isLocalDevPort(String(window.location.port || '')) ? 'http://127.0.0.1:8012' : '/api/ai'
+  }
+  return '/api/ai'
+}
+
 export const ADMIN_ENV_STORAGE_KEY = 'admin.env.fields'
 const ADMIN_ENV_UPDATED_AT_KEY = 'admin.env.updatedAt'
 const ADMIN_CONFIG_UPDATED_EVENT = 'orderrobot:admin-config-updated'
@@ -637,11 +655,11 @@ export function getAdminConfigUpdatedAt(): number | null {
 }
 
 export function getCoreApiUrl(): string {
-  return getEnvConfig('VITE_CORE_API_URL', 'http://127.0.0.1:8011')
+  return getEnvConfig('VITE_CORE_API_URL', getDefaultCoreApiFallback())
 }
 
 export function getAiApiUrl(): string {
-  return getEnvConfig('VITE_AI_API_URL', 'http://127.0.0.1:8012')
+  return getEnvConfig('VITE_AI_API_URL', getDefaultAiApiFallback())
 }
 
 function isLocalLikeHost(hostname: string): boolean {
