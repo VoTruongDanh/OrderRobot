@@ -1,10 +1,13 @@
-import { app, BrowserWindow, dialog, ipcMain, session } from 'electron';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import http from 'node:http';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+
+const require = createRequire(import.meta.url);
+const { app, BrowserWindow, dialog, ipcMain, session } = require('electron');
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -196,13 +199,13 @@ async function authenticateLogin({ loginUrl, username, password }) {
 
     if (!response.ok) {
       throw new Error(
-        pickErrorMessage(payload, `Dang nhap that bai (HTTP ${response.status}).`),
+        pickErrorMessage(payload, `Sign in failed (HTTP ${response.status}).`),
       );
     }
 
     const tokenPayload = extractTokenPayload(payload);
     if (!tokenPayload) {
-      throw new Error('Dang nhap thanh cong nhung khong nhan duoc accessToken.');
+      throw new Error('Sign-in succeeded but no access token was returned.');
     }
 
     return tokenPayload;
@@ -213,7 +216,7 @@ async function authenticateLogin({ loginUrl, username, password }) {
 
 function createLoadingHtml(statusText) {
   return `<!doctype html>
-  <html lang="vi">
+  <html lang="en">
     <head>
       <meta charset="utf-8" />
       <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -276,8 +279,8 @@ function createLoadingHtml(statusText) {
     <body>
       <main class="shell">
         <p class="eyebrow">OrderRobot Desktop</p>
-        <h1>Dang khoi dong he thong</h1>
-        <p>Ung dung dang mo kiosk UI, core backend, AI backend va bridge browser an de gui tin nhan.</p>
+        <h1>Starting kiosk system</h1>
+        <p>The app is launching the kiosk UI, core backend, AI backend, and hidden bridge browser.</p>
         <div class="status" id="status">${statusText}</div>
       </main>
     </body>
@@ -528,6 +531,18 @@ function isAllowedNavigation(targetUrl) {
   return false;
 }
 
+async function navigateToUiRoute(routePath) {
+  if (!mainWindow || mainWindow.isDestroyed() || !uiServer?.url) {
+    return;
+  }
+  const normalizedRoute = String(routePath || '/').startsWith('/')
+    ? String(routePath || '/')
+    : `/${String(routePath || '')}`;
+  const targetUrl = new URL(normalizedRoute, `${uiServer.url}/`).toString();
+  writeDesktopLog('info', 'navigate-ui-route', targetUrl);
+  await mainWindow.loadURL(targetUrl);
+}
+
 function hardenWindow(targetWindow) {
   const contents = targetWindow.webContents;
 
@@ -556,6 +571,24 @@ function hardenWindow(targetWindow) {
     const ctrl = Boolean(input.control);
     const shift = Boolean(input.shift);
     const alt = Boolean(input.alt);
+
+    if (ctrl && shift && key === 'A') {
+      event.preventDefault();
+      void navigateToUiRoute('/admin');
+      return;
+    }
+
+    if (ctrl && shift && key === 'K') {
+      event.preventDefault();
+      void navigateToUiRoute('/');
+      return;
+    }
+
+    if (ctrl && shift && key === 'D') {
+      event.preventDefault();
+      void navigateToUiRoute('/debug');
+      return;
+    }
 
     const blocked =
       key === 'F12' ||
@@ -594,12 +627,12 @@ async function bootstrapDesktop(authSession) {
 
   if (!fs.existsSync(path.join(distRoot, 'index.html'))) {
     throw new Error(
-      `Khong tim thay UI production build tai ${distRoot}. Hay chay npm run build:ui truoc khi dong goi.`,
+      `Production UI build not found at ${distRoot}. Run npm run build:ui before packaging.`,
     );
   }
 
   await seedRuntimeFiles(runtimeRoot);
-  await setLoadingStatus('Dang bat server UI noi bo...');
+  await setLoadingStatus('Starting internal UI server...');
   uiServer = await startStaticServer(distRoot);
 
   const sharedEnv = {
@@ -618,7 +651,7 @@ async function bootstrapDesktop(authSession) {
     VITE_ORDERS_API_URL: `http://${HOST}:${CORE_PORT}/orders`,
   };
 
-  await setLoadingStatus('Dang bat bridge browser an...');
+  await setLoadingStatus('Starting hidden bridge browser...');
   startManagedProcess(
     'bridge',
     process.execPath,
@@ -637,10 +670,10 @@ async function bootstrapDesktop(authSession) {
     },
   );
 
-  await setLoadingStatus('Dang bat core backend...');
+  await setLoadingStatus('Starting core backend...');
   if (app.isPackaged) {
     if (!fs.existsSync(getBackendExecutable('OrderRobotCoreBackend'))) {
-      throw new Error('Khong tim thay OrderRobotCoreBackend.exe trong goi cai dat.');
+      throw new Error('OrderRobotCoreBackend.exe was not found in the packaged app.');
     }
     startManagedProcess('core', getBackendExecutable('OrderRobotCoreBackend'), [], {
       env: { ...sharedEnv, PORT: String(CORE_PORT) },
@@ -651,10 +684,10 @@ async function bootstrapDesktop(authSession) {
     });
   }
 
-  await setLoadingStatus('Dang bat AI backend...');
+  await setLoadingStatus('Starting AI backend...');
   if (app.isPackaged) {
     if (!fs.existsSync(getBackendExecutable('OrderRobotAiBackend'))) {
-      throw new Error('Khong tim thay OrderRobotAiBackend.exe trong goi cai dat.');
+      throw new Error('OrderRobotAiBackend.exe was not found in the packaged app.');
     }
     startManagedProcess('ai', getBackendExecutable('OrderRobotAiBackend'), [], {
       env: { ...sharedEnv, PORT: String(AI_PORT) },
@@ -665,11 +698,11 @@ async function bootstrapDesktop(authSession) {
     });
   }
 
-  await setLoadingStatus('Dang doi backend san sang...');
+  await setLoadingStatus('Waiting for services to become healthy...');
   await waitForHealth(`http://${HOST}:${CORE_PORT}/health`, 60000);
   await waitForHealth(`http://${HOST}:${AI_PORT}/health`, 180000);
 
-  await setLoadingStatus('Dang mo giao dien kiosk...');
+  await setLoadingStatus('Opening kiosk interface...');
   await mainWindow.loadURL(uiServer.url);
 }
 
@@ -692,19 +725,18 @@ async function shutdownAll() {
 }
 
 function registerDesktopIpc() {
-  ipcMain.handle('orderrobot:get-login-config', async () => {
-    return runtimeLoginConfig;
-  });
+  ipcMain.handle('orderrobot:get-login-config', async () => runtimeLoginConfig);
 
   ipcMain.handle('orderrobot:login', async (_event, payload) => {
     const username = String(payload?.username || '').trim();
     const password = String(payload?.password || '');
     const loginUrl = String(runtimeLoginConfig?.loginUrl || '').trim();
+
     if (!loginUrl) {
-      throw new Error('Chua cau hinh POS_AUTH_LOGIN_URL.');
+      throw new Error('POS_AUTH_LOGIN_URL is not configured.');
     }
     if (!username || !password) {
-      throw new Error('Vui long nhap day du tai khoan va mat khau.');
+      throw new Error('Please enter both username and password.');
     }
 
     const tokenPayload = await authenticateLogin({ loginUrl, username, password });
@@ -713,7 +745,7 @@ function registerDesktopIpc() {
         try {
           await mainWindow.loadURL(
             `data:text/html;charset=utf-8,${encodeURIComponent(
-              createLoadingHtml('Dang xac thuc va khoi dong kiosk...'),
+              createLoadingHtml('Verifying credentials and starting kiosk...'),
             )}`,
           );
           await bootstrapDesktop({
@@ -784,7 +816,7 @@ try {
     mainWindow.show();
   }
   
-  dialog.showErrorBox('OrderRobot khong khoi dong duoc', message);
+  dialog.showErrorBox('OrderRobot failed to start', message);
   await shutdownAll();
   app.quit();
 }
@@ -795,13 +827,13 @@ process.on('uncaughtException', (error) => {
     stack: error?.stack || '',
   });
   try {
-    dialog.showErrorBox('OrderRobot gap loi', error?.message || String(error));
+    dialog.showErrorBox('OrderRobot error', error?.message || String(error));
   } catch {}
 });
 
 process.on('unhandledRejection', (reason) => {
   writeDesktopLog('error', 'unhandled-rejection', reason);
   try {
-    dialog.showErrorBox('OrderRobot gap loi', typeof reason === 'string' ? reason : JSON.stringify(reason));
+    dialog.showErrorBox('OrderRobot error', typeof reason === 'string' ? reason : JSON.stringify(reason));
   } catch {}
 });

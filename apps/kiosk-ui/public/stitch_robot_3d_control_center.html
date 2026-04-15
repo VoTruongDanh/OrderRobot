@@ -1074,6 +1074,30 @@
             align-items: center;
             gap: 6px;
         }
+        .voice-mini-volume {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            border: 1px solid rgba(148, 163, 184, 0.28);
+            background: rgba(255, 255, 255, 0.82);
+            min-width: 152px;
+        }
+        .voice-mini-volume-label,
+        .voice-mini-volume-value {
+            font-size: 0.66rem;
+            font-weight: 700;
+            color: #334155;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            white-space: nowrap;
+        }
+        .voice-mini-volume-slider {
+            flex: 1;
+            accent-color: #0f766e;
+            cursor: pointer;
+        }
         .voice-mini-title {
             margin: 0;
             font-size: 0.72rem;
@@ -2097,6 +2121,18 @@
             color: var(--ui-ink-soft);
             font-size: 0.74rem;
             min-height: 1.9em;
+        }
+        .voice-mini-volume {
+            border-color: rgba(120, 162, 188, 0.28);
+            background: rgba(255, 255, 255, 0.78);
+            box-shadow: 0 8px 18px rgba(40, 90, 130, 0.08);
+        }
+        .voice-mini-volume-label,
+        .voice-mini-volume-value {
+            color: #25526a;
+        }
+        .voice-mini-volume-slider {
+            accent-color: var(--ui-accent-primary);
         }
         .voice-mini-status.is-thinking::after {
             content: ' ...';
@@ -3235,13 +3271,17 @@
 </section>
 <section class="voice-mini-panel" id="voice-mini-panel" aria-label="Voice va chat panel">
 <div class="voice-mini-head">
-<p class="voice-mini-title">Hội thoại voice</p>
+<p class="voice-mini-title">Tro ly giong noi UI</p>
 <div class="voice-mini-actions">
 <button class="voice-mini-refresh" id="voice-mini-refresh" type="button" title="Làm mới trạng thái kiosk">F5</button>
-<button class="voice-mini-toggle" id="voice-mini-toggle" type="button">Bật nghe</button>
+<label class="voice-mini-volume" for="voice-volume-slider">
+<span class="voice-mini-volume-label">Volume</span>
+<input class="voice-mini-volume-slider" id="voice-volume-slider" type="range" min="0" max="100" step="1" value="72">
+<span class="voice-mini-volume-value" id="voice-volume-value">72%</span>
+</label>
 </div>
 </div>
-<p class="voice-mini-status" id="voice-mini-status">Đang sẵn sàng STT/TTS...</p>
+<p class="voice-mini-status" id="voice-mini-status">Chạm vào màn hình để robot hướng dẫn bằng giọng nói.</p>
 <div class="chat-mini-list" id="chat-mini-list">
 <p class="chat-mini-empty">Chưa có hội thoại.</p>
 </div>
@@ -3429,6 +3469,8 @@
     const cameraMiniVideo = document.getElementById('camera-mini-video');
     const voiceMiniToggle = document.getElementById('voice-mini-toggle');
     const voiceMiniRefresh = document.getElementById('voice-mini-refresh');
+    const voiceVolumeSlider = document.getElementById('voice-volume-slider');
+    const voiceVolumeValue = document.getElementById('voice-volume-value');
     const voiceMiniStatus = document.getElementById('voice-mini-status');
     const chatMiniList = document.getElementById('chat-mini-list');
     const cartMiniList = document.getElementById('cart-mini-list');
@@ -3482,6 +3524,8 @@
     const CHAT_ARCHIVE_LIMIT = 40;
     const DEFAULT_CHAT_CLEAR_AFTER_ABSENCE_MS = 0;
     const DEFAULT_CHAT_CLEAR_ON_ORDER_COMPLETE = true;
+    const UI_ONLY_VOICE_MODE = true;
+    const VOICE_OUTPUT_VOLUME_STORAGE_KEY = 'orderrobot.kiosk.voice-output-volume';
     const DEFAULT_VOICE_ALWAYS_LISTEN = true;
     const DEFAULT_VOICE_LISTEN_MODE = 'always';
     const DEFAULT_VOICE_TTS_WS_REALTIME = true;
@@ -3582,6 +3626,7 @@
     let activeBotSpeechAbortController = null;
     let activeTurnAbortController = null;
     let voicePinnedByUser = false;
+    let voiceOutputVolume = 0.72;
     let micNoiseFilterStrength = 60;
     let backendSttFinalizeSilenceMs = DEFAULT_BACKEND_STT_FINALIZE_SILENCE_MS;
     let backendSttForceFinalizeMs = DEFAULT_BACKEND_STT_FORCE_FINALIZE_MS;
@@ -3628,6 +3673,10 @@
     let voiceBrowserPendingInterimSince = 0;
     let voiceLastStatusText = '';
     let voiceLastStatusThinking = false;
+    let uiNarrationTask = Promise.resolve();
+    let uiNarrationLastText = '';
+    let uiNarrationLastAt = 0;
+    const activeSpeechGainNodes = new Set();
     let greetingWarmupTask = null;
     let lastGreetingVariantIndex = -1;
     let lastFillerVariantIndex = -1;
@@ -4318,6 +4367,85 @@
         return fallback;
     }
 
+    function clampVoiceOutputVolume(value) {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric)) return 0.72;
+        return Math.max(0, Math.min(1, numeric));
+    }
+
+    function loadVoiceOutputVolume() {
+        try {
+            const raw = localStorage.getItem(VOICE_OUTPUT_VOLUME_STORAGE_KEY);
+            if (raw === null) return 0.72;
+            return clampVoiceOutputVolume(Number(raw));
+        } catch {
+            return 0.72;
+        }
+    }
+
+    function registerSpeechGainNode(gainNode) {
+        if (!gainNode?.gain) return;
+        try {
+            gainNode.gain.value = voiceOutputVolume;
+        } catch {}
+        activeSpeechGainNodes.add(gainNode);
+    }
+
+    function unregisterSpeechGainNode(gainNode) {
+        if (!gainNode) return;
+        activeSpeechGainNodes.delete(gainNode);
+    }
+
+    function applyVoiceOutputVolume() {
+        if (activeGreetingAudio) {
+            try {
+                activeGreetingAudio.volume = voiceOutputVolume;
+            } catch {}
+        }
+        activeSpeechGainNodes.forEach((gainNode) => {
+            try {
+                gainNode.gain.value = voiceOutputVolume;
+            } catch {
+                activeSpeechGainNodes.delete(gainNode);
+            }
+        });
+    }
+
+    function renderVoiceOutputVolume() {
+        const percent = Math.round(voiceOutputVolume * 100);
+        if (voiceVolumeSlider) {
+            voiceVolumeSlider.value = String(percent);
+        }
+        if (voiceVolumeValue) {
+            voiceVolumeValue.textContent = `${percent}%`;
+        }
+    }
+
+    function setVoiceOutputVolume(nextValue) {
+        voiceOutputVolume = clampVoiceOutputVolume(nextValue);
+        renderVoiceOutputVolume();
+        applyVoiceOutputVolume();
+        try {
+            localStorage.setItem(VOICE_OUTPUT_VOLUME_STORAGE_KEY, String(voiceOutputVolume));
+        } catch {}
+    }
+
+    function isElectronDesktopRuntime() {
+        const userAgent = String(window.navigator?.userAgent || '');
+        if (/\bElectron\/\d+/i.test(userAgent)) {
+            return true;
+        }
+        try {
+            return Boolean(
+                window.orderRobotDesktop
+                || window.parent?.orderRobotDesktop
+                || window.top?.orderRobotDesktop,
+            );
+        } catch {
+            return false;
+        }
+    }
+
     function normalizeVoiceListenMode(rawValue) {
         const raw = String(rawValue ?? '').trim().toLowerCase();
         if (raw === 'sequential' || raw === 'sequence' || raw === 'turn') {
@@ -4614,6 +4742,9 @@
             if (menuToggleDock) menuToggleDock.style.display = 'none';
             setFaceState('happy');
             void ensureMenuLoaded();
+            narrateUi('Mình đã mở menu. Bạn chạm vào món để thêm nhanh vào giỏ hàng.', {
+                dedupeWindowMs: 1800,
+            });
         } else {
             menu.classList.remove('active');
             document.body.classList.remove('menu-is-open');
@@ -4621,6 +4752,7 @@
             if (menuToggleDock) menuToggleDock.style.display = '';
             closeSizePicker('');
             setFaceState('normal');
+            setVoiceStatus('Đã đóng menu. Bạn có thể mở lại bất cứ lúc nào.');
         }
     }
 
@@ -4639,6 +4771,40 @@
         voiceLastStatusThinking = isThinking;
         voiceMiniStatus.classList.toggle('is-thinking', isThinking);
         voiceMiniStatus.textContent = nextText;
+    }
+
+    function narrateUi(text, options = {}) {
+        const spokenText = String(text || '').trim();
+        if (!spokenText) return;
+        const now = Date.now();
+        const dedupeWindowMs = Math.max(0, Number(options?.dedupeWindowMs ?? 1400));
+        if (spokenText === uiNarrationLastText && (now - uiNarrationLastAt) < dedupeWindowMs) {
+            if (options?.status !== false) {
+                setVoiceStatus(spokenText);
+            }
+            return;
+        }
+        uiNarrationLastText = spokenText;
+        uiNarrationLastAt = now;
+        if (options?.appendChat !== false) {
+            appendChat('assistant', spokenText);
+        }
+        if (options?.status !== false) {
+            setVoiceStatus(spokenText);
+        }
+        uiNarrationTask = uiNarrationTask
+            .catch(() => {})
+            .then(async () => {
+                try {
+                    await playBotSpeech(spokenText);
+                } catch (error) {
+                    if (isAutoplayBlockedError(error)) {
+                        setVoiceStatus('Âm thanh đang bị chặn. Chạm vào màn hình 1 lần để mở tiếng robot.');
+                    } else if (!isAbortError(error)) {
+                        console.warn('[ui-narration] playback failed:', error);
+                    }
+                }
+            });
     }
 
     function showVoiceLatencyStatus(firstTextMs, speechStartMs, turnTotalMs) {
@@ -5953,7 +6119,7 @@
     function openOrderReview() {
         const items = normalizeOrderItems(cartState);
         if (items.length === 0) {
-            setVoiceStatus('Giỏ hàng đang trống. Bạn thêm món trước nhé.');
+            narrateUi('Giỏ hàng đang trống. Bạn thêm món trước nhé.');
             refreshCartCheckoutButtonState();
             return;
         }
@@ -5977,7 +6143,80 @@
             orderReviewHud.hidden = false;
         }
         refreshCartCheckoutButtonState();
-        setVoiceStatus('Vui lòng xem lại hoá đơn và xác nhận lần 2.');
+        const itemCount = items.reduce((sum, item) => sum + Math.max(0, Number(item.quantity || 0)), 0);
+        narrateUi(`Mình đã mở phần xác nhận đơn. Hiện có ${itemCount} món, bạn bấm xác nhận lần hai để đặt hàng nhé.`, {
+            dedupeWindowMs: 1800,
+        });
+    }
+
+    function createUiOnlySessionId() {
+        if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+            return `ui-${crypto.randomUUID()}`;
+        }
+        return `ui-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+    }
+
+    async function createDirectOrderFromCart(items) {
+        const normalizedItems = normalizeOrderItems(items);
+        if (normalizedItems.length === 0) {
+            throw new Error('Giỏ hàng đang trống. Bạn thêm món trước nhé.');
+        }
+        const coreApiBase = resolveCoreApiBaseUrl();
+        const sessionId = String(currentSessionId || '').trim() || createUiOnlySessionId();
+        const payload = {
+            session_id: sessionId,
+            customer_text: 'ui-touch-order',
+            items: normalizedItems.map((item) => ({
+                item_id: String(item.item_id || '').trim(),
+                quantity: Math.max(1, Number(item.quantity || 1)),
+                size_name: String(item.size_label || '').trim() || undefined,
+            })),
+        };
+        const response = await fetch(`${coreApiBase}/orders`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        if (!response.ok) {
+            let detail = `HTTP ${response.status}`;
+            try {
+                const errorPayload = await response.json();
+                if (typeof errorPayload?.detail === 'string' && errorPayload.detail.trim()) {
+                    detail = errorPayload.detail.trim();
+                }
+            } catch {}
+            throw new Error(detail);
+        }
+        currentSessionId = sessionId;
+        return response.json();
+    }
+
+    async function submitUiOnlyCheckout(reviewedItems) {
+        try {
+            narrateUi('Mình đang gửi đơn cho bạn nhé.', { dedupeWindowMs: 800, appendChat: false });
+            const orderRecord = await createDirectOrderFromCart(reviewedItems);
+            const finishedOrderId = String(orderRecord?.order_id || '').trim();
+            currentSessionId = null;
+            await runOrderCompletionFlow({
+                sessionId: String(orderRecord?.session_id || ''),
+                orderId: finishedOrderId,
+                items: normalizeOrderItems(orderRecord?.items),
+                paymentStatus: String(orderRecord?.payment_status || '').trim(),
+                paymentQrContent: String(orderRecord?.payment_qr_content || '').trim(),
+                paymentQrImageUrl: String(orderRecord?.payment_qr_image_url || '').trim(),
+                paymentAmount: Number(orderRecord?.payment_amount || orderRecord?.total_amount || 0),
+                paymentExpiresAt: String(orderRecord?.payment_expires_at || '').trim(),
+            });
+        } catch (error) {
+            cartCheckoutLocked = false;
+            if (cartCheckoutCooldownTimer) {
+                window.clearTimeout(cartCheckoutCooldownTimer);
+                cartCheckoutCooldownTimer = null;
+            }
+            refreshCartCheckoutButtonState();
+            const detail = error instanceof Error ? error.message : 'Không tạo được đơn hàng.';
+            narrateUi(detail, { dedupeWindowMs: 1200 });
+        }
     }
 
     function submitReviewedCheckout() {
@@ -6023,6 +6262,10 @@
         }, 3600);
         closeOrderReview({ keepStatus: true });
         refreshCartCheckoutButtonState();
+        if (UI_ONLY_VOICE_MODE) {
+            void submitUiOnlyCheckout(reviewedItems);
+            return;
+        }
         console.info('[quick-checkout] review confirmed locally, sending forced checkout turn', {
             itemCount: reviewedItems.length,
             cartSize: cartState.length,
@@ -6067,16 +6310,16 @@
 
     function triggerCartCheckout() {
         if (cartState.length === 0) {
-            setVoiceStatus('Giỏ hàng đang trống. Bạn thêm món trước nhé.');
+            narrateUi('Giỏ hàng đang trống. Bạn thêm món trước nhé.');
             refreshCartCheckoutButtonState();
             return;
         }
         if (cartCheckoutLocked) {
-            setVoiceStatus('Đang gửi yêu cầu đặt hàng...');
+            narrateUi('Mình đang gửi yêu cầu đặt hàng rồi, bạn chờ mình một chút nhé.', { dedupeWindowMs: 1200 });
             return;
         }
         if (orderReviewOpen) {
-            setVoiceStatus('Vui lòng xác nhận lần 2 hoặc quay lại chỉnh giỏ.');
+            narrateUi('Bạn xem lại hoá đơn rồi bấm xác nhận lần hai để chốt đơn nhé.', { dedupeWindowMs: 1200 });
             return;
         }
         openOrderReview();
@@ -6714,6 +6957,7 @@
             const audio = new Audio(cachedUrl);
             activeGreetingAudio = audio;
             audio.preload = 'auto';
+            audio.volume = voiceOutputVolume;
             setFaceState('happy');
             botSpeechActive = true;
             await audio.play();
@@ -6925,7 +7169,10 @@
             numberOfOutputs: 1,
             outputChannelCount: [1],
         });
-        node.connect(audioCtx.destination);
+        const outputGain = audioCtx.createGain();
+        registerSpeechGainNode(outputGain);
+        node.connect(outputGain);
+        outputGain.connect(audioCtx.destination);
 
         let ws = null;
         let doneReceived = false;
@@ -7025,6 +7272,10 @@
                 node.disconnect();
             } catch {}
             try {
+                outputGain.disconnect();
+            } catch {}
+            unregisterSpeechGainNode(outputGain);
+            try {
                 await audioCtx.close();
             } catch {}
         };
@@ -7082,6 +7333,9 @@
             throw new Error(`AudioContext is not running (${audioCtx.state})`);
         }
         const streamPlaybackRate = Math.max(0.85, Math.min(1.35, Number(ttsStreamPlaybackRate) || 1));
+        const outputGain = audioCtx.createGain();
+        registerSpeechGainNode(outputGain);
+        outputGain.connect(audioCtx.destination);
         let nextPlayTime = audioCtx.currentTime + 0.03;
         let streamSampleRate = 24000;
         let streamHeaderParsed = false;
@@ -7093,7 +7347,7 @@
             const source = audioCtx.createBufferSource();
             source.buffer = buffer;
             source.playbackRate.value = streamPlaybackRate;
-            source.connect(audioCtx.destination);
+            source.connect(outputGain);
             if (nextPlayTime < audioCtx.currentTime) {
                 nextPlayTime = audioCtx.currentTime;
             }
@@ -7169,6 +7423,10 @@
             try {
                 await reader.cancel();
             } catch {}
+            try {
+                outputGain.disconnect();
+            } catch {}
+            unregisterSpeechGainNode(outputGain);
             try {
                 await audioCtx.close();
             } catch {}
@@ -7329,6 +7587,7 @@
             mpegObjectUrl = URL.createObjectURL(mpegMediaSource);
             mpegAudio.src = mpegObjectUrl;
             mpegAudio.preload = 'auto';
+            mpegAudio.volume = voiceOutputVolume;
             activeGreetingAudio = mpegAudio;
             mpegAudio.onended = complete;
             mpegAudio.onerror = complete;
@@ -7360,6 +7619,7 @@
             const wavUrl = URL.createObjectURL(wavBlob);
             const wavAudio = new Audio(wavUrl);
             wavAudio.preload = 'auto';
+            wavAudio.volume = voiceOutputVolume;
             activeGreetingAudio = wavAudio;
 
             const finishChunk = () => {
@@ -7537,6 +7797,7 @@
             const audio = new Audio(audioUrl);
             activeGreetingAudio = audio;
             audio.preload = 'auto';
+            audio.volume = voiceOutputVolume;
             setFaceState('happy');
             botSpeechActive = true;
             try {
@@ -8838,6 +9099,24 @@
 
         const startPipeline = async () => {
             syncMicSensitivityFromAdmin({ restartBackend: false });
+            const preferBackendStt = isElectronDesktopRuntime();
+
+            if (preferBackendStt) {
+                try {
+                    await ensureAiApiUrlReady();
+                    if (resolvedAiHasRealtimeStack) {
+                        await startBackendSpeechListening();
+                        clearVoiceAutoRetryTimer();
+                        clearBrowserSubmitTimer();
+                        voiceBrowserPendingInterim = '';
+                        setVoiceStatus('Đang nghe bạn nói...');
+                        return;
+                    }
+                } catch (backendError) {
+                    console.warn('[stt] preferred backend streaming unavailable:', backendError);
+                }
+            }
+
             if (!voiceRecognition) {
                 setupSpeechRecognition();
             }
@@ -8869,6 +9148,8 @@
                 if (resolvedAiHasRealtimeStack) {
                     await startBackendSpeechListening();
                     clearVoiceAutoRetryTimer();
+                    clearBrowserSubmitTimer();
+                    voiceBrowserPendingInterim = '';
                     setVoiceStatus('Đang nghe bạn nói...');
                     return;
                 }
@@ -8949,7 +9230,9 @@
         autoGreetingInFlight = true;
         try {
             suppressNextSessionOpening = true;
-            const sessionInitTask = currentSessionId
+            const sessionInitTask = UI_ONLY_VOICE_MODE
+                ? Promise.resolve(null)
+                : currentSessionId
                 ? Promise.resolve(null)
                 : startConversationSession('camera').catch((error) => {
                     console.warn('[auto-greeting] session bootstrap failed:', error);
@@ -9062,7 +9345,9 @@
                         emotion: 'cute',
                     });
                     void runAutoGreeting();
-                    setVoiceListening(true, 'presence');
+                    if (!UI_ONLY_VOICE_MODE) {
+                        setVoiceListening(true, 'presence');
+                    }
                 }
                 return;
             }
@@ -9090,7 +9375,9 @@
                         scene: 'idle',
                         emotion: 'neutral',
                     });
-                    if (!voiceAlwaysListenMode && !voicePinnedByUser) {
+                    if (UI_ONLY_VOICE_MODE) {
+                        setVoiceStatus('Đang chờ khách vào vùng camera...');
+                    } else if (!voiceAlwaysListenMode && !voicePinnedByUser) {
                         setVoiceListening(false, 'presence');
                     } else if (!voiceListening) {
                         setVoiceListening(true, 'presence');
@@ -9724,12 +10011,20 @@
 
         updateMiniCart(nextCart);
         showQuickAddToastMessage(`+${safeQuantity} ${baseName}`);
+        const spokenName = sizeLabel ? `${baseName} size ${sizeLabel}` : baseName;
+        const narration = safeQuantity > 1
+            ? `Đã thêm ${safeQuantity} ${spokenName} vào giỏ hàng.`
+            : `Đã thêm ${spokenName} vào giỏ hàng.`;
+        narrateUi(narration, { dedupeWindowMs: 900 });
     }
 
     function flushPendingManualAdds() {
         if (pendingManualAddBuckets.size === 0) return;
         const batchedRequests = Array.from(pendingManualAddBuckets.values());
         pendingManualAddBuckets.clear();
+        if (UI_ONLY_VOICE_MODE) {
+            return;
+        }
         for (const request of batchedRequests) {
             const quantity = Math.max(1, Number(request?.quantity || 1));
             const baseName = String(request?.baseName || 'mon').trim() || 'mon';
@@ -9779,14 +10074,14 @@
 
     async function handleMenuCardSelect(item) {
         if (!item || !item.available) {
-            setVoiceStatus('Món này tạm hết. Bạn chọn món khác nhé.');
+            narrateUi('Món này đang tạm hết. Bạn chọn món khác giúp mình nhé.');
             return;
         }
         const itemName = String(item.name || 'mon').trim();
         const sizeOptions = await fetchMenuItemSizes(item);
         const availableSizeOptions = sizeOptions.filter((option) => parseMenuBoolean(option?.available, true));
         if (sizeOptions.length > 0 && availableSizeOptions.length === 0) {
-            setVoiceStatus(`Món ${itemName} hiện tạm hết các size. Bạn chọn món khác giúp mình nhé.`);
+            narrateUi(`Món ${itemName} hiện tạm hết các size. Bạn chọn món khác giúp mình nhé.`);
             showQuickAddToastMessage(`${itemName}: tạm hết size`);
             return;
         }
@@ -9797,13 +10092,13 @@
                 subtitle: 'Chạm vào size bạn muốn để thêm món ngay vào giỏ.',
             });
             if (!selectedSize) {
-                setVoiceStatus('Chưa chọn size hợp lệ, đã huỷ thêm món.');
+                narrateUi('Mình chưa nhận được size hợp lệ nên chưa thêm món vào giỏ.');
                 return;
             }
         } else if (sizeOptions.length === 1) {
             if (!parseMenuBoolean(sizeOptions[0]?.available, true)) {
                 const blockedSize = normalizeSizeLabel(sizeOptions[0]?.size_name || 'này');
-                setVoiceStatus(`Size ${blockedSize} của món ${itemName} đang tạm hết.`);
+                narrateUi(`Size ${blockedSize} của món ${itemName} đang tạm hết.`);
                 showQuickAddToastMessage(`Size ${blockedSize} tạm hết`);
                 return;
             }
@@ -10170,23 +10465,45 @@
     if (voiceMiniRefresh) {
         voiceMiniRefresh.addEventListener('click', () => {
             refreshKioskStatus();
+            narrateUi('Mình đang làm mới trạng thái kiosk cho bạn.', {
+                dedupeWindowMs: 800,
+                appendChat: false,
+            });
+        });
+    }
+    voiceOutputVolume = loadVoiceOutputVolume();
+    renderVoiceOutputVolume();
+    applyVoiceOutputVolume();
+    if (voiceVolumeSlider) {
+        voiceVolumeSlider.addEventListener('input', (event) => {
+            setVoiceOutputVolume(Number(event.target?.value || 72) / 100);
+        });
+        voiceVolumeSlider.addEventListener('change', () => {
+            narrateUi(`Âm lượng hiện tại ${Math.round(voiceOutputVolume * 100)} phần trăm.`, {
+                dedupeWindowMs: 500,
+                appendChat: false,
+            });
         });
     }
     if (isAdminPreviewMode) {
         setVoiceStatus('Chế độ xem trước admin');
         updateMenuPanelHeight(0);
     } else {
-        setupSpeechRecognition();
         prewarmVoiceRuntime();
-        if (voiceAlwaysListenMode) {
-            setVoiceStatus('Đang khởi động nghe liên tục...');
-            setVoiceListening(true, 'system');
+        if (UI_ONLY_VOICE_MODE) {
+            setVoiceStatus('Chạm vào màn hình để robot hướng dẫn bằng giọng nói.');
         } else {
-            setVoiceStatus('Đang chờ khách vào vùng camera...');
+            setupSpeechRecognition();
+            if (voiceAlwaysListenMode) {
+                setVoiceStatus('Đang khởi động nghe liên tục...');
+                setVoiceListening(true, 'system');
+            } else {
+                setVoiceStatus('Đang chờ khách vào vùng camera...');
+            }
         }
         updateMenuPanelHeight(3);
         void initializeMiniCamera();
-        if (voiceMiniToggle) {
+        if (!UI_ONLY_VOICE_MODE && voiceMiniToggle) {
             voiceMiniToggle.addEventListener('click', () => {
                 setVoiceListening(!voiceListening, 'manual');
             });

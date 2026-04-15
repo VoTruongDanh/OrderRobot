@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="vi">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -76,7 +76,53 @@
         border-color: #1fa8cc;
         box-shadow: 0 0 0 4px rgba(31, 168, 204, 0.12);
       }
-      button {
+      .password-field {
+        position: relative;
+      }
+      .password-input {
+        padding-right: 54px;
+      }
+      .caps-lock {
+        min-height: 18px;
+        margin-top: 6px;
+        font-size: 12px;
+        font-weight: 700;
+        color: #c07a14;
+        opacity: 0;
+        transition: opacity 120ms ease;
+      }
+      .caps-lock.visible {
+        opacity: 1;
+      }
+      .toggle-password {
+        position: absolute;
+        top: 50%;
+        right: 12px;
+        transform: translateY(-50%);
+        width: 34px;
+        height: 34px;
+        border: none;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        background: rgba(20, 168, 196, 0.12);
+        color: #146f8d;
+        box-shadow: none;
+        cursor: pointer;
+        padding: 0;
+      }
+      .toggle-password:hover {
+        background: rgba(20, 168, 196, 0.18);
+      }
+      .toggle-password:focus-visible {
+        outline: 2px solid rgba(31, 168, 204, 0.4);
+        outline-offset: 2px;
+      }
+      .toggle-password svg {
+        width: 18px;
+        height: 18px;
+      }
+      .submit-btn {
         border: none;
         border-radius: 999px;
         padding: 14px 18px;
@@ -87,23 +133,13 @@
         cursor: pointer;
         box-shadow: 0 18px 28px rgba(35, 104, 223, 0.24);
       }
-      button:disabled {
+      .submit-btn:disabled {
         opacity: 0.7;
         cursor: wait;
       }
-      .endpoint {
-        margin-top: 16px;
-        padding: 14px 16px;
-        border-radius: 16px;
-        background: rgba(19, 151, 189, 0.08);
-        border: 1px solid rgba(19, 151, 189, 0.18);
-        color: #166d8b;
-        font-size: 13px;
-        word-break: break-all;
-      }
       .status {
         min-height: 24px;
-        margin-top: 14px;
+        margin-top: 12px;
         font-size: 14px;
         font-weight: 600;
       }
@@ -118,25 +154,50 @@
   <body>
     <main class="shell">
       <p class="eyebrow">OrderRobot Desktop</p>
-      <h1>Dang nhap de mo kiosk</h1>
+      <h1>Sign in to launch the kiosk</h1>
       <p class="copy">
-        Chi khi tai khoan dang nhap POS hop le thi app moi khoi dong toan bo kiosk, backend va bridge
-        browser an.
+        Enter a valid POS account to start the kiosk, backend services, and hidden bridge browser.
       </p>
 
       <form id="login-form">
         <label>
-          Tai khoan
+          Email or username
           <input id="username" name="username" type="text" autocomplete="username" required />
         </label>
         <label>
-          Mat khau
-          <input id="password" name="password" type="password" autocomplete="current-password" required />
+          Password
+          <div class="password-field">
+            <input
+              id="password"
+              class="password-input"
+              name="password"
+              type="password"
+              autocomplete="current-password"
+              required
+            />
+            <button
+              id="toggle-password"
+              class="toggle-password"
+              type="button"
+              aria-label="Show password"
+              title="Show password"
+            >
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path
+                  d="M2 12C4.4 7.8 8 5.7 12 5.7C16 5.7 19.6 7.8 22 12C19.6 16.2 16 18.3 12 18.3C8 18.3 4.4 16.2 2 12Z"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linejoin="round"
+                />
+                <circle cx="12" cy="12" r="3.1" stroke="currentColor" stroke-width="1.8" />
+              </svg>
+            </button>
+          </div>
+          <div id="caps-lock-hint" class="caps-lock" aria-live="polite">Caps Lock is on</div>
         </label>
-        <button id="submit-btn" type="submit">Dang nhap va mo app</button>
+        <button id="submit-btn" class="submit-btn" type="submit">Sign in and open app</button>
       </form>
 
-      <div class="endpoint" id="endpoint">Dang tai cau hinh dang nhap...</div>
       <div class="status info" id="status"></div>
     </main>
 
@@ -144,8 +205,9 @@
       const form = document.getElementById('login-form');
       const usernameInput = document.getElementById('username');
       const passwordInput = document.getElementById('password');
+      const togglePasswordBtn = document.getElementById('toggle-password');
+      const capsLockHint = document.getElementById('caps-lock-hint');
       const submitBtn = document.getElementById('submit-btn');
-      const endpointEl = document.getElementById('endpoint');
       const statusEl = document.getElementById('status');
 
       function setStatus(message, tone) {
@@ -153,35 +215,94 @@
         statusEl.className = `status ${tone || 'info'}`;
       }
 
+      function renderPasswordIcon(isVisible) {
+        togglePasswordBtn.innerHTML = isVisible
+          ? `
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M3 3L21 21"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+              />
+              <path
+                d="M10.7 6C11.1 5.9 11.5 5.9 12 5.9C16 5.9 19.6 8 22 12.2C21.1 13.8 20 15.1 18.8 16.1"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <path
+                d="M14.1 14.3C13.6 14.8 12.8 15.1 12 15.1C10.3 15.1 8.9 13.7 8.9 12C8.9 11.2 9.2 10.4 9.7 9.9"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <path
+                d="M6 6.9C4.4 8 3.1 9.7 2 12.2C4.4 16.4 8 18.5 12 18.5C13.8 18.5 15.4 18.1 16.9 17.3"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>`
+          : `
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M2 12C4.4 7.8 8 5.7 12 5.7C16 5.7 19.6 7.8 22 12C19.6 16.2 16 18.3 12 18.3C8 18.3 4.4 16.2 2 12Z"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linejoin="round"
+              />
+              <circle cx="12" cy="12" r="3.1" stroke="currentColor" stroke-width="1.8" />
+            </svg>`;
+      }
+
+      function togglePasswordVisibility() {
+        const isVisible = passwordInput.type === 'text';
+        passwordInput.type = isVisible ? 'password' : 'text';
+        togglePasswordBtn.setAttribute('aria-label', isVisible ? 'Show password' : 'Hide password');
+        togglePasswordBtn.setAttribute('title', isVisible ? 'Show password' : 'Hide password');
+        renderPasswordIcon(!isVisible);
+      }
+
+      function updateCapsLockState(event) {
+        const isOn = Boolean(event?.getModifierState && event.getModifierState('CapsLock'));
+        capsLockHint.classList.toggle('visible', isOn);
+      }
+
       async function loadConfig() {
         try {
-          const config = await window.orderRobotDesktop.getLoginConfig();
-          endpointEl.textContent = `API login: ${config?.loginUrl || 'Chua cau hinh'}`;
-          if (config?.usernameHint) {
-            usernameInput.value = config.usernameHint;
-          }
+          await window.orderRobotDesktop.getLoginConfig();
         } catch (error) {
-          endpointEl.textContent = 'Khong tai duoc cau hinh login.';
           setStatus(error?.message || String(error), 'error');
         }
       }
 
+      togglePasswordBtn.addEventListener('click', togglePasswordVisibility);
+      passwordInput.addEventListener('keydown', updateCapsLockState);
+      passwordInput.addEventListener('keyup', updateCapsLockState);
+      passwordInput.addEventListener('focus', updateCapsLockState);
+      passwordInput.addEventListener('blur', () => capsLockHint.classList.remove('visible'));
+
       form.addEventListener('submit', async (event) => {
         event.preventDefault();
         submitBtn.disabled = true;
-        setStatus('Dang xac thuc tai khoan...', 'info');
+        setStatus('Verifying account...', 'info');
         try {
           await window.orderRobotDesktop.login({
             username: usernameInput.value.trim(),
             password: passwordInput.value,
           });
-          setStatus('Dang khoi dong kiosk...', 'info');
+          setStatus('Starting kiosk...', 'info');
         } catch (error) {
           setStatus(error?.message || String(error), 'error');
           submitBtn.disabled = false;
         }
       });
 
+      renderPasswordIcon(false);
       loadConfig();
     </script>
   </body>

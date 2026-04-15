@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "description": "OrderRobot desktop kiosk with AI backend, core backend, and hidden browser bridge.",
   "author": "CNX",
-  "main": "desktop/main.mjs",
+  "main": "desktop/main.cjs",
   "scripts": {
     "install:ui": "npm --prefix apps/kiosk-ui install",
     "install:python": "python -m pip install -r services/core-backend/requirements.txt -r services/ai-backend/requirements.txt",
@@ -31,7 +31,8 @@
     "clean:desktop": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/clean-desktop-build.ps1",
     "build:desktop:core": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-core-backend.ps1",
     "build:desktop:ai": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-ai-backend.ps1",
-    "build:desktop": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-desktop.ps1"
+    "build:desktop": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-desktop.ps1",
+    "build:desktop:unpacked": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-desktop.ps1 -UnpackedOnly"
   },
   "devDependencies": {
     "chrome-devtools-mcp": "^0.20.3",

@@ -1,10 +1,15 @@
+param(
+  [switch]$UnpackedOnly
+)
+
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $repoRoot
 
 $hasWindowsCodeSigning = -not [string]::IsNullOrWhiteSpace($env:WIN_CSC_LINK)
-$builderArgs = @('--config', 'desktop/electron-builder.json', '--win', 'nsis')
+$builderTarget = if ($UnpackedOnly) { 'dir' } else { 'nsis' }
+$builderArgs = @('--config', 'desktop/electron-builder.json', '--win', $builderTarget)
 
 if ($hasWindowsCodeSigning) {
   Write-Host "Windows code signing: enabled"
@@ -25,6 +30,10 @@ if ($hasWindowsCodeSigning) {
   $env:WIN_CSC_LINK = ''
   $env:WIN_CSC_KEY_PASSWORD = ''
   $env:WIN_PUBLISHER_NAME = ''
+}
+
+if ($UnpackedOnly) {
+  Write-Host "Desktop target: win-unpacked only (installer skipped to reduce disk usage)"
 }
 
 npm run build:ui

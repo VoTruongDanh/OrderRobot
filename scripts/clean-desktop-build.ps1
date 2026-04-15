@@ -2,7 +2,7 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $desktopDist = Join-Path $repoRoot 'dist/desktop'
-$winUnpackedDir = Join-Path $desktopDist 'installer/win-unpacked'
+$winUnpackedDir = Join-Path $desktopDist 'installer-new/win-unpacked'
 
 function Stop-LockingDesktopProcesses {
   param(
