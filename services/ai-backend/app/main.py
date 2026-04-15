@@ -20,7 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, StreamingResponse
 from dotenv import dotenv_values
 
-from app.config import ROOT_DIR, get_settings
+from app.config import ENV_CONFIG_PATH, get_settings
 from app.models import (
     BridgeDebugChatRequest,
     BridgeDebugChatResponse,
@@ -473,7 +473,7 @@ async def sync_env_config(payload: EnvSyncRequest) -> EnvSyncResponse:
     if not normalized_updates:
         raise HTTPException(status_code=400, detail="No valid ENV keys provided.")
 
-    env_path = ROOT_DIR / ".env"
+    env_path = ENV_CONFIG_PATH
     try:
         await asyncio.to_thread(_write_env_updates, env_path, normalized_updates)
     except Exception as exc:
@@ -501,7 +501,7 @@ async def load_env_config(payload: EnvLoadRequest) -> EnvLoadResponse:
         if key and ENV_KEY_PATTERN.match(key):
             requested_keys.add(key)
 
-    env_path = ROOT_DIR / ".env"
+    env_path = ENV_CONFIG_PATH
     try:
         loaded = await asyncio.to_thread(_read_env_values, env_path, requested_keys)
     except Exception as exc:

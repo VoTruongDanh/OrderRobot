@@ -185,6 +185,8 @@ class SpeechService:
         self._vieneu_effective_codec_repo: str = ""
         self._vieneu_compat_warning: str = ""
         self._vieneu_version: str = ""
+        self._vieneu_import_checked: bool = False
+        self._vieneu_import_ok: bool = False
 
     async def synthesize(
         self,
@@ -514,13 +516,31 @@ class SpeechService:
     def _should_use_vieneu(self, vieneu_overrides: dict[str, object] | None = None) -> bool:
         engine = self._resolve_tts_engine(vieneu_overrides)
         if engine == "vieneu":
-            return True
+            return self._is_vieneu_available()
         if engine in {"edge", "local", "pyttsx3"}:
             return False
         return self._is_vieneu_available()
 
     def _is_vieneu_available(self) -> bool:
-        return importlib.util.find_spec("vieneu") is not None
+        if self._vieneu_import_checked:
+            return self._vieneu_import_ok
+
+        if importlib.util.find_spec("vieneu") is None:
+            self._vieneu_import_checked = True
+            self._vieneu_import_ok = False
+            return False
+
+        try:
+            from vieneu import Vieneu  # type: ignore[import-not-found]  # noqa: F401
+            self._vieneu_import_ok = True
+        except Exception as exc:
+            self._vieneu_import_ok = False
+            self._vieneu_last_error = f"{type(exc).__name__}: {exc}"
+            logger.warning("vieneu_unavailable error=%s", self._vieneu_last_error)
+        finally:
+            self._vieneu_import_checked = True
+
+        return self._vieneu_import_ok
 
     def _get_vieneu_instance(self):
         if self._vieneu_instance is not None:

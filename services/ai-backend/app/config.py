@@ -14,8 +14,19 @@ def _resolve_root_dir() -> Path:
     return Path(__file__).resolve().parents[3]
 
 
+def _resolve_env_config_path(root_dir: Path) -> Path:
+    override = os.getenv("ORDERROBOT_ENV_FILE", "").strip()
+    if not override:
+        return root_dir / ".env"
+    candidate = Path(override).expanduser()
+    if not candidate.is_absolute():
+        candidate = root_dir / candidate
+    return candidate.resolve()
+
+
 ROOT_DIR = _resolve_root_dir()
-load_dotenv(ROOT_DIR / ".env")
+ENV_CONFIG_PATH = _resolve_env_config_path(ROOT_DIR)
+load_dotenv(ENV_CONFIG_PATH)
 DEFAULT_VIENEU_CPU_MODEL = "pnnbao-ump/VieNeu-TTS-v2-Turbo-GGUF"
 DEFAULT_VIENEU_CPU_CODEC_REPO = ""
 

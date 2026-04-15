@@ -459,6 +459,9 @@ function normalizeApiBaseUrl(value: string): string {
 function getAiApiCandidates(preferredUrl: string): string[] {
   const normalizedPreferred = normalizeApiBaseUrl(preferredUrl)
   const defaults = [
+    '/api/ai',
+    'http://127.0.0.1:8080/api/ai',
+    'http://localhost:8080/api/ai',
     'http://127.0.0.1:18012',
     'http://127.0.0.1:8012',
     'http://localhost:18012',
@@ -1377,12 +1380,13 @@ export default function AdminPage() {
   const saveAndSyncConfig = useCallback(
     async (fields: EnvField[], successText: string) => {
       const validationError = validateLivePosConfig(fields)
+      // Keep sync non-blocking: still persist ENV so user can save partial config
+      // and continue filling required POS fields afterward.
       if (validationError) {
         setNotice({
           tone: 'warning',
           text: validationError,
         })
-        return
       }
 
       const normalizedFields = normalizeFieldsForPersistence(fields)

@@ -1,0 +1,12 @@
+.git
+.github
+.vscode
+node_modules
+apps/kiosk-ui/node_modules
+apps/kiosk-ui/dist
+dist
+**/__pycache__
+**/.pytest_cache
+**/*.pyc
+terminals
+agent-transcripts
