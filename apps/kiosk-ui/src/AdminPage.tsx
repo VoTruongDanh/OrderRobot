@@ -517,7 +517,13 @@ function normalizeFieldsForPersistence(fields: EnvField[]): EnvField[] {
   const mode = getFieldValue(fields, 'POS_MENU_SOURCE_MODE', 'remote_strict').trim().toLowerCase()
   const coreApi = normalizeApiBaseUrl(getFieldValue(fields, 'VITE_CORE_API_URL', getCoreApiUrl()))
   const canonicalMenuUrl = `${coreApi}/menu`
+  const canonicalOrdersUrl = `${coreApi}/orders`
+  const posApiBase = normalizeApiBaseUrl(getFieldValue(fields, 'POS_API_BASE_URL', ''))
+  const canonicalPosLoginUrl = posApiBase ? `${posApiBase}/auth/login` : ''
+  const canonicalPosRefreshUrl = posApiBase ? `${posApiBase}/auth/refresh` : ''
   const posStoreId = getFieldValue(fields, 'POS_STORE_ID', '').trim()
+  const posSizeSourceUrl = getFieldValue(fields, 'POS_SIZE_SOURCE_URL', '').trim()
+  const posDefaultSizeName = getFieldValue(fields, 'POS_DEFAULT_SIZE_NAME', '').trim()
   const syncStoreIdInUrl = (rawUrl: string): string => {
     const safeUrl = String(rawUrl || '').trim()
     if (!safeUrl || !posStoreId) return safeUrl
@@ -543,9 +549,24 @@ function normalizeFieldsForPersistence(fields: EnvField[]): EnvField[] {
     if (field.key === 'VITE_MENU_API_URL' && mode === 'remote_strict' && canonicalMenuUrl) {
       return field.value === canonicalMenuUrl ? field : { ...field, value: canonicalMenuUrl }
     }
+    if (field.key === 'VITE_ORDERS_API_URL' && canonicalOrdersUrl) {
+      return field.value === canonicalOrdersUrl ? field : { ...field, value: canonicalOrdersUrl }
+    }
     if (field.key === 'POS_MENU_SOURCE_URL') {
       const nextMenuSourceUrl = syncStoreIdInUrl(field.value)
       return field.value === nextMenuSourceUrl ? field : { ...field, value: nextMenuSourceUrl }
+    }
+    if (field.key === 'POS_AUTH_LOGIN_URL' && canonicalPosLoginUrl) {
+      return field.value === canonicalPosLoginUrl ? field : { ...field, value: canonicalPosLoginUrl }
+    }
+    if (field.key === 'POS_AUTH_REFRESH_URL' && canonicalPosRefreshUrl) {
+      return field.value === canonicalPosRefreshUrl ? field : { ...field, value: canonicalPosRefreshUrl }
+    }
+    if (field.key === 'VITE_PRODUCT_SIZE_API_URL' && posSizeSourceUrl) {
+      return field.value === posSizeSourceUrl ? field : { ...field, value: posSizeSourceUrl }
+    }
+    if (field.key === 'VITE_PRODUCT_DEFAULT_SIZE_NAME' && posDefaultSizeName) {
+      return field.value === posDefaultSizeName ? field : { ...field, value: posDefaultSizeName }
     }
     if (field.key === 'VITE_TAX_PERCENT') {
       const nextTax = normalizeTaxPercent(field.value)

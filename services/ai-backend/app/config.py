@@ -115,7 +115,7 @@ def get_settings() -> Settings:
         ai_base_url=os.getenv("AI_BASE_URL", "").strip(),
         ai_api_key=os.getenv("AI_API_KEY", "").strip(),
         ai_model=os.getenv("AI_MODEL", "").strip(),
-        core_backend_url=os.getenv("CORE_BACKEND_URL", "http://127.0.0.1:8001").strip(),
+        core_backend_url=os.getenv("CORE_BACKEND_URL", "http://127.0.0.1:8011").strip(),
         bridge_base_url=bridge_base_url,
         bridge_timeout_seconds=float(os.getenv("BRIDGE_TIMEOUT_SECONDS", "25.0")),
         bridge_stream_timeout_seconds=float(os.getenv("BRIDGE_STREAM_TIMEOUT_SECONDS", "120.0")),
