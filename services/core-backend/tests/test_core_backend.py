@@ -8,6 +8,7 @@ import json
 
 from fastapi.testclient import TestClient
 from app.config import Settings
+from app.config import get_settings
 from app.models import OrderLineItem, OrderRecord
 from app.repositories.csv_repositories import CsvMenuRepository, CsvOrderRepository
 from app.services.order_service import OrderService
@@ -513,3 +514,33 @@ def test_order_csv_repository_migrates_legacy_header_without_data_loss(tmp_path:
     ids = {order.order_id for order in all_orders}
     assert "LEGACY-1" in ids
     assert "NEW-1" in ids
+
+
+def test_get_settings_syncs_menu_source_store_id_from_pos_store_id(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("MENU_CSV_PATH", str(tmp_path / "menu.csv"))
+    monkeypatch.setenv("ORDERS_CSV_PATH", str(tmp_path / "orders.csv"))
+    monkeypatch.setenv("POS_STORE_ID", "12")
+    monkeypatch.setenv(
+        "POS_MENU_SOURCE_URL",
+        "http://example.test/api/v1/product-availability/filter?storeId=9&page=0&size=100&sort=",
+    )
+
+    settings = get_settings()
+
+    assert settings.pos_store_id == 12
+    assert "storeId=12" in settings.pos_menu_source_url
+
+
+def test_get_settings_infers_pos_store_id_from_menu_source_url_when_missing(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("MENU_CSV_PATH", str(tmp_path / "menu.csv"))
+    monkeypatch.setenv("ORDERS_CSV_PATH", str(tmp_path / "orders.csv"))
+    monkeypatch.delenv("POS_STORE_ID", raising=False)
+    monkeypatch.setenv(
+        "POS_MENU_SOURCE_URL",
+        "http://example.test/api/v1/product-availability/filter?storeId=15&page=0&size=100&sort=",
+    )
+
+    settings = get_settings()
+
+    assert settings.pos_store_id == 15
+    assert "storeId=15" in settings.pos_menu_source_url

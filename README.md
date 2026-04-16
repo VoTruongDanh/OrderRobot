@@ -40,6 +40,7 @@ POS_API_PASSWORD=
 POS_AUTH_LOGIN_URL=http://cnxvn.ddns.net:8080/api/v1/auth/login
 POS_AUTH_REFRESH_URL=http://cnxvn.ddns.net:8080/api/v1/auth/refresh
 POS_STORE_ID=
+POS_MENU_SOURCE_URL=http://cnxvn.ddns.net:8080/api/v1/product-availability/filter?storeId={storeId}&page=0&size=1000&sort=
 
 # Lite LLM mode (default)
 LLM_MODE=disabled
