@@ -68,6 +68,8 @@ def _sync_store_id_query(url: str, store_id: int | None) -> str:
 
 
 def get_settings() -> Settings:
+    load_dotenv(ROOT_DIR / ".env", override=True)
+
     menu_csv = Path(os.getenv("MENU_CSV_PATH", "data/menu.csv"))
     orders_csv = Path(os.getenv("ORDERS_CSV_PATH", "data/orders.csv"))
 

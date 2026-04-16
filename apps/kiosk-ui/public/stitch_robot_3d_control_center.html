@@ -3565,6 +3565,8 @@
 
     let isMenuOpen = false;
     let menuLoaded = false;
+    let menuLoadTask = null;
+    let lastMenuConfigSignature = '';
     let activeMenuCategory = 'all';
     let currentMenuItems = [];
     let lastAutoGreetingAt = 0;
@@ -10034,6 +10036,52 @@
         }
     }
 
+    function readMenuConfigSignature() {
+        try {
+            const raw = localStorage.getItem(ADMIN_ENV_STORAGE_KEY);
+            if (!raw) return '';
+            const parsed = JSON.parse(raw);
+            return JSON.stringify({
+                posStoreId: String(parsed.POS_STORE_ID || '').trim(),
+                posMenuSourceMode: String(parsed.POS_MENU_SOURCE_MODE || '').trim(),
+                posMenuSourceUrl: String(parsed.POS_MENU_SOURCE_URL || '').trim(),
+                posSizeSourceUrl: String(parsed.POS_SIZE_SOURCE_URL || '').trim(),
+                coreApiUrl: String(parsed.VITE_CORE_API_URL || '').trim(),
+                menuApiUrl: String(parsed.VITE_MENU_API_URL || '').trim(),
+                productSizeApiUrl: String(parsed.VITE_PRODUCT_SIZE_API_URL || '').trim(),
+                productDefaultSizeName: String(parsed.VITE_PRODUCT_DEFAULT_SIZE_NAME || '').trim(),
+            });
+        } catch {
+            return '';
+        }
+    }
+
+    function invalidateMenuCache(reason = '') {
+        menuLoaded = false;
+        menuLoadTask = null;
+        currentMenuItems = [];
+        menuSizeOptionsCache.clear();
+        activeMenuCategory = 'all';
+        if (menuCategoryRow) menuCategoryRow.innerHTML = '';
+        if (menuItemsGrid) {
+            const detail = String(reason || '').trim();
+            menuItemsGrid.innerHTML = `<p class="menu-status">${detail ? `Đang cập nhật menu: ${toSafeText(detail)}` : 'Đang cập nhật menu...'}</p>`;
+        }
+        if (menuStatus) {
+            menuStatus.textContent = reason
+                ? `Đang cập nhật menu (${reason})...`
+                : 'Đang cập nhật menu...';
+        }
+    }
+
+    function syncMenuConfigFromAdmin(reason = 'config changed') {
+        const nextMenuSignature = readMenuConfigSignature();
+        if (nextMenuSignature !== lastMenuConfigSignature) {
+            invalidateMenuCache(reason);
+            void ensureMenuLoaded();
+        }
+    }
+
     function renderMenuItems(items) {
         if (!Array.isArray(items) || items.length === 0) {
             currentMenuItems = [];
@@ -10057,20 +10105,25 @@
     }
 
     async function ensureMenuLoaded() {
+        const nextMenuSignature = readMenuConfigSignature();
+        if (nextMenuSignature && nextMenuSignature !== lastMenuConfigSignature) {
+            invalidateMenuCache('config changed');
+        }
         if (menuLoaded) return;
+        if (menuLoadTask) return menuLoadTask;
         const candidates = readMenuApiCandidates();
-        let configuredSizeSource = '';
-        let configuredSizeName = '';
-        try {
-            const raw = localStorage.getItem(ADMIN_ENV_STORAGE_KEY);
-            if (raw) {
-                const parsed = JSON.parse(raw);
-                configuredSizeSource = String(parsed.VITE_PRODUCT_SIZE_API_URL || '').trim();
-                configuredSizeName = String(parsed.VITE_PRODUCT_DEFAULT_SIZE_NAME || '').trim();
-            }
-        } catch {}
-        if (menuStatus) menuStatus.textContent = 'Đang tải menu...';
-        try {
+        menuLoadTask = (async () => {
+            let configuredSizeSource = '';
+            let configuredSizeName = '';
+            try {
+                const raw = localStorage.getItem(ADMIN_ENV_STORAGE_KEY);
+                if (raw) {
+                    const parsed = JSON.parse(raw);
+                    configuredSizeSource = String(parsed.VITE_PRODUCT_SIZE_API_URL || '').trim();
+                    configuredSizeName = String(parsed.VITE_PRODUCT_DEFAULT_SIZE_NAME || '').trim();
+                }
+            } catch {}
+            if (menuStatus) menuStatus.textContent = 'Đang tải menu...';
             let lastError = null;
             for (const menuUrl of candidates) {
                 let requestUrl = menuUrl;
@@ -10119,6 +10172,7 @@
                     await enrichMenuItemsWithSizeData(items);
                     renderMenuItems(items);
                     menuLoaded = true;
+                    lastMenuConfigSignature = nextMenuSignature || readMenuConfigSignature();
                     if (menuStatus) menuStatus.textContent = `Đã tải ${items.length} mon`;
                     return;
                 } catch (error) {
@@ -10126,7 +10180,7 @@
                 }
             }
             throw lastError || new Error('No menu endpoint reachable');
-        } catch (error) {
+        })().catch((error) => {
             renderMenuItems([]);
             menuLoaded = true;
             if (menuStatus) {
@@ -10139,7 +10193,10 @@
                 const reason = toSafeText(String(error?.message || 'Không ro loi'));
                 menuItemsGrid.innerHTML = `<p class="menu-status">Không tải được menu online CNX qua core API. ${reason}</p>`;
             }
-        }
+        }).finally(() => {
+            menuLoadTask = null;
+        });
+        return menuLoadTask;
     }
 
     async function initializeMiniCamera() {
@@ -10251,6 +10308,7 @@
         if (event.key === ADMIN_ENV_STORAGE_KEY) {
             refreshVoiceRuntimeConfigFromAdmin();
             refreshOrderTaxConfigFromAdmin();
+            syncMenuConfigFromAdmin('admin config updated');
             void preloadGreetingAudioCache().catch(() => {});
             if (voiceListening && voiceInputMode === 'backend') {
                 void startBackendSpeechListening().catch(() => {});
@@ -10273,6 +10331,16 @@
                 if (!event.newValue) return;
                 runRobotStudioCommand(JSON.parse(event.newValue));
             } catch {}
+        }
+    });
+
+    window.addEventListener('focus', () => {
+        syncMenuConfigFromAdmin('window focus');
+    });
+
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) {
+            syncMenuConfigFromAdmin('tab visible');
         }
     });
 
@@ -10306,6 +10374,7 @@
         if (event.data.type === 'orderrobot:admin-env-config') {
             refreshVoiceRuntimeConfigFromAdmin();
             refreshOrderTaxConfigFromAdmin();
+            syncMenuConfigFromAdmin('admin env message');
             void preloadGreetingAudioCache().catch(() => {});
             if (voiceListening && voiceInputMode === 'backend') {
                 void startBackendSpeechListening().catch(() => {});

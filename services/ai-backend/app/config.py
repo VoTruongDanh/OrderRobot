@@ -97,6 +97,8 @@ class Settings:
 
 
 def get_settings() -> Settings:
+    load_dotenv(ENV_CONFIG_PATH, override=True)
+
     default_cpu_threads = max(1, min(os.cpu_count() or 4, 8))
     llm_mode = os.getenv("LLM_MODE", "disabled").strip().lower() or "disabled"
     raw_bridge_base_url = os.getenv("BRIDGE_BASE_URL", "").strip()
