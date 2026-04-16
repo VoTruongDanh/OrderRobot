@@ -1477,11 +1477,11 @@
         }
         .size-picker-copy {
             display: grid;
-            gap: 8px;
+            gap: 6px;
         }
         .size-picker-kicker {
             margin: 0;
-            font-size: 0.72rem;
+            font-size: 0.68rem;
             font-weight: 800;
             letter-spacing: 0.12em;
             text-transform: uppercase;
@@ -1495,13 +1495,13 @@
         }
         .size-picker-sub {
             margin: 0;
-            font-size: 0.95rem;
-            line-height: 1.45;
+            font-size: 0.88rem;
+            line-height: 1.35;
             color: #355468;
         }
         .size-picker-item {
             margin: 0;
-            font-size: 1.18rem;
+            font-size: 1.12rem;
             font-weight: 800;
             color: #0f4c66;
         }
@@ -1516,14 +1516,14 @@
         }
         .size-picker-option {
             display: grid;
-            gap: 8px;
+            gap: 6px;
             border-radius: 18px;
             border: 1px solid rgba(120, 162, 188, 0.26);
             background: linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(239, 248, 255, 0.94));
             padding: 14px;
             text-align: left;
             cursor: pointer;
-            min-height: 112px;
+            min-height: 100px;
             transition:
                 transform var(--ui-fast) ease,
                 box-shadow var(--ui-fast) ease,
@@ -1555,18 +1555,18 @@
             border-color: rgba(148, 163, 184, 0.36);
         }
         .size-picker-option-size {
-            font-size: 1rem;
+            font-size: 1.04rem;
             font-weight: 800;
             color: #0f2b3b;
         }
         .size-picker-option-price {
-            font-size: 1rem;
-            font-weight: 700;
+            font-size: 1.02rem;
+            font-weight: 800;
             color: #0e7490;
         }
         .size-picker-option-note {
-            font-size: 0.79rem;
-            color: #547084;
+            font-size: 0.76rem;
+            color: #5a7384;
         }
         .size-picker-option-tag {
             justify-self: start;
@@ -1805,6 +1805,123 @@
             font-size: 0.78rem;
             font-weight: 700;
             color: #0f766e;
+        }
+        .bank-picker-card {
+            display: grid;
+            gap: 14px;
+        }
+        .bank-picker-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+        .bank-picker-copy {
+            display: grid;
+            gap: 4px;
+        }
+        .bank-picker-title {
+            margin: 0;
+            font-size: 1.02rem;
+            font-weight: 800;
+            color: #0f172a;
+        }
+        .bank-picker-sub {
+            margin: 0;
+            font-size: 0.8rem;
+            line-height: 1.35;
+            color: #5b6b80;
+        }
+        .bank-picker-close {
+            min-height: 40px;
+            padding: 0 14px;
+            border-radius: 999px;
+            border: 1px solid rgba(191, 204, 230, 0.74);
+            background: rgba(255, 255, 255, 0.98);
+            color: #21446e;
+            font-size: 0.76rem;
+            font-weight: 800;
+            cursor: pointer;
+        }
+        .bank-picker-list {
+            display: grid;
+            gap: 10px;
+            max-height: min(46vh, 360px);
+            overflow: auto;
+            padding-right: 2px;
+        }
+        .bank-picker-app {
+            display: grid;
+            grid-template-columns: 44px minmax(0, 1fr) auto;
+            gap: 10px;
+            align-items: center;
+            border-radius: 18px;
+            border: 1px solid rgba(191, 204, 230, 0.72);
+            background: rgba(255, 255, 255, 0.98);
+            padding: 10px 12px;
+            text-align: left;
+            cursor: pointer;
+            transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+        }
+        .bank-picker-app:hover,
+        .bank-picker-app:focus-visible {
+            transform: translateY(-1px);
+            border-color: rgba(37, 99, 235, 0.32);
+            box-shadow: 0 14px 24px rgba(20, 39, 74, 0.12);
+            outline: none;
+        }
+        .bank-picker-app-logo {
+            width: 44px;
+            height: 44px;
+            border-radius: 14px;
+            object-fit: cover;
+            background: #eff6ff;
+            border: 1px solid rgba(191, 204, 230, 0.42);
+        }
+        .bank-picker-app-copy {
+            display: grid;
+            gap: 2px;
+            min-width: 0;
+        }
+        .bank-picker-app-name {
+            font-size: 0.88rem;
+            font-weight: 800;
+            color: #10243d;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .bank-picker-app-bank {
+            font-size: 0.72rem;
+            color: #61758d;
+            line-height: 1.3;
+        }
+        .bank-picker-app-tag {
+            justify-self: end;
+            border-radius: 999px;
+            padding: 4px 8px;
+            border: 1px solid rgba(20, 184, 166, 0.24);
+            background: rgba(204, 251, 241, 0.84);
+            color: #0f766e;
+            font-size: 0.64rem;
+            font-weight: 800;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+        .bank-picker-app-tag--basic {
+            border-color: rgba(148, 163, 184, 0.24);
+            background: rgba(241, 245, 249, 0.92);
+            color: #516072;
+        }
+        .bank-picker-loading,
+        .bank-picker-empty {
+            margin: 0;
+            padding: 14px 12px;
+            border-radius: 16px;
+            background: rgba(255, 255, 255, 0.96);
+            border: 1px solid rgba(191, 204, 230, 0.64);
+            color: #607287;
+            font-size: 0.8rem;
         }
         .rating-stars {
             display: grid;
@@ -3371,7 +3488,7 @@
             .size-picker-options {
                 grid-template-columns: 1fr;
                 max-height: min(48vh, 360px);
-                gap: 10px;
+                gap: 8px;
                 padding-right: 2px;
             }
 
@@ -3396,8 +3513,8 @@
                 grid-template-columns: minmax(0, 1fr) auto;
                 align-items: center;
                 gap: 4px 10px;
-                min-height: 84px;
-                padding: 12px;
+                min-height: 78px;
+                padding: 12px 12px 10px;
             }
 
             .size-picker-option-size {
@@ -3416,8 +3533,8 @@
             .size-picker-option-note {
                 grid-column: 1 / -1;
                 grid-row: 2;
-                font-size: 0.75rem;
-                line-height: 1.35;
+                font-size: 0.72rem;
+                line-height: 1.28;
             }
 
             .size-picker-option-tag {
@@ -3870,6 +3987,12 @@
             }
             .order-popup-qr-actions {
                 justify-content: center;
+            }
+            .bank-picker-app {
+                grid-template-columns: 42px minmax(0, 1fr);
+            }
+            .bank-picker-app-tag {
+                justify-self: start;
             }
         }
 
@@ -5185,15 +5308,15 @@
                 padding: 0 14px;
                 gap: 7px;
                 border-radius: 22px;
-                background: rgba(255, 255, 255, 0.12);
-                border: 1px solid rgba(255, 255, 255, 0.12);
-                color: #f5f8ff;
-                box-shadow: none;
+                background: linear-gradient(135deg, rgba(44, 58, 88, 0.94), rgba(74, 88, 118, 0.92));
+                border: 1px solid rgba(255, 255, 255, 0.16);
+                color: #f8fbff;
+                box-shadow: 0 14px 24px rgba(19, 30, 56, 0.22);
             }
 
             body#main-viewport:not(.admin-preview-mode) .dock-action-btn:hover {
                 transform: none;
-                background: rgba(255, 255, 255, 0.18);
+                background: linear-gradient(135deg, rgba(52, 68, 101, 0.96), rgba(83, 99, 132, 0.94));
             }
 
             body#main-viewport:not(.admin-preview-mode) .dock-action-btn.is-open,
@@ -5722,6 +5845,18 @@
 </div>
 <p class="order-popup-countdown" id="order-popup-countdown">Tự động đóng sau 6s</p>
 </article>
+<article class="order-status-card bank-picker-card" id="bank-picker-card" hidden>
+<div class="bank-picker-head">
+<div class="bank-picker-copy">
+<p class="bank-picker-title">Chọn ngân hàng để thanh toán</p>
+<p class="bank-picker-sub" id="bank-picker-sub">Mở đúng app ngân hàng và điền sẵn thông tin nếu app hỗ trợ autofill.</p>
+</div>
+<button class="bank-picker-close" id="bank-picker-close-btn" type="button">Quay lại</button>
+</div>
+<div class="bank-picker-list" id="bank-picker-list">
+<p class="bank-picker-loading">Đang tải danh sách ngân hàng hỗ trợ deeplink...</p>
+</div>
+</article>
 <article class="order-rating-card" id="rating-popup-card" hidden>
 <p class="order-status-title">Đánh giá trải nghiệm</p>
 <p class="order-status-sub">Vui lòng chọn từ 1 đến 5 sao cho đơn vừa đặt.</p>
@@ -5905,6 +6040,10 @@
     const orderPopupDownloadQrBtn = document.getElementById('order-popup-download-qr-btn');
     const orderPopupCopyCodeBtn = document.getElementById('order-popup-copy-code-btn');
     const orderPopupCountdown = document.getElementById('order-popup-countdown');
+    const bankPickerCard = document.getElementById('bank-picker-card');
+    const bankPickerList = document.getElementById('bank-picker-list');
+    const bankPickerCloseBtn = document.getElementById('bank-picker-close-btn');
+    const bankPickerSub = document.getElementById('bank-picker-sub');
     const ratingPopupCard = document.getElementById('rating-popup-card');
     const ratingStars = document.getElementById('rating-stars');
     const ratingCommentInput = document.getElementById('rating-comment-input');
@@ -6167,6 +6306,7 @@
     let activeOrderQrCodeText = '';
     let activeOrderPaymentLaunchUrl = '';
     let activeOrderPaymentLaunchLabel = '';
+    let bankPickerAppsCache = null;
     let activeSizePickerResolver = null;
     let activeOrderFlowToken = 0;
     const handledOrderIds = [];
@@ -7698,6 +7838,9 @@
     function hideOrderPopupTemporarily() {
         if (!orderStatusHud || !orderPopupCard || orderPopupCard.hidden) return;
         orderStatusHud.hidden = true;
+        if (bankPickerCard) {
+            bankPickerCard.hidden = true;
+        }
         orderPopupCanReopen = true;
         updateOrderPopupReopenButton();
     }
@@ -7706,6 +7849,9 @@
         if (!orderStatusHud || !orderPopupCard || !orderPopupCanReopen) return;
         orderStatusHud.hidden = false;
         orderPopupCard.hidden = false;
+        if (bankPickerCard) {
+            bankPickerCard.hidden = true;
+        }
         orderPopupCanReopen = false;
         updateOrderPopupReopenButton();
         if (ratingPopupCard) {
@@ -7854,6 +8000,177 @@
         return `https://api.qrserver.com/v1/create-qr-code/?size=320x320&margin=8&data=${encodeURIComponent(value)}`;
     }
 
+    function deriveVietQrLaunchUrlFromQrImageUrl(qrImageUrl) {
+        const raw = String(qrImageUrl || '').trim();
+        if (!raw) return '';
+        try {
+            const parsed = new URL(raw, window.location.href);
+            const acc = String(
+                parsed.searchParams.get('acc')
+                || parsed.searchParams.get('account')
+                || parsed.searchParams.get('accountNo')
+                || '',
+            ).trim();
+            const bank = String(
+                parsed.searchParams.get('bank')
+                || parsed.searchParams.get('bankCode')
+                || parsed.searchParams.get('bankBin')
+                || '',
+            ).trim().toLowerCase();
+            const amount = String(
+                parsed.searchParams.get('amount')
+                || parsed.searchParams.get('am')
+                || '',
+            ).trim();
+            const transferNote = String(
+                parsed.searchParams.get('des')
+                || parsed.searchParams.get('description')
+                || parsed.searchParams.get('addInfo')
+                || parsed.searchParams.get('memo')
+                || '',
+            ).trim();
+            if (!acc || !bank) return '';
+            const launch = new URL('https://dl.vietqr.io/pay');
+            launch.searchParams.set('ba', `${acc}@${bank}`);
+            if (amount) launch.searchParams.set('am', amount);
+            if (transferNote) launch.searchParams.set('tn', transferNote);
+            launch.searchParams.set('url', window.location.href);
+            return launch.toString();
+        } catch {
+            return '';
+        }
+    }
+
+    function isVietQrDeeplinkUrl(url) {
+        const raw = String(url || '').trim();
+        if (!raw) return false;
+        try {
+            const parsed = new URL(raw, window.location.href);
+            return parsed.hostname === 'dl.vietqr.io' && parsed.pathname.startsWith('/pay');
+        } catch {
+            return false;
+        }
+    }
+
+    function getBankDeeplinkApiUrl() {
+        const ua = String(navigator.userAgent || '').toLowerCase();
+        const isIos = /iphone|ipad|ipod/.test(ua);
+        return isIos
+            ? 'https://api.vietqr.io/v2/ios-app-deeplinks'
+            : 'https://api.vietqr.io/v2/android-app-deeplinks';
+    }
+
+    async function loadBankDeeplinkApps() {
+        if (Array.isArray(bankPickerAppsCache) && bankPickerAppsCache.length > 0) {
+            return bankPickerAppsCache;
+        }
+        const response = await fetch(getBankDeeplinkApiUrl());
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        const payload = await response.json();
+        const appsRaw = Array.isArray(payload?.apps)
+            ? payload.apps
+            : Array.isArray(payload?.data)
+                ? payload.data
+                : Array.isArray(payload)
+                    ? payload
+                    : [];
+        bankPickerAppsCache = appsRaw
+            .map((app) => ({
+                appId: String(app?.appId || '').trim(),
+                appName: String(app?.appName || '').trim(),
+                bankName: String(app?.bankName || '').trim(),
+                appLogo: String(app?.appLogo || '').trim(),
+                deeplink: String(app?.deeplink || '').trim(),
+                autofill: Number(app?.autofill || 0) === 1,
+                monthlyInstall: Number(app?.monthlyInstall || 0) || 0,
+            }))
+            .filter((app) => app.appId && app.appName && app.deeplink)
+            .sort((left, right) => {
+                if (Number(right.autofill) !== Number(left.autofill)) {
+                    return Number(right.autofill) - Number(left.autofill);
+                }
+                return right.monthlyInstall - left.monthlyInstall;
+            });
+        return bankPickerAppsCache;
+    }
+
+    function renderBankPickerList(apps) {
+        if (!bankPickerList) return;
+        if (!Array.isArray(apps) || apps.length === 0) {
+            bankPickerList.innerHTML = '<p class="bank-picker-empty">Không tải được danh sách ngân hàng hỗ trợ deeplink.</p>';
+            return;
+        }
+        const launchBase = String(activeOrderPaymentLaunchUrl || '').trim();
+        bankPickerList.innerHTML = apps.slice(0, 18).map((app) => {
+            const launchUrl = new URL(launchBase, window.location.href);
+            launchUrl.searchParams.set('app', app.appId);
+            const tagClass = app.autofill ? '' : ' bank-picker-app-tag--basic';
+            const tagText = app.autofill ? 'Autofill' : 'Mở app';
+            return `
+                <button class="bank-picker-app" type="button" data-launch-url="${toSafeText(launchUrl.toString())}">
+                    <img class="bank-picker-app-logo" src="${toSafeText(app.appLogo)}" alt="${toSafeText(app.appName)}" loading="lazy">
+                    <span class="bank-picker-app-copy">
+                        <span class="bank-picker-app-name">${toSafeText(app.appName)}</span>
+                        <span class="bank-picker-app-bank">${toSafeText(app.bankName)}</span>
+                    </span>
+                    <span class="bank-picker-app-tag${tagClass}">${toSafeText(tagText)}</span>
+                </button>
+            `;
+        }).join('');
+        bankPickerList.querySelectorAll('.bank-picker-app').forEach((button) => {
+            button.addEventListener('click', () => {
+                const launchUrl = String(button.getAttribute('data-launch-url') || '').trim();
+                if (!launchUrl) return;
+                window.location.href = launchUrl;
+            });
+        });
+    }
+
+    async function showBankPickerModal() {
+        if (!bankPickerCard) {
+            openPaymentLaunchTarget();
+            return;
+        }
+        if (!isVietQrDeeplinkUrl(activeOrderPaymentLaunchUrl)) {
+            openPaymentLaunchTarget();
+            return;
+        }
+        if (orderPopupCard) {
+            orderPopupCard.hidden = true;
+        }
+        if (bankPickerCard) {
+            bankPickerCard.hidden = true;
+        }
+        if (ratingPopupCard) {
+            ratingPopupCard.hidden = true;
+        }
+        bankPickerCard.hidden = false;
+        if (bankPickerList) {
+            bankPickerList.innerHTML = '<p class="bank-picker-loading">Đang tải danh sách ngân hàng hỗ trợ deeplink...</p>';
+        }
+        if (bankPickerSub) {
+            bankPickerSub.textContent = 'Chọn app ngân hàng. App có nhãn Autofill sẽ điền sẵn tốt hơn khi được hỗ trợ.';
+        }
+        try {
+            const apps = await loadBankDeeplinkApps();
+            renderBankPickerList(apps);
+        } catch (error) {
+            if (bankPickerList) {
+                bankPickerList.innerHTML = `<p class="bank-picker-empty">Không tải được danh sách ngân hàng: ${toSafeText(String(error?.message || 'network-error'))}</p>`;
+            }
+        }
+    }
+
+    function closeBankPickerModal() {
+        if (!bankPickerCard) return;
+        bankPickerCard.hidden = true;
+        if (orderPopupCard) {
+            orderPopupCard.hidden = false;
+        }
+    }
+
     function pickPaymentLaunchUrl(payload = {}) {
         const directKeys = [
             'paymentDeepLink',
@@ -7887,12 +8204,22 @@
         if (/^(?:https?:\/\/|intent:|vietqr:|zalopay:|momo:|mbbank:|vcb:|acb:|tpbank:|bidv:|msb:|shb:)/i.test(qrContent)) {
             return qrContent;
         }
+        const qrImageUrl = String(
+            payload?.paymentQrImageUrl ?? payload?.payment_qr_image_url ?? payload?.qrImageUrl ?? payload?.qr_image_url ?? '',
+        ).trim();
+        const derived = deriveVietQrLaunchUrlFromQrImageUrl(qrImageUrl);
+        if (derived) {
+            return derived;
+        }
         return '';
     }
 
     function getPaymentLaunchLabel(url) {
         const value = String(url || '').trim().toLowerCase();
         if (!value) return '';
+        if (value.includes('dl.vietqr.io/pay')) {
+            return 'Chọn ngân hàng';
+        }
         if (value.startsWith('intent:') || /(?:momo|zalopay|vietqr|mbbank|vcb|acb|tpbank|bidv|msb|shb)/.test(value)) {
             return 'Mở ngân hàng';
         }
@@ -7928,13 +8255,13 @@
         if (orderPopupOpenBankBtn) {
             const hasLaunch = Boolean(activeOrderPaymentLaunchUrl);
             orderPopupOpenBankBtn.hidden = !hasLaunch;
-            orderPopupOpenBankBtn.textContent = activeOrderPaymentLaunchLabel || 'Mở ngân hàng';
+            orderPopupOpenBankBtn.textContent = activeOrderPaymentLaunchLabel || 'Chọn ngân hàng';
         }
         if (orderPopupDownloadQrBtn) {
             orderPopupDownloadQrBtn.hidden = !activeOrderQrDownloadUrl;
         }
         if (orderPopupCopyCodeBtn) {
-            orderPopupCopyCodeBtn.hidden = !activeOrderQrCodeText;
+            orderPopupCopyCodeBtn.hidden = !activeOrderQrCodeText || Boolean(activeOrderPaymentLaunchUrl);
         }
     }
 
@@ -12430,8 +12757,8 @@
                     ? formatCurrencyVnd(opt.price)
                     : '--';
                 const noteLabel = opt.is_default
-                    ? 'Size mặc định, dễ chọn nhất'
-                    : 'Chạm để thêm nhanh vào giỏ';
+                    ? 'Khuyên dùng, thêm nhanh nhất'
+                    : 'Nhấn để thêm ngay';
                 const defaultTag = opt.is_default && opt.available
                     ? '<span class="size-picker-option-tag">Mặc định</span>'
                     : '';
@@ -13172,7 +13499,7 @@
     }
     if (orderPopupOpenBankBtn) {
         orderPopupOpenBankBtn.addEventListener('click', () => {
-            openPaymentLaunchTarget();
+            void showBankPickerModal();
         });
     }
     if (orderPopupDownloadQrBtn) {
@@ -13187,7 +13514,16 @@
     }
     if (orderStatusBackdrop) {
         orderStatusBackdrop.addEventListener('click', () => {
+            if (bankPickerCard && !bankPickerCard.hidden) {
+                closeBankPickerModal();
+                return;
+            }
             hideOrderPopupTemporarily();
+        });
+    }
+    if (bankPickerCloseBtn) {
+        bankPickerCloseBtn.addEventListener('click', () => {
+            closeBankPickerModal();
         });
     }
     if (cartMiniCheckoutBtn) {
