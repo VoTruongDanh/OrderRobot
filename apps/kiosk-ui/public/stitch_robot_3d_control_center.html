@@ -1761,6 +1761,45 @@
             border-radius: 8px;
             display: block;
         }
+        .order-popup-qr-copy {
+            display: grid;
+            gap: 10px;
+            align-content: start;
+        }
+        .order-popup-qr-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .order-popup-qr-action {
+            min-height: 40px;
+            border-radius: 999px;
+            border: 1px solid rgba(148, 163, 184, 0.34);
+            background: rgba(255, 255, 255, 0.98);
+            color: #15416e;
+            padding: 0 14px;
+            font-size: 0.76rem;
+            font-weight: 800;
+            letter-spacing: 0.02em;
+            cursor: pointer;
+            transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+            box-shadow: 0 10px 24px rgba(20, 39, 74, 0.08);
+        }
+        .order-popup-qr-action:hover:not([hidden]),
+        .order-popup-qr-action:focus-visible {
+            transform: translateY(-1px);
+            border-color: rgba(59, 130, 246, 0.34);
+            box-shadow: 0 12px 28px rgba(37, 99, 235, 0.16);
+            outline: none;
+        }
+        .order-popup-qr-action--primary {
+            background: linear-gradient(135deg, rgba(8, 145, 178, 0.98), rgba(37, 99, 235, 0.96));
+            border-color: rgba(37, 99, 235, 0.4);
+            color: #eff6ff;
+        }
+        .order-popup-qr-action[hidden] {
+            display: none !important;
+        }
         .order-popup-countdown {
             margin: 0;
             font-size: 0.78rem;
@@ -3825,6 +3864,13 @@
                 width: 168px;
                 height: 168px;
             }
+            .order-popup-qr-copy {
+                justify-items: center;
+                text-align: center;
+            }
+            .order-popup-qr-actions {
+                justify-content: center;
+            }
         }
 
         @media (orientation: portrait) and (max-width: 420px) {
@@ -4100,12 +4146,12 @@
             right: auto;
             bottom: max(16px, env(safe-area-inset-bottom, 0px) + 10px);
             width: min(calc(100vw - 24px), 430px);
-            padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
-            border-radius: 32px;
-            background: rgba(255, 255, 255, 0.92);
-            border: 1px solid rgba(191, 204, 230, 0.76);
-            box-shadow: 0 -4px 28px rgba(20, 39, 74, 0.06), 0 18px 34px rgba(20, 39, 74, 0.12);
-            backdrop-filter: blur(20px);
+            padding: 0;
+            border-radius: 0;
+            background: transparent;
+            border: 0;
+            box-shadow: none;
+            backdrop-filter: none;
             justify-content: stretch;
             gap: 8px;
         }
@@ -4900,6 +4946,650 @@
             }
         }
 
+        /* ===== 2026-04-17 lite-newui Mobile Rebuild ===== */
+        @media (max-width: 720px) {
+            body#main-viewport:not(.admin-preview-mode) {
+                background:
+                    radial-gradient(circle at 50% 6%, rgba(87, 196, 255, 0.26), transparent 28%),
+                    radial-gradient(circle at 16% 26%, rgba(52, 211, 153, 0.16), transparent 22%),
+                    radial-gradient(circle at 84% 24%, rgba(96, 120, 255, 0.18), transparent 22%),
+                    linear-gradient(180deg, #f4f8ff 0%, #eef4ff 42%, #f9fbff 100%);
+            }
+
+            body#main-viewport:not(.admin-preview-mode) #disco-ball {
+                display: none;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) #stage-container {
+                width: 100%;
+                padding: 96px 14px 88px;
+                justify-content: center;
+                align-items: center;
+                overflow: hidden;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) #stage-container::before {
+                content: '';
+                position: absolute;
+                left: 12px;
+                right: 12px;
+                top: 76px;
+                bottom: 74px;
+                border-radius: 38px;
+                background:
+                    linear-gradient(180deg, rgba(255, 255, 255, 0.8) 0%, rgba(255, 255, 255, 0.45) 58%, rgba(255, 255, 255, 0) 100%),
+                    radial-gradient(circle at 50% 28%, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.36) 45%, rgba(255, 255, 255, 0) 70%);
+                border: 1px solid rgba(255, 255, 255, 0.55);
+                box-shadow:
+                    0 32px 70px rgba(20, 39, 74, 0.12),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.78);
+                z-index: 0;
+                pointer-events: none;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) #stage-container::after {
+                content: '';
+                position: absolute;
+                left: 50%;
+                bottom: 118px;
+                width: min(72vw, 286px);
+                height: 76px;
+                border-radius: 999px;
+                transform: translateX(-50%);
+                background: radial-gradient(ellipse at center, rgba(34, 211, 238, 0.24), rgba(37, 99, 235, 0));
+                filter: blur(12px);
+                pointer-events: none;
+                z-index: 0;
+            }
+
+            body#main-viewport:not(.admin-preview-mode).menu-is-open #stage-container {
+                transform: translateY(-28px) scale(0.94);
+                filter: blur(10px) saturate(0.92);
+                opacity: 0.58;
+            }
+
+            body#main-viewport:not(.admin-preview-mode).menu-is-open .voice-mini-panel,
+            body#main-viewport:not(.admin-preview-mode).menu-is-open .camera-mini-panel {
+                opacity: 0;
+                transform: translateY(-18px) scale(0.96);
+                pointer-events: none;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) #robot-shadow {
+                width: min(62vw, 248px) !important;
+                height: 48px !important;
+                bottom: 154px !important;
+                background: radial-gradient(ellipse at center, rgba(14, 165, 233, 0.24), rgba(14, 165, 233, 0)) !important;
+                opacity: 0.8;
+                z-index: 1;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) #robot-container {
+                width: min(72vw, 318px) !important;
+                height: min(48vh, 438px) !important;
+                transform: translateY(-36px) scale(1.12) !important;
+                z-index: 1;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) #robot-container.local-glb-mode {
+                width: min(86vw, 370px) !important;
+                height: min(50vh, 450px) !important;
+                max-width: none !important;
+                max-height: none !important;
+                transform: translateY(-42px) scale(1) !important;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) #robot-container.local-glb-mode .robot-localglb-wrapper {
+                inset: 0 !important;
+                transform: scale(1.24);
+                transform-origin: center bottom;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) #robot-container.local-glb-mode .robot-localglb-wrapper model-viewer {
+                filter: drop-shadow(0 22px 32px rgba(20, 39, 74, 0.12));
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .camera-mini-panel {
+                display: none;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .camera-mini-video-wrap {
+                padding: 8px;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .camera-mini-video {
+                border-radius: 18px;
+                border-color: rgba(255, 255, 255, 0.12);
+                box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .voice-mini-panel {
+                top: 16px;
+                left: 16px;
+                right: 16px;
+                width: auto;
+                min-height: 0;
+                max-height: none;
+                padding: 11px 12px;
+                gap: 7px;
+                border-radius: 22px;
+                background: rgba(255, 255, 255, 0.9);
+                border: 1px solid rgba(255, 255, 255, 0.7);
+                box-shadow: 0 16px 38px rgba(20, 39, 74, 0.12);
+                backdrop-filter: blur(22px) saturate(1.06);
+                transition: opacity var(--ui-fast) ease, transform var(--ui-fast) ease;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .voice-mini-head {
+                align-items: center;
+                gap: 8px;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .voice-mini-title {
+                font-size: 0.54rem;
+                letter-spacing: 0.16em;
+                color: #19355d;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .voice-mini-actions {
+                gap: 6px;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .voice-mini-refresh,
+            body#main-viewport:not(.admin-preview-mode) .voice-mini-toggle {
+                min-height: 30px;
+                padding: 0 9px;
+                font-size: 0.58rem;
+                font-weight: 700;
+                background: rgba(255, 255, 255, 0.96);
+                color: #24446f;
+                border: 1px solid rgba(185, 203, 231, 0.82);
+                box-shadow: 0 10px 20px rgba(20, 39, 74, 0.08);
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .voice-mini-status {
+                min-height: 0;
+                padding: 8px 11px;
+                font-size: 0.68rem;
+                line-height: 1.28;
+                border-radius: 15px;
+                background: rgba(247, 250, 255, 0.96);
+                color: #5f7590;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .voice-mini-context {
+                gap: 6px;
+                margin-top: -2px;
+                flex-wrap: nowrap;
+                overflow-x: auto;
+                scrollbar-width: none;
+            }
+            body#main-viewport:not(.admin-preview-mode) .voice-mini-context::-webkit-scrollbar {
+                display: none;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .voice-mini-chip {
+                min-height: 26px;
+                padding: 4px 8px;
+                gap: 5px;
+                background: rgba(236, 245, 255, 0.98);
+                flex-shrink: 0;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .voice-mini-chip__label {
+                font-size: 0.5rem;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .voice-mini-chip__value {
+                font-size: 0.64rem;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .chat-mini-list {
+                display: none;
+                max-height: 0;
+                opacity: 0;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .chat-mini-list.has-content {
+                display: grid;
+                max-height: 96px;
+                opacity: 1;
+                gap: 6px;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .chat-mini-line {
+                padding: 9px 11px;
+                border-radius: 16px;
+                font-size: 0.72rem;
+                background: rgba(255, 255, 255, 0.94);
+                color: #284362;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) #menu-toggle-dock {
+                width: calc(100vw - 20px);
+                bottom: max(12px, env(safe-area-inset-bottom, 0px) + 8px);
+                padding: 0;
+                gap: 8px;
+                border-radius: 0;
+                background: transparent;
+                border: 0;
+                box-shadow: none;
+                backdrop-filter: none;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .dock-action-btn {
+                min-height: 54px;
+                padding: 0 14px;
+                gap: 7px;
+                border-radius: 22px;
+                background: rgba(255, 255, 255, 0.12);
+                border: 1px solid rgba(255, 255, 255, 0.12);
+                color: #f5f8ff;
+                box-shadow: none;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .dock-action-btn:hover {
+                transform: none;
+                background: rgba(255, 255, 255, 0.18);
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .dock-action-btn.is-open,
+            body#main-viewport:not(.admin-preview-mode) .dock-action-btn--cart {
+                background: linear-gradient(135deg, #18b8c8 0%, #2768f7 100%);
+                border-color: transparent;
+                color: #fff;
+                box-shadow: 0 16px 28px rgba(39, 104, 247, 0.28);
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .dock-action-btn__label {
+                font-size: 0.7rem;
+                letter-spacing: 0.16em;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .dock-cart-count {
+                min-width: 24px;
+                height: 24px;
+                margin-left: 2px;
+                font-size: 0.7rem;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) #sliding-menu {
+                height: min(68vh, 660px) !important;
+                padding: 12px 16px calc(18px + env(safe-area-inset-bottom, 0px));
+                border-radius: 32px 32px 0 0;
+                background: linear-gradient(180deg, rgba(255, 255, 255, 0.995) 0%, rgba(245, 249, 255, 0.99) 100%);
+                box-shadow: 0 -16px 46px rgba(20, 39, 74, 0.16);
+                transform: translateY(calc(100% + 92px));
+            }
+
+            body#main-viewport:not(.admin-preview-mode) #sliding-menu.active {
+                transform: translateY(0);
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .menu-drawer-handle {
+                width: 56px;
+                height: 5px;
+                margin-bottom: 12px;
+                background: rgba(84, 104, 146, 0.22);
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .menu-shell {
+                gap: 12px;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .menu-toolbar {
+                position: sticky;
+                top: 0;
+                z-index: 2;
+                padding: 0 0 4px;
+                gap: 8px;
+                border: 0;
+                background: linear-gradient(180deg, rgba(255, 255, 255, 0.995) 0%, rgba(255, 255, 255, 0.96) 100%);
+                box-shadow: 0 14px 20px rgba(255, 255, 255, 0.95);
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .menu-toolbar-copy {
+                gap: 8px;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .menu-toolbar-kicker {
+                font-size: 0.62rem;
+                letter-spacing: 0.18em;
+                color: #0f766e;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .menu-toolbar-title {
+                font-size: clamp(1.16rem, 4.2vw, 1.46rem);
+                line-height: 1.05;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .menu-toolbar-title-row {
+                gap: 6px;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .menu-shell-badge {
+                min-height: 32px;
+                padding-inline: 11px;
+                font-size: 0.68rem;
+                box-shadow: none;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .menu-toolbar-actions {
+                gap: 6px;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .menu-layout-toggle,
+            body#main-viewport:not(.admin-preview-mode) .menu-close-btn {
+                background: rgba(255, 255, 255, 0.98);
+                border: 1px solid rgba(190, 205, 231, 0.82);
+                box-shadow: 0 10px 22px rgba(20, 39, 74, 0.08);
+                width: 44px;
+                min-height: 44px;
+                border-radius: 15px;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .menu-search-shell {
+                min-height: 48px;
+                border-radius: 18px;
+                background: rgba(255, 255, 255, 0.98);
+                box-shadow: 0 14px 28px rgba(20, 39, 74, 0.08);
+                padding-inline: 14px;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .menu-search-input {
+                font-size: 0.92rem;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .menu-status {
+                position: static;
+                margin: 0;
+                padding: 0 2px 2px;
+                font-size: 0.78rem;
+                color: #6a7c94;
+                background: transparent;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .menu-category-row {
+                position: static;
+                z-index: auto;
+                display: flex;
+                align-items: center;
+                flex-wrap: nowrap;
+                min-height: 42px;
+                height: 42px;
+                padding: 0;
+                gap: 8px;
+                background: transparent;
+                box-shadow: none;
+                margin-right: 0;
+                padding-right: 0;
+                margin-bottom: 8px;
+                overflow-x: auto;
+                overflow-y: hidden;
+                isolation: auto;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .menu-cat-chip {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                min-height: 36px;
+                height: 36px;
+                padding-inline: 14px;
+                border-radius: 999px;
+                background: rgba(255, 255, 255, 0.98);
+                box-shadow: none;
+                line-height: 1;
+                flex: 0 0 auto;
+                transform: none !important;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .menu-cat-chip.active {
+                background: linear-gradient(135deg, #18b8c8 0%, #2768f7 100%) !important;
+                border-color: transparent !important;
+                color: #ffffff !important;
+                box-shadow: 0 10px 20px rgba(39, 104, 247, 0.2) !important;
+                transform: none !important;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .menu-items-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 12px;
+                padding-top: 0;
+                padding-right: 0;
+                align-content: start;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .menu-items-grid.menu-items-grid--list {
+                grid-template-columns: 1fr;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .menu-item-card {
+                padding: 10px;
+                gap: 10px;
+                border-radius: 24px;
+                background: linear-gradient(180deg, rgba(255, 255, 255, 0.995) 0%, rgba(248, 251, 255, 0.99) 100%);
+                border: 1px solid rgba(196, 208, 231, 0.72);
+                box-shadow: 0 16px 30px rgba(20, 39, 74, 0.1);
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .menu-item-card--list {
+                grid-template-columns: 110px minmax(0, 1fr);
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .menu-item-media {
+                border-radius: 18px;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .menu-item-body {
+                gap: 8px;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .menu-item-copy {
+                gap: 4px;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .menu-item-meta {
+                font-size: 0.62rem;
+                letter-spacing: 0.12em;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .menu-item-name {
+                font-size: 1rem;
+                line-height: 1.16;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .menu-item-desc {
+                min-height: 2.35em;
+                font-size: 0.77rem;
+                line-height: 1.35;
+                color: #6e7e96;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .menu-item-footer {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 8px;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .menu-item-pricing {
+                gap: 3px;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .menu-item-price {
+                font-size: 1.04rem;
+                line-height: 1.18;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .menu-item-sizes {
+                font-size: 0.68rem;
+                line-height: 1.36;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .menu-item-state {
+                padding: 5px 10px;
+                font-size: 0.64rem;
+                align-self: flex-start;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .menu-shell > div.mt-auto {
+                display: none;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .cart-mini-backdrop {
+                background: rgba(15, 23, 42, 0.18);
+                backdrop-filter: blur(8px);
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .cart-mini-panel {
+                left: 10px;
+                right: 10px;
+                width: auto;
+                bottom: 88px;
+                max-height: min(56vh, 500px);
+                padding: 16px 14px calc(14px + env(safe-area-inset-bottom, 0px));
+                border-radius: 30px;
+                background: linear-gradient(180deg, rgba(255, 255, 255, 0.995) 0%, rgba(244, 248, 255, 0.99) 100%);
+                box-shadow: 0 30px 58px rgba(20, 39, 74, 0.16);
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .cart-mini-head {
+                align-items: flex-start;
+                gap: 10px;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .cart-mini-title {
+                font-size: 0.66rem;
+                letter-spacing: 0.18em;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .cart-mini-hint {
+                font-size: 0.78rem;
+                line-height: 1.42;
+                color: #6b7e97;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .cart-mini-badge {
+                background: rgba(234, 244, 255, 0.98);
+                color: #0057bf;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .cart-mini-list {
+                max-height: min(28vh, 248px);
+                gap: 10px;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .cart-mini-item,
+            body#main-viewport:not(.admin-preview-mode) .cart-mini-empty-card {
+                border-radius: 18px;
+                background: rgba(255, 255, 255, 0.98);
+                box-shadow: 0 14px 24px rgba(20, 39, 74, 0.08);
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .cart-mini-footer {
+                gap: 12px;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .cart-mini-total {
+                padding: 12px 14px;
+                border-radius: 18px;
+                background: rgba(239, 245, 255, 0.96);
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .cart-mini-checkout {
+                min-height: 54px;
+                border-radius: 18px;
+                font-size: 0.96rem;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .quick-add-toast {
+                left: 50%;
+                right: auto;
+                bottom: 92px;
+                width: min(calc(100vw - 34px), 320px);
+                transform: translate(-50%, 18px);
+                text-align: center;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .quick-add-toast.is-active {
+                transform: translate(-50%, 0);
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .size-picker-card,
+            body#main-viewport:not(.admin-preview-mode) .order-review-card,
+            body#main-viewport:not(.admin-preview-mode) .order-status-card,
+            body#main-viewport:not(.admin-preview-mode) .order-rating-card {
+                width: calc(100vw - 20px);
+                max-width: none;
+                padding: 16px;
+                border-radius: 28px;
+            }
+        }
+
+        @media (max-width: 420px) {
+            body#main-viewport:not(.admin-preview-mode) #stage-container {
+                padding: 92px 10px 84px;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) #stage-container::before {
+                left: 10px;
+                right: 10px;
+                top: 72px;
+                bottom: 68px;
+                border-radius: 32px;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) #robot-container {
+                width: min(76vw, 300px) !important;
+                height: min(46vh, 400px) !important;
+                transform: translateY(-28px) scale(1.04) !important;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) #robot-container.local-glb-mode {
+                width: min(88vw, 340px) !important;
+                height: min(48vh, 410px) !important;
+                transform: translateY(-34px) scale(1) !important;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .voice-mini-panel {
+                top: 12px;
+                left: 12px;
+                right: 12px;
+                padding: 10px 11px;
+                border-radius: 22px;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .voice-mini-refresh,
+            body#main-viewport:not(.admin-preview-mode) .voice-mini-toggle {
+                min-height: 32px;
+                padding: 0 10px;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .menu-toolbar-title {
+                font-size: 1.08rem;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .menu-items-grid {
+                gap: 10px;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .menu-item-card {
+                padding: 9px;
+                border-radius: 22px;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .menu-item-name {
+                font-size: 0.94rem;
+            }
+
+            body#main-viewport:not(.admin-preview-mode) .menu-item-price {
+                font-size: 0.96rem;
+            }
+        }
+
         @media (prefers-reduced-motion: reduce) {
             #stage-container,
             #menu-toggle-dock button,
@@ -4923,7 +5613,7 @@
 </section>
 <section class="voice-mini-panel" id="voice-mini-panel" aria-label="Voice va chat panel">
 <div class="voice-mini-head">
-<p class="voice-mini-title">Hội thoại voice</p>
+<p class="voice-mini-title">Trợ lý gọi món</p>
 <div class="voice-mini-actions">
 <button class="voice-mini-refresh" id="voice-mini-refresh" type="button" title="Làm mới trạng thái kiosk">F5</button>
 <button class="voice-mini-toggle" id="voice-mini-toggle" type="button">Bật nghe</button>
@@ -4939,8 +5629,8 @@
 <section class="cart-mini-panel" id="cart-mini-panel" aria-label="Gio hang mini" aria-hidden="true" hidden>
 <div class="cart-mini-head">
 <div class="cart-mini-head-copy">
-<p class="cart-mini-title">Giỏ hàng tạm</p>
-<p class="cart-mini-hint" id="cart-mini-hint">Nhấn + để thêm nhanh, bấm liên tục không cần chờ robot.</p>
+<p class="cart-mini-title">Đơn của bạn</p>
+<p class="cart-mini-hint" id="cart-mini-hint">Thêm hoặc chỉnh món nhanh trước khi xác nhận đơn.</p>
 </div>
 <div class="cart-mini-head-right">
 <div class="cart-mini-badge" id="cart-mini-badge">0 món</div>
@@ -5021,7 +5711,14 @@
 </div>
 <div class="order-popup-qr-wrap">
 <div class="order-popup-qr" id="order-popup-qr"></div>
+<div class="order-popup-qr-copy">
 <p class="order-status-sub" id="order-popup-qr-label">Mã QR ảo thanh toán.</p>
+<div class="order-popup-qr-actions" id="order-popup-qr-actions">
+<button class="order-popup-qr-action order-popup-qr-action--primary" id="order-popup-open-bank-btn" type="button" hidden>Mở ngân hàng</button>
+<button class="order-popup-qr-action" id="order-popup-download-qr-btn" type="button" hidden>Tải QR</button>
+<button class="order-popup-qr-action" id="order-popup-copy-code-btn" type="button" hidden>Sao chép mã</button>
+</div>
+</div>
 </div>
 <p class="order-popup-countdown" id="order-popup-countdown">Tự động đóng sau 6s</p>
 </article>
@@ -5107,9 +5804,9 @@
 <div class="menu-shell">
 <div class="menu-toolbar">
 <div class="menu-toolbar-copy">
-<p class="menu-toolbar-kicker">Thực đơn</p>
+<p class="menu-toolbar-kicker">Khám phá món</p>
 <div class="menu-toolbar-title-row">
-<h3 class="menu-toolbar-title">Chọn món phù hợp</h3>
+<h3 class="menu-toolbar-title">Hôm nay dùng gì?</h3>
 <span class="menu-shell-badge" id="menu-shell-badge">0 món</span>
 </div>
 </div>
@@ -5117,7 +5814,6 @@
 <button class="menu-layout-toggle" id="menu-layout-toggle" type="button" aria-label="Đổi kiểu hiển thị menu">
 <span class="material-symbols-outlined" id="menu-layout-icon" aria-hidden="true">view_agenda</span>
 </button>
-<button class="menu-close-btn" type="button" onclick="toggleMenu()">Đóng</button>
 </div>
 </div>
 <label class="menu-search-shell" for="menu-search-input">
@@ -5205,6 +5901,9 @@
     const orderPaymentSuccess = document.getElementById('order-payment-success');
     const orderPopupQr = document.getElementById('order-popup-qr');
     const orderPopupQrLabel = document.getElementById('order-popup-qr-label');
+    const orderPopupOpenBankBtn = document.getElementById('order-popup-open-bank-btn');
+    const orderPopupDownloadQrBtn = document.getElementById('order-popup-download-qr-btn');
+    const orderPopupCopyCodeBtn = document.getElementById('order-popup-copy-code-btn');
     const orderPopupCountdown = document.getElementById('order-popup-countdown');
     const ratingPopupCard = document.getElementById('rating-popup-card');
     const ratingStars = document.getElementById('rating-stars');
@@ -5464,6 +6163,10 @@
     let cartCheckoutLocked = false;
     let orderReviewOpen = false;
     let orderReviewSnapshot = null;
+    let activeOrderQrDownloadUrl = '';
+    let activeOrderQrCodeText = '';
+    let activeOrderPaymentLaunchUrl = '';
+    let activeOrderPaymentLaunchLabel = '';
     let activeSizePickerResolver = null;
     let activeOrderFlowToken = 0;
     const handledOrderIds = [];
@@ -6809,9 +7512,13 @@
             });
         }
         if (displayItems.length === 0) {
+            chatMiniList.hidden = true;
+            chatMiniList.classList.remove('has-content');
             chatMiniList.innerHTML = '<p class="chat-mini-empty">Chưa có hội thoại.</p>';
             return;
         }
+        chatMiniList.hidden = false;
+        chatMiniList.classList.add('has-content');
         chatMiniList.innerHTML = displayItems.map((entry) => `
             <p class="chat-mini-line ${entry.role} ${entry.isThinking ? 'thinking' : ''}">
                 <span class="chat-mini-line-label">${entry.role === 'user' ? 'Khach' : 'Robot'}:</span> ${toSafeInlineText(entry.text)}
@@ -7010,6 +7717,7 @@
 
     function hideOrderFlow() {
         clearOrderFlowTimers();
+        resetOrderPopupQrActions();
         if (orderStatusHud) {
             orderStatusHud.hidden = true;
         }
@@ -7144,6 +7852,162 @@
         if (!value) return '';
         // Fallback renderer when POS does not return qrImageUrl.
         return `https://api.qrserver.com/v1/create-qr-code/?size=320x320&margin=8&data=${encodeURIComponent(value)}`;
+    }
+
+    function pickPaymentLaunchUrl(payload = {}) {
+        const directKeys = [
+            'paymentDeepLink',
+            'payment_deep_link',
+            'paymentLaunchUrl',
+            'payment_launch_url',
+            'paymentUrl',
+            'payment_url',
+            'paymentLink',
+            'payment_link',
+            'bankAppUrl',
+            'bank_app_url',
+            'bankDeepLink',
+            'bank_deep_link',
+            'checkoutUrl',
+            'checkout_url',
+            'sepayUrl',
+            'sepay_url',
+            'sepayDeepLink',
+            'sepay_deep_link',
+        ];
+        for (const key of directKeys) {
+            const value = String(payload?.[key] || '').trim();
+            if (/^(?:https?:\/\/|intent:|vietqr:|zalopay:|momo:|mbbank:|vcb:|acb:|tpbank:|bidv:|msb:|shb:)/i.test(value)) {
+                return value;
+            }
+        }
+        const qrContent = String(
+            payload?.paymentQrContent ?? payload?.payment_qr_content ?? payload?.qrContent ?? payload?.qr_content ?? '',
+        ).trim();
+        if (/^(?:https?:\/\/|intent:|vietqr:|zalopay:|momo:|mbbank:|vcb:|acb:|tpbank:|bidv:|msb:|shb:)/i.test(qrContent)) {
+            return qrContent;
+        }
+        return '';
+    }
+
+    function getPaymentLaunchLabel(url) {
+        const value = String(url || '').trim().toLowerCase();
+        if (!value) return '';
+        if (value.startsWith('intent:') || /(?:momo|zalopay|vietqr|mbbank|vcb|acb|tpbank|bidv|msb|shb)/.test(value)) {
+            return 'Mở ngân hàng';
+        }
+        if (value.startsWith('http')) {
+            return 'Mở thanh toán';
+        }
+        return 'Mở ứng dụng';
+    }
+
+    function resetOrderPopupQrActions() {
+        activeOrderQrDownloadUrl = '';
+        activeOrderQrCodeText = '';
+        activeOrderPaymentLaunchUrl = '';
+        activeOrderPaymentLaunchLabel = '';
+        if (orderPopupOpenBankBtn) {
+            orderPopupOpenBankBtn.hidden = true;
+            orderPopupOpenBankBtn.textContent = 'Mở ngân hàng';
+        }
+        if (orderPopupDownloadQrBtn) {
+            orderPopupDownloadQrBtn.hidden = true;
+        }
+        if (orderPopupCopyCodeBtn) {
+            orderPopupCopyCodeBtn.hidden = true;
+        }
+    }
+
+    function syncOrderPopupQrActions({ qrImageUrl = '', qrCodeText = '', launchUrl = '', launchLabel = '' } = {}) {
+        activeOrderQrDownloadUrl = String(qrImageUrl || '').trim();
+        activeOrderQrCodeText = String(qrCodeText || '').trim();
+        activeOrderPaymentLaunchUrl = String(launchUrl || '').trim();
+        activeOrderPaymentLaunchLabel = String(launchLabel || '').trim();
+
+        if (orderPopupOpenBankBtn) {
+            const hasLaunch = Boolean(activeOrderPaymentLaunchUrl);
+            orderPopupOpenBankBtn.hidden = !hasLaunch;
+            orderPopupOpenBankBtn.textContent = activeOrderPaymentLaunchLabel || 'Mở ngân hàng';
+        }
+        if (orderPopupDownloadQrBtn) {
+            orderPopupDownloadQrBtn.hidden = !activeOrderQrDownloadUrl;
+        }
+        if (orderPopupCopyCodeBtn) {
+            orderPopupCopyCodeBtn.hidden = !activeOrderQrCodeText;
+        }
+    }
+
+    async function copyOrderPaymentCode() {
+        const value = String(activeOrderQrCodeText || '').trim();
+        if (!value) {
+            showQuickAddToastMessage('Chưa có mã thanh toán để sao chép');
+            return;
+        }
+        try {
+            if (navigator?.clipboard?.writeText) {
+                await navigator.clipboard.writeText(value);
+            } else {
+                const textarea = document.createElement('textarea');
+                textarea.value = value;
+                textarea.setAttribute('readonly', 'readonly');
+                textarea.style.position = 'fixed';
+                textarea.style.opacity = '0';
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                textarea.remove();
+            }
+            showQuickAddToastMessage('Đã sao chép mã thanh toán');
+        } catch (error) {
+            showQuickAddToastMessage(`Sao chép thất bại: ${String(error?.message || 'clipboard-error')}`);
+        }
+    }
+
+    async function downloadOrderQrImage() {
+        const source = String(activeOrderQrDownloadUrl || '').trim();
+        if (!source) {
+            showQuickAddToastMessage('Chưa có ảnh QR để tải');
+            return;
+        }
+        const orderId = String(orderPopupOrderId?.textContent || '').replace(/[^\dA-Za-z_-]+/g, '-') || 'qr';
+        const filename = `order-${orderId}-qr.png`;
+        try {
+            const response = await fetch(source);
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            const blob = await response.blob();
+            const objectUrl = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = objectUrl;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.setTimeout(() => URL.revokeObjectURL(objectUrl), 800);
+            showQuickAddToastMessage('Đã tải QR về máy');
+            return;
+        } catch (error) {
+            const fallbackLink = document.createElement('a');
+            fallbackLink.href = source;
+            fallbackLink.target = '_blank';
+            fallbackLink.rel = 'noopener';
+            fallbackLink.download = filename;
+            document.body.appendChild(fallbackLink);
+            fallbackLink.click();
+            fallbackLink.remove();
+            showQuickAddToastMessage(`Mở QR ở tab mới: ${String(error?.message || 'download-error')}`);
+        }
+    }
+
+    function openPaymentLaunchTarget() {
+        const launchUrl = String(activeOrderPaymentLaunchUrl || '').trim();
+        if (!launchUrl) {
+            showQuickAddToastMessage('Chưa có deeplink ngân hàng cho đơn này');
+            return;
+        }
+        window.location.href = launchUrl;
     }
 
     function canLoadQrImage(url, timeoutMs = 3500) {
@@ -7547,6 +8411,8 @@
         const paymentQrImageUrl = String(
             mergedOrder?.paymentQrImageUrl ?? mergedOrder?.payment_qr_image_url ?? '',
         ).trim();
+        const paymentLaunchUrl = pickPaymentLaunchUrl(mergedOrder);
+        const paymentLaunchLabel = getPaymentLaunchLabel(paymentLaunchUrl);
         const hasQrHint = paymentQrImageUrl.length > 0 || paymentQrContent.length > 0;
         const isPaymentMode = hasQrHint;
         console.info('[order-qr] popup payload', {
@@ -7554,6 +8420,7 @@
             fromSnapshot: Boolean(snapshot),
             paymentQrImageUrl,
             paymentQrContent,
+            paymentLaunchUrl,
             paymentAmount: remotePaymentAmount,
         });
 
@@ -7599,10 +8466,19 @@
                 orderPopupQrLabel.textContent = `QR ảo cho đơn ${orderId}`;
             }
         }
+        resetOrderPopupQrActions();
         const qrImageRendered = await renderOrderPopupQrImage(orderId, qrSeed, paymentQrImageUrl, paymentQrContent);
         if (!qrImageRendered && orderPopupQrLabel && paymentQrContent) {
             orderPopupQrLabel.textContent = `Không tải được ảnh QR. Mã thanh toán: ${paymentQrContent}`;
         }
+        syncOrderPopupQrActions({
+            qrImageUrl: paymentQrImageUrl
+                || buildQrImageUrlFromContent(paymentQrContent)
+                || String(orderPopupQr?.querySelector('img')?.src || '').trim(),
+            qrCodeText: paymentQrContent,
+            launchUrl: paymentLaunchUrl,
+            launchLabel: paymentLaunchLabel,
+        });
 
         await new Promise((resolve) => {
             const maxSeconds = ORDER_POPUP_COUNTDOWN_SEC;
@@ -11235,6 +12111,12 @@
         });
     }
 
+    function setMenuStatusText(text, visible = true) {
+        if (!menuStatus) return;
+        menuStatus.textContent = String(text || '').trim();
+        menuStatus.hidden = !visible || !menuStatus.textContent;
+    }
+
     function renderMenuCards() {
         if (!menuItemsGrid) return;
         const byCategory = activeMenuCategory === 'all'
@@ -11248,15 +12130,7 @@
         if (menuShellBadge) {
             menuShellBadge.textContent = `${visibleItems.length} món`;
         }
-        if (menuStatus) {
-            if (normalizedSearch) {
-                menuStatus.textContent = `${visibleItems.length} món phù hợp với "${menuSearchQuery}"`;
-            } else if (activeMenuCategory !== 'all') {
-                menuStatus.textContent = `${visibleItems.length} món trong nhóm ${activeMenuCategory}`;
-            } else {
-                menuStatus.textContent = `Đã tải ${visibleItems.length} món`;
-            }
-        }
+        setMenuStatusText('', false);
 
         if (!Array.isArray(visibleItems) || visibleItems.length === 0) {
             menuItemsGrid.innerHTML = normalizedSearch
@@ -12091,11 +12965,10 @@
             const detail = String(reason || '').trim();
             menuItemsGrid.innerHTML = `<p class="menu-status">${detail ? `Đang cập nhật menu: ${toSafeText(detail)}` : 'Đang cập nhật menu...'}</p>`;
         }
-        if (menuStatus) {
-            menuStatus.textContent = reason
-                ? `Đang cập nhật menu (${reason})...`
-                : 'Đang cập nhật menu...';
-        }
+        setMenuStatusText(
+            reason ? `Đang cập nhật menu (${reason})...` : 'Đang cập nhật menu...',
+            true,
+        );
     }
 
     function syncMenuConfigFromAdmin(reason = 'config changed') {
@@ -12139,9 +13012,7 @@
         if (!isAdminPreviewMode && !hasResolvedStoreId()) {
             renderMenuItems([]);
             menuLoaded = true;
-            if (menuStatus) {
-                menuStatus.textContent = `${STORE_CONTEXT_MISSING_MESSAGE}. Thêm ?storeid=9 vào URL để tải menu.`;
-            }
+            setMenuStatusText(`${STORE_CONTEXT_MISSING_MESSAGE}. Thêm ?storeid=9 vào URL để tải menu.`, true);
             if (menuItemsGrid) {
                 menuItemsGrid.innerHTML = `<p class="menu-status">${toSafeText(STORE_CONTEXT_MISSING_MESSAGE)}. Thêm ?storeid=9 vào URL để tải menu.</p>`;
             }
@@ -12161,7 +13032,7 @@
                     configuredSizeName = String(parsed.VITE_PRODUCT_DEFAULT_SIZE_NAME || '').trim();
                 }
             } catch {}
-            if (menuStatus) menuStatus.textContent = 'Đang tải menu...';
+            setMenuStatusText('Đang tải menu...', true);
             let lastError = null;
             for (const menuUrl of candidates) {
                 let requestUrl = menuUrl;
@@ -12176,7 +13047,7 @@
                     }
                 } catch {}
                 requestUrl = appendStoreContextToUrl(requestUrl);
-                if (menuStatus) menuStatus.textContent = `Đang tải từ ${requestUrl}`;
+                setMenuStatusText(`Đang tải từ ${requestUrl}`, true);
                 try {
                     const controller = new AbortController();
                     const timeout = setTimeout(() => controller.abort(), 6000);
@@ -12195,9 +13066,7 @@
                     if (items.length === 0) {
                         renderMenuItems([]);
                         menuLoaded = true;
-                        if (menuStatus) {
-                            menuStatus.textContent = 'Menu online CNX đang trống hoặc dữ liệu không hợp lệ. Kiểm tra cấu hình core `/menu` và POS remote menu.';
-                        }
+                        setMenuStatusText('Menu online CNX đang trống hoặc dữ liệu không hợp lệ. Kiểm tra cấu hình core `/menu` và POS remote menu.', true);
                         return;
                     }
                     if (items.length === 1) {
@@ -12212,7 +13081,7 @@
                     renderMenuItems(items);
                     menuLoaded = true;
                     lastMenuConfigSignature = nextMenuSignature || readMenuConfigSignature();
-                    if (menuStatus) menuStatus.textContent = `Đã tải ${items.length} mon`;
+                    setMenuStatusText('', false);
                     return;
                 } catch (error) {
                     lastError = error;
@@ -12222,12 +13091,11 @@
         })().catch((error) => {
             renderMenuItems([]);
             menuLoaded = true;
-            if (menuStatus) {
-                const reason = String(error?.message || '').trim();
-                menuStatus.textContent = reason
-                    ? `Lỗi tải menu online CNX: ${reason}`
-                    : 'Lỗi tải menu online CNX';
-            }
+            const reasonText = String(error?.message || '').trim();
+            setMenuStatusText(
+                reasonText ? `Lỗi tải menu online CNX: ${reasonText}` : 'Lỗi tải menu online CNX',
+                true,
+            );
             if (menuItemsGrid) {
                 const reason = toSafeText(String(error?.message || 'Không ro loi'));
                 menuItemsGrid.innerHTML = `<p class="menu-status">Không tải được menu online CNX qua core API. ${reason}</p>`;
@@ -12284,9 +13152,7 @@
     if (isAdminPreviewMode || hasResolvedStoreId()) {
         void ensureMenuLoaded();
     } else {
-        if (menuStatus) {
-            menuStatus.textContent = `${STORE_CONTEXT_MISSING_MESSAGE}. Thêm ?storeid=9 vào URL để tải menu.`;
-        }
+        setMenuStatusText(`${STORE_CONTEXT_MISSING_MESSAGE}. Thêm ?storeid=9 vào URL để tải menu.`, true);
         if (menuItemsGrid) {
             menuItemsGrid.innerHTML = `<p class="menu-status">${toSafeText(STORE_CONTEXT_MISSING_MESSAGE)}. Thêm ?storeid=9 vào URL để tải menu.</p>`;
         }
@@ -12302,6 +13168,21 @@
     if (orderPopupReopenBtn) {
         orderPopupReopenBtn.addEventListener('click', () => {
             reopenOrderPopupTemporarily();
+        });
+    }
+    if (orderPopupOpenBankBtn) {
+        orderPopupOpenBankBtn.addEventListener('click', () => {
+            openPaymentLaunchTarget();
+        });
+    }
+    if (orderPopupDownloadQrBtn) {
+        orderPopupDownloadQrBtn.addEventListener('click', () => {
+            void downloadOrderQrImage();
+        });
+    }
+    if (orderPopupCopyCodeBtn) {
+        orderPopupCopyCodeBtn.addEventListener('click', () => {
+            void copyOrderPaymentCode();
         });
     }
     if (orderStatusBackdrop) {
