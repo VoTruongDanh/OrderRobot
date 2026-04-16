@@ -74,6 +74,7 @@
         body.admin-preview-mode .order-review-hud,
         body.admin-preview-mode .size-picker-hud,
         body.admin-preview-mode .cart-mini-panel,
+        body.admin-preview-mode .cart-fab-btn,
         body.admin-preview-mode .voice-order-hint {
             display: none !important;
         }
@@ -891,7 +892,53 @@
             grid-template-rows: auto auto auto minmax(0, 1fr) auto;
             gap: 12px;
         }
-        .menu-shell-head { display: flex; align-items: center; justify-content: flex-end; gap: 12px; }
+        .menu-shell-head {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 14px;
+        }
+        .menu-shell-intro {
+            min-width: 0;
+            display: grid;
+            gap: 6px;
+        }
+        .menu-shell-kicker {
+            margin: 0;
+            font-size: 0.68rem;
+            font-weight: 800;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: #0e7490;
+        }
+        .menu-shell-title-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .menu-shell-title {
+            margin: 0;
+            font-size: 1.22rem;
+            font-weight: 800;
+            color: #163246;
+            line-height: 1.18;
+        }
+        .menu-shell-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 32px;
+            padding: 6px 12px;
+            border-radius: 999px;
+            border: 1px solid rgba(37, 99, 235, 0.16);
+            background: linear-gradient(135deg, rgba(224, 242, 254, 0.95), rgba(219, 234, 254, 0.9));
+            color: #0f766e;
+            font-size: 0.72rem;
+            font-weight: 800;
+            letter-spacing: 0.04em;
+            white-space: nowrap;
+        }
         .menu-close-btn {
             border: 1px solid rgba(148, 163, 184, 0.34);
             background: rgba(255, 255, 255, 0.86);
@@ -2166,9 +2213,9 @@
         .cart-mini-panel {
             right: 18px;
             left: auto;
-            top: 198px;
-            bottom: auto;
-            width: 332px;
+            top: auto;
+            bottom: 24px;
+            width: min(360px, calc(100vw - 24px));
             border-radius: var(--ui-radius-xl);
             border: 1px solid rgba(120, 162, 188, 0.4);
             background:
@@ -2179,6 +2226,109 @@
             gap: 10px;
             overflow: hidden;
             position: fixed;
+            z-index: 130;
+        }
+        .cart-mini-panel {
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+            transform: translateY(calc(100% + 24px));
+            transition:
+                transform var(--menu-duration) var(--menu-easing),
+                opacity var(--menu-duration) var(--menu-easing),
+                visibility 0s linear var(--menu-duration);
+        }
+        .cart-mini-panel[hidden] {
+            display: none !important;
+        }
+        .cart-mini-panel.is-open {
+            opacity: 1;
+            visibility: visible;
+            pointer-events: auto;
+            transform: translateY(0);
+            transition:
+                transform var(--menu-duration) var(--menu-easing),
+                opacity var(--menu-duration) var(--menu-easing),
+                visibility 0s linear 0s;
+        }
+        .cart-mini-backdrop {
+            position: fixed;
+            inset: 0;
+            z-index: 125;
+            background: linear-gradient(180deg, rgba(7, 27, 44, 0.08), rgba(7, 27, 44, 0.22));
+            backdrop-filter: blur(4px);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity var(--menu-duration) var(--menu-easing);
+        }
+        .cart-mini-backdrop.is-open {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .dock-cart-count {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 24px;
+            height: 24px;
+            margin-left: 10px;
+            padding: 0 7px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.96);
+            color: #0f766e;
+            border: 1px solid rgba(20, 184, 166, 0.18);
+            box-shadow: 0 8px 18px rgba(15, 23, 42, 0.12);
+            font-size: 0.72rem;
+            font-weight: 900;
+            letter-spacing: 0.02em;
+        }
+        .cart-mini-head {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 10px;
+        }
+        .cart-mini-head-copy {
+            min-width: 0;
+            display: grid;
+            gap: 4px;
+        }
+        .cart-mini-badge {
+            flex: 0 0 auto;
+            min-width: 58px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            border: 1px solid rgba(37, 99, 235, 0.18);
+            background: linear-gradient(135deg, rgba(224, 242, 254, 0.95), rgba(219, 234, 254, 0.92));
+            color: #0f766e;
+            text-align: center;
+            font-size: 0.72rem;
+            font-weight: 800;
+            letter-spacing: 0.03em;
+            white-space: nowrap;
+        }
+        .cart-mini-head-right {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .cart-mini-close {
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+            border: 1px solid rgba(120, 162, 188, 0.28);
+            background: rgba(255, 255, 255, 0.86);
+            color: #416077;
+            display: grid;
+            place-items: center;
+            font-size: 1rem;
+            font-weight: 800;
+            cursor: pointer;
+            transition: transform var(--ui-fast) ease, box-shadow var(--ui-fast) ease;
+        }
+        .cart-mini-close:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 8px 16px rgba(18, 62, 92, 0.12);
         }
         .cart-mini-panel::before {
             content: '';
@@ -2190,6 +2340,15 @@
             background: linear-gradient(90deg, #14b8a6, #22d3ee, #2563eb);
             opacity: 0.96;
             pointer-events: none;
+        }
+
+        .cart-mini-title {
+            margin: 0;
+            font-size: 0.78rem;
+            font-weight: 800;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: #163246;
         }
 
         .cart-mini-hint {
@@ -2332,6 +2491,11 @@
             font-weight: 900;
             white-space: nowrap;
         }
+        .cart-mini-footer {
+            display: grid;
+            gap: 8px;
+            padding-top: 2px;
+        }
 
         .cart-mini-actions {
             display: flex;
@@ -2366,6 +2530,45 @@
             box-shadow: none;
             background: linear-gradient(135deg, rgba(148, 163, 184, 0.9), rgba(148, 163, 184, 0.75));
             border-color: rgba(100, 116, 139, 0.34);
+        }
+        .cart-mini-empty-card {
+            display: grid;
+            grid-template-columns: 42px minmax(0, 1fr);
+            gap: 10px;
+            align-items: center;
+            border-radius: 16px;
+            border: 1px dashed rgba(125, 170, 197, 0.46);
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(240, 249, 255, 0.9));
+            padding: 10px;
+        }
+        .cart-mini-empty-icon {
+            width: 42px;
+            height: 42px;
+            display: grid;
+            place-items: center;
+            border-radius: 14px;
+            background: linear-gradient(135deg, rgba(20, 184, 166, 0.16), rgba(37, 99, 235, 0.14));
+            color: #0f766e;
+            font-size: 1.2rem;
+            font-weight: 900;
+            box-shadow: inset 0 0 0 1px rgba(20, 184, 166, 0.12);
+        }
+        .cart-mini-empty-copy {
+            min-width: 0;
+            display: grid;
+            gap: 3px;
+        }
+        .cart-mini-empty {
+            margin: 0;
+            font-size: 0.78rem;
+            color: #163246;
+            font-weight: 700;
+        }
+        .cart-mini-empty-sub {
+            margin: 0;
+            font-size: 0.72rem;
+            color: #60758a;
+            line-height: 1.32;
         }
 
         .quick-add-toast {
@@ -2798,10 +3001,16 @@
 
         #menu-toggle-dock {
             bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
         }
 
         #menu-toggle-dock button {
-            min-width: 192px;
+            min-width: 156px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
             border-radius: 999px;
             border: 1px solid rgba(255, 255, 255, 0.55);
             background: linear-gradient(135deg, #0ea5a2, #2563eb);
@@ -2829,6 +3038,22 @@
         .menu-shell {
             max-width: 1180px;
             gap: 14px;
+        }
+
+        .menu-shell-kicker {
+            color: #0891b2;
+        }
+
+        .menu-shell-title {
+            font-size: 1.38rem;
+            color: #0f2b3b;
+        }
+
+        .menu-shell-badge {
+            border-color: rgba(14, 116, 144, 0.18);
+            background: linear-gradient(135deg, rgba(207, 250, 254, 0.94), rgba(224, 242, 254, 0.92));
+            color: #0f766e;
+            box-shadow: 0 10px 20px rgba(20, 88, 161, 0.12);
         }
 
         .menu-close-btn {
@@ -3036,7 +3261,7 @@
             }
 
             #menu-toggle-dock button {
-                min-width: 165px;
+                min-width: 148px;
                 padding-inline: 20px;
             }
 
@@ -3128,66 +3353,297 @@
 
         @media (orientation: portrait) and (max-width: 700px) {
             #stage-container {
-                padding: 56px 10px 258px;
+                justify-content: flex-start;
+                padding: 150px 10px 248px;
+            }
+
+            #robot-container {
+                transform: translateY(4px) scale(0.98) !important;
+            }
+
+            #robot-container.sketchfab-mode {
+                width: min(96vw, 420px) !important;
+                height: min(46vh, 500px) !important;
+                transform: translateY(0) scale(1) !important;
+            }
+
+            #robot-container.local-glb-mode {
+                width: 100vw !important;
+                height: min(62vh, 540px) !important;
+                transform: translateY(0) scale(1) !important;
             }
 
             .camera-mini-panel {
                 top: 10px;
-                left: 10px;
+                left: auto;
                 right: 10px;
-                width: calc(100vw - 20px);
-                max-width: none;
+                width: min(32vw, 122px);
+                min-width: 92px;
+                border-radius: 14px;
+                box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+            }
+
+            .camera-mini-video-wrap {
+                padding: 6px;
             }
 
             .camera-mini-video {
-                aspect-ratio: 16 / 6;
+                aspect-ratio: 4 / 5;
+                border-radius: 10px;
             }
 
             .voice-mini-panel {
-                top: 122px;
+                top: 10px;
                 left: 10px;
-                right: 10px;
-                width: calc(100vw - 20px);
-                max-height: 22vh;
+                right: calc(20px + min(32vw, 122px));
+                width: auto;
+                max-height: 132px;
+                padding: 10px;
+                gap: 7px;
+                border-radius: 18px;
+                box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+            }
+
+            .voice-mini-head {
+                align-items: flex-start;
+                gap: 6px;
+            }
+
+            .voice-mini-actions {
+                gap: 5px;
+                flex-shrink: 0;
+            }
+
+            .voice-mini-title {
+                font-size: 0.66rem;
+            }
+
+            .voice-mini-toggle,
+            .voice-mini-refresh {
+                padding: 5px 9px;
+                font-size: 0.62rem;
+            }
+
+            .voice-mini-status {
+                min-height: 0;
+                font-size: 0.72rem;
             }
 
             .chat-mini-list {
-                max-height: 12vh;
+                max-height: 40px;
             }
 
             .cart-mini-panel {
                 left: 10px;
                 right: 10px;
                 top: auto;
-                bottom: 88px;
+                bottom: 0;
                 width: calc(100vw - 20px);
-                max-height: 34vh;
+                max-height: min(24vh, 182px);
+                padding: 12px 12px 14px;
+                border-radius: 24px 24px 0 0;
+                gap: 8px;
             }
 
             .cart-mini-list {
-                max-height: 15vh;
+                max-height: 54px;
+                gap: 5px;
+            }
+
+            .cart-mini-title {
+                font-size: 0.62rem;
+                letter-spacing: 0.1em;
+            }
+
+            .cart-mini-badge {
+                min-width: 50px;
+                padding: 5px 8px;
+                font-size: 0.64rem;
+            }
+
+            .cart-mini-hint {
+                font-size: 0.68rem;
+                line-height: 1.22;
+            }
+
+            .cart-mini-item {
+                grid-template-columns: 28px minmax(0, 1fr) auto;
+                gap: 6px;
+                padding: 6px;
+                border-radius: 12px;
+            }
+
+            .cart-mini-item-thumb,
+            .cart-mini-item-size,
+            .cart-mini-item-price {
+                display: none;
+            }
+
+            .cart-mini-item-qty {
+                min-width: 24px;
+                height: 24px;
+                font-size: 0.72rem;
+            }
+
+            .cart-mini-item-main strong {
+                font-size: 0.78rem;
+            }
+
+            .cart-mini-item-actions {
+                flex-direction: row;
+                gap: 4px;
+            }
+
+            .cart-mini-quick-remove,
+            .cart-mini-quick-add {
+                width: 28px;
+                height: 28px;
+                border-radius: 9px;
+                font-size: 0.92rem;
+            }
+
+            .cart-mini-total {
+                padding-top: 4px;
+            }
+
+            .cart-mini-total span {
+                font-size: 0.72rem;
+            }
+
+            .cart-mini-total strong {
+                font-size: 1rem;
+            }
+
+            .cart-mini-checkout {
+                min-height: 38px;
+                border-radius: 12px;
+                font-size: 0.82rem;
+                padding: 8px 12px;
+            }
+
+            .cart-mini-empty-card {
+                grid-template-columns: 34px minmax(0, 1fr);
+                gap: 8px;
+                padding: 8px;
+                border-radius: 14px;
+            }
+
+            .cart-mini-empty-icon {
+                width: 34px;
+                height: 34px;
+                border-radius: 11px;
+                font-size: 1rem;
+            }
+
+            .cart-mini-empty {
+                font-size: 0.72rem;
+            }
+
+            .cart-mini-empty-sub {
+                font-size: 0.66rem;
+            }
+
+            .dock-cart-count {
+                min-width: 22px;
+                height: 22px;
+                margin-left: 8px;
+                font-size: 0.66rem;
             }
 
             .quick-add-toast {
                 left: 10px;
                 right: 10px;
                 top: auto;
-                bottom: 260px;
+                bottom: 194px;
                 text-align: center;
             }
 
             .voice-order-hint {
-                top: 96px;
+                top: 148px;
                 max-width: calc(100vw - 20px);
             }
 
+            .menu-shell-head {
+                align-items: center;
+                gap: 10px;
+            }
+
+            .menu-shell-kicker {
+                font-size: 0.6rem;
+            }
+
+            .menu-shell-title {
+                font-size: 1rem;
+            }
+
+            .menu-shell-badge {
+                min-height: 28px;
+                padding: 5px 9px;
+                font-size: 0.62rem;
+            }
+
+            .menu-close-btn {
+                padding: 7px 11px;
+                font-size: 0.64rem;
+            }
+
+            .menu-status {
+                font-size: 0.72rem;
+            }
+
             #menu-toggle-dock {
-                bottom: 20px;
+                bottom: 18px;
             }
 
             #sliding-menu {
                 height: 74vh !important;
                 padding: 14px 10px 16px;
+            }
+
+            .menu-items-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 10px;
+                padding-right: 0;
+            }
+
+            .menu-item-card {
+                padding: 10px;
+                gap: 7px;
+                border-radius: 16px;
+            }
+
+            .menu-item-media {
+                aspect-ratio: 1 / 1;
+                border-radius: 12px;
+            }
+
+            .menu-item-name {
+                font-size: 0.9rem;
+                line-height: 1.24;
+            }
+
+            .menu-item-meta {
+                font-size: 0.64rem;
+            }
+
+            .menu-item-desc {
+                font-size: 0.74rem;
+                line-height: 1.28;
+                -webkit-line-clamp: 2;
+            }
+
+            .menu-item-price {
+                font-size: 0.92rem;
+            }
+
+            .menu-item-sizes {
+                font-size: 0.62rem;
+                line-height: 1.24;
+            }
+
+            .menu-item-state {
+                padding: 3px 7px;
+                font-size: 0.58rem;
             }
 
             .order-review-card,
@@ -3238,6 +3694,91 @@
             }
         }
 
+        @media (orientation: portrait) and (max-width: 420px) {
+            #stage-container {
+                padding-top: 142px;
+                padding-bottom: 226px;
+            }
+
+            #robot-container {
+                transform: translateY(0) scale(0.92) !important;
+            }
+
+            .camera-mini-panel {
+                width: 96px;
+                min-width: 96px;
+            }
+
+            .voice-mini-panel {
+                right: 116px;
+                max-height: 126px;
+            }
+
+            .voice-mini-title {
+                font-size: 0.62rem;
+            }
+
+            .menu-shell-title-row {
+                gap: 6px;
+            }
+
+            .menu-shell-title {
+                font-size: 0.92rem;
+            }
+
+            .menu-shell-badge {
+                min-height: 26px;
+                font-size: 0.58rem;
+            }
+
+            .cart-mini-badge {
+                min-width: 46px;
+                padding-inline: 7px;
+                font-size: 0.6rem;
+            }
+
+            .voice-mini-toggle,
+            .voice-mini-refresh {
+                padding: 4px 8px;
+                font-size: 0.58rem;
+            }
+
+            .voice-mini-status,
+            .chat-mini-empty,
+            .chat-mini-line {
+                font-size: 0.68rem;
+            }
+
+            .cart-mini-panel {
+                bottom: 78px;
+                max-height: min(23vh, 168px);
+            }
+
+            .quick-add-toast {
+                bottom: 182px;
+            }
+
+            .menu-items-grid {
+                gap: 8px;
+            }
+
+            .menu-item-card {
+                padding: 9px;
+            }
+
+            .menu-item-name {
+                font-size: 0.84rem;
+            }
+
+            .menu-item-desc {
+                font-size: 0.7rem;
+            }
+
+            .menu-item-price {
+                font-size: 0.86rem;
+            }
+        }
+
         @media (prefers-reduced-motion: reduce) {
             #stage-container,
             #menu-toggle-dock button,
@@ -3272,15 +3813,32 @@
 <p class="chat-mini-empty">Chưa có hội thoại.</p>
 </div>
 </section>
-<section class="cart-mini-panel" id="cart-mini-panel" aria-label="Gio hang mini">
+<div class="cart-mini-backdrop" id="cart-mini-backdrop" hidden></div>
+<section class="cart-mini-panel" id="cart-mini-panel" aria-label="Gio hang mini" aria-hidden="true" hidden>
+<div class="cart-mini-head">
+<div class="cart-mini-head-copy">
 <p class="cart-mini-title">Giỏ hàng tạm</p>
-<p class="cart-mini-hint">Nhấn + để thêm nhanh, bấm liên tục không cần chờ robot.</p>
-<div class="cart-mini-list" id="cart-mini-list">
-<p class="cart-mini-empty">Chưa có món nào trong giỏ.</p>
+<p class="cart-mini-hint" id="cart-mini-hint">Nhấn + để thêm nhanh, bấm liên tục không cần chờ robot.</p>
 </div>
+<div class="cart-mini-head-right">
+<div class="cart-mini-badge" id="cart-mini-badge">0 món</div>
+<button class="cart-mini-close" id="cart-mini-close-btn" type="button" aria-label="Đóng giỏ hàng">×</button>
+</div>
+</div>
+<div class="cart-mini-list" id="cart-mini-list">
+<div class="cart-mini-empty-card">
+<div class="cart-mini-empty-icon" aria-hidden="true">+</div>
+<div class="cart-mini-empty-copy">
+<p class="cart-mini-empty">Chưa có món nào trong giỏ.</p>
+<p class="cart-mini-empty-sub">Mở menu hoặc chạm vào món để thêm nhanh vào đơn.</p>
+</div>
+</div>
+</div>
+<div class="cart-mini-footer">
 <p class="cart-mini-total" id="cart-mini-total"><span>Tổng (VAT 10%)</span><strong>0 đ</strong></p>
 <div class="cart-mini-actions">
 <button class="cart-mini-checkout" id="cart-mini-checkout-btn" type="button" disabled>Thêm món để đặt hàng</button>
+</div>
 </div>
 </section>
 <p class="quick-add-toast" id="quick-add-toast" hidden aria-live="polite"></p>
@@ -3414,11 +3972,22 @@
 <button class="px-10 py-3 bg-white/90 backdrop-blur-xl border border-slate-200 rounded-full shadow-xl font-headline font-bold text-[10px] tracking-[0.3em] uppercase text-primary hover:scale-105 transition-all active:scale-95" onclick="toggleMenu()">
 <span id="menu-label">Menu</span>
 </button>
+<button class="px-10 py-3 bg-white/90 backdrop-blur-xl border border-slate-200 rounded-full shadow-xl font-headline font-bold text-[10px] tracking-[0.3em] uppercase text-primary hover:scale-105 transition-all active:scale-95" id="cart-dock-btn" type="button" aria-label="Mở giỏ hàng" aria-expanded="false" aria-controls="cart-mini-panel">
+<span>Giỏ</span>
+<span class="dock-cart-count" id="cart-fab-count">0</span>
+</button>
 </div>
 <!-- Sliding Menu -->
 <div class="fixed inset-x-0 bottom-0 z-50 bg-white/90 backdrop-blur-3xl border-t border-slate-100 p-8 flex flex-col items-center" id="sliding-menu" style="height:56vh;">
 <div class="menu-shell">
 <div class="menu-shell-head">
+<div class="menu-shell-intro">
+<p class="menu-shell-kicker">Chọn món nhanh</p>
+<div class="menu-shell-title-row">
+<h3 class="menu-shell-title">Menu hôm nay</h3>
+<span class="menu-shell-badge" id="menu-shell-badge">0 món</span>
+</div>
+</div>
 <button class="menu-close-btn" onclick="toggleMenu()">Close</button>
 </div>
 <p class="menu-status" id="menu-status">Đang tải menu...</p>
@@ -3447,6 +4016,7 @@
     const menu = document.getElementById('sliding-menu');
     const menuToggleDock = document.getElementById('menu-toggle-dock');
     const menuLabel = document.getElementById('menu-label');
+    const menuShellBadge = document.getElementById('menu-shell-badge');
     const discoBall = document.getElementById('disco-ball');
     const menuItemsGrid = document.getElementById('menu-items-grid');
     const menuStatus = document.getElementById('menu-status');
@@ -3457,9 +4027,16 @@
     const voiceMiniRefresh = document.getElementById('voice-mini-refresh');
     const voiceMiniStatus = document.getElementById('voice-mini-status');
     const chatMiniList = document.getElementById('chat-mini-list');
+    const cartFabBtn = document.getElementById('cart-dock-btn');
+    const cartFabCount = document.getElementById('cart-fab-count');
+    const cartMiniBackdrop = document.getElementById('cart-mini-backdrop');
+    const cartMiniPanel = document.getElementById('cart-mini-panel');
+    const cartMiniBadge = document.getElementById('cart-mini-badge');
+    const cartMiniHint = document.getElementById('cart-mini-hint');
     const cartMiniList = document.getElementById('cart-mini-list');
     const cartMiniTotal = document.getElementById('cart-mini-total');
     const cartMiniCheckoutBtn = document.getElementById('cart-mini-checkout-btn');
+    const cartMiniCloseBtn = document.getElementById('cart-mini-close-btn');
     const quickAddToast = document.getElementById('quick-add-toast');
     const sizePickerHud = document.getElementById('size-picker-hud');
     const sizePickerBackdrop = document.getElementById('size-picker-backdrop');
@@ -3671,6 +4248,7 @@
     const chatHistory = [];
     let cartState = [];
     let cartEmptyNotice = '';
+    let cartPanelOpen = false;
     const menuSizeOptionsCache = new Map();
     const MENU_IMAGE_BY_ID = {
         'ts-tranchau': 'https://images.unsplash.com/photo-1558857563-b371033873b8?auto=format&fit=crop&w=1000&q=80',
@@ -4649,6 +5227,7 @@
     function toggleMenu() {
         isMenuOpen = !isMenuOpen;
         if (isMenuOpen) {
+            setCartPanelOpen(false);
             menu.classList.add('active');
             document.body.classList.add('menu-is-open');
             menuLabel.innerText = 'Close';
@@ -5984,6 +6563,7 @@
             refreshCartCheckoutButtonState();
             return;
         }
+        setCartPanelOpen(false);
         orderReviewSnapshot = {
             createdAt: Date.now(),
             items,
@@ -6068,13 +6648,82 @@
         cartEmptyNotice = String(text || '').trim();
     }
 
+    function setCartFabCount(value) {
+        const count = Math.max(0, Number(value) || 0);
+        if (cartFabCount) {
+            cartFabCount.textContent = String(count);
+        }
+    }
+
+    function setCartPanelOpen(nextOpen) {
+        cartPanelOpen = Boolean(nextOpen);
+        if (cartMiniPanel) {
+            if (cartPanelOpen) {
+                cartMiniPanel.hidden = false;
+                cartMiniPanel.classList.remove('is-open');
+                window.requestAnimationFrame(() => {
+                    if (cartPanelOpen && cartMiniPanel) {
+                        cartMiniPanel.classList.add('is-open');
+                    }
+                });
+            } else {
+                cartMiniPanel.classList.remove('is-open');
+            }
+            cartMiniPanel.setAttribute('aria-hidden', cartPanelOpen ? 'false' : 'true');
+            if (!cartPanelOpen) {
+                window.setTimeout(() => {
+                    if (!cartPanelOpen && cartMiniPanel) {
+                        cartMiniPanel.hidden = true;
+                    }
+                }, 220);
+            }
+        }
+        if (cartMiniBackdrop) {
+            if (cartPanelOpen) {
+                cartMiniBackdrop.hidden = false;
+                cartMiniBackdrop.classList.remove('is-open');
+                window.requestAnimationFrame(() => {
+                    if (cartPanelOpen && cartMiniBackdrop) {
+                        cartMiniBackdrop.classList.add('is-open');
+                    }
+                });
+            } else {
+                cartMiniBackdrop.classList.remove('is-open');
+                window.setTimeout(() => {
+                    if (!cartPanelOpen && cartMiniBackdrop) {
+                        cartMiniBackdrop.hidden = true;
+                    }
+                }, 220);
+            }
+        }
+        if (cartFabBtn) {
+            cartFabBtn.classList.toggle('is-open', cartPanelOpen);
+            cartFabBtn.setAttribute('aria-expanded', cartPanelOpen ? 'true' : 'false');
+            cartFabBtn.setAttribute('aria-label', cartPanelOpen ? 'Đóng giỏ hàng' : 'Mở giỏ hàng');
+        }
+    }
+
+    function toggleCartPanel(forceOpen = null) {
+        const nextOpen = forceOpen === null ? !cartPanelOpen : Boolean(forceOpen);
+        if (nextOpen && isMenuOpen) {
+            toggleMenu();
+        }
+        setCartPanelOpen(nextOpen);
+    }
+
     function renderCartEmptyState() {
         if (!cartMiniList) return;
         const noteHtml = cartEmptyNotice
             ? `<p class="cart-mini-empty-note">${toSafeInlineText(cartEmptyNotice)}</p>`
             : '';
         cartMiniList.innerHTML = `
-            <p class="cart-mini-empty">Chưa có món nào trong giỏ.</p>
+            <div class="cart-mini-empty-card">
+                <div class="cart-mini-empty-icon" aria-hidden="true">+</div>
+                <div class="cart-mini-empty-copy">
+                    <p class="cart-mini-empty">Chưa có món nào trong giỏ.</p>
+                    <p class="cart-mini-empty-sub">Mở menu hoặc chạm vào món để thêm nhanh vào đơn.</p>
+                </div>
+            </div>
             ${noteHtml}
         `;
     }
@@ -6083,6 +6732,16 @@
         const prevCartCount = Array.isArray(cartState) ? cartState.length : 0;
         cartState = normalizeOrderItems(Array.isArray(cart) ? cart : []);
         if (!cartMiniList || !cartMiniTotal) return;
+        const totalUnits = cartState.reduce((sum, item) => sum + Math.max(0, Number(item?.quantity || 0)), 0);
+        setCartFabCount(totalUnits);
+        if (cartMiniBadge) {
+            cartMiniBadge.textContent = `${totalUnits} món`;
+        }
+        if (cartMiniHint) {
+            cartMiniHint.textContent = cartState.length === 0
+                ? 'Nhấn vào món để thêm nhanh, hệ thống sẽ giữ giỏ sẵn cho bạn.'
+                : 'Bấm + hoặc - để chỉnh nhanh trước khi xác nhận đơn.';
+        }
         if (voiceOrderHint) {
             voiceOrderHint.hidden = cartState.length !== 1;
         }
@@ -6093,6 +6752,9 @@
             }
             renderCartEmptyState();
             cartMiniTotal.innerHTML = `<span>Tổng (VAT ${toSafeText(formatTaxPercentCompact(currentTaxPercent))}%)</span><strong>0 đ</strong>`;
+            if (cartMiniCheckoutBtn) {
+                cartMiniCheckoutBtn.textContent = 'Thêm món để đặt hàng';
+            }
             refreshCartCheckoutButtonState();
             return;
         }
@@ -6142,6 +6804,11 @@
         }).join('');
         const taxSummary = buildTaxSummary(subtotal);
         cartMiniTotal.innerHTML = `<span>Tổng (VAT ${toSafeText(formatTaxPercentCompact(taxSummary.taxPercent))}%)</span><strong>${toSafeText(formatCurrencyVnd(taxSummary.totalWithTax))}</strong>`;
+        if (cartMiniCheckoutBtn) {
+            cartMiniCheckoutBtn.textContent = totalUnits > 0
+                ? `Xác nhận ${totalUnits} món`
+                : 'Thêm món để đặt hàng';
+        }
         
         cartMiniList.querySelectorAll('.cart-mini-quick-remove').forEach((button) => {
             button.addEventListener('click', (event) => {
@@ -9271,9 +9938,12 @@
             ? currentMenuItems
             : currentMenuItems.filter((item) => item._category === activeMenuCategory);
         const visibleItems = byCategory;
+        if (menuShellBadge) {
+            menuShellBadge.textContent = `${visibleItems.length} món`;
+        }
 
         if (!Array.isArray(visibleItems) || visibleItems.length === 0) {
-            menuItemsGrid.innerHTML = '<p class="menu-status">Không tìm thấy món phù hợp.</p>';
+            menuItemsGrid.innerHTML = '<p class="menu-status">Không tìm thấy món phù hợp với nhóm đang chọn. Thử đổi nhóm hoặc quay lại "Tất cả".</p>';
             updateMenuPanelHeight(1);
             return;
         }
@@ -10240,6 +10910,7 @@
     renderChatMini();
     hideOrderFlow();
     updateMiniCart([]);
+    setCartPanelOpen(false);
     void ensureMenuLoaded();
     bindSizePickerEvents();
     bindOrderReviewEvents();
@@ -10261,6 +10932,21 @@
     if (cartMiniCheckoutBtn) {
         cartMiniCheckoutBtn.addEventListener('click', () => {
             triggerCartCheckout();
+        });
+    }
+    if (cartFabBtn) {
+        cartFabBtn.addEventListener('click', () => {
+            toggleCartPanel();
+        });
+    }
+    if (cartMiniCloseBtn) {
+        cartMiniCloseBtn.addEventListener('click', () => {
+            setCartPanelOpen(false);
+        });
+    }
+    if (cartMiniBackdrop) {
+        cartMiniBackdrop.addEventListener('click', () => {
+            setCartPanelOpen(false);
         });
     }
     if (voiceMiniRefresh) {
