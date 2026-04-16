@@ -18,9 +18,6 @@ function getDefaultCoreApiFallback(): string {
 }
 
 function getDefaultAiApiFallback(): string {
-  if (typeof window !== 'undefined') {
-    return isLocalDevPort(String(window.location.port || '')) ? 'http://127.0.0.1:8012' : '/api/ai'
-  }
   return '/api/ai'
 }
 
@@ -659,12 +656,38 @@ export function getCoreApiUrl(): string {
 }
 
 export function getAiApiUrl(): string {
-  return getEnvConfig('VITE_AI_API_URL', getDefaultAiApiFallback())
+  const configured = getEnvConfig('VITE_AI_API_URL', getDefaultAiApiFallback())
+  return resolveBrowserSafeAiApiUrl(configured)
 }
 
 function isLocalLikeHost(hostname: string): boolean {
   const host = String(hostname || '').trim().toLowerCase()
   return host === 'localhost' || host === '127.0.0.1' || host === '::1'
+}
+
+export function resolveBrowserSafeAiApiUrl(aiApiUrl: string): string {
+  const rawAiApi = String(aiApiUrl || '').trim()
+  if (!rawAiApi) {
+    return getDefaultAiApiFallback()
+  }
+  if (rawAiApi.startsWith('/')) {
+    return rawAiApi
+  }
+  try {
+    const href = typeof window !== 'undefined' ? window.location.href : 'http://localhost/'
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost'
+    const parsed = new URL(rawAiApi, href)
+    const sameOrigin = parsed.origin === origin
+    if (sameOrigin) {
+      return parsed.toString()
+    }
+    if (isLocalLikeHost(parsed.hostname)) {
+      return '/api/ai'
+    }
+    return parsed.toString()
+  } catch {
+    return rawAiApi
+  }
 }
 
 export function resolveBrowserSafeMenuApiUrl(menuApiUrl: string, coreApiUrl: string): string {

@@ -1,15 +1,22 @@
 param(
-  [string]$Port
+  [string]$Port,
+  [switch]$ForceRestart,
+  [switch]$ReuseExisting
 )
 
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
 $aiBackendDir = Join-Path $repoRoot 'services\ai-backend'
+$devRuntimeDir = Join-Path $repoRoot 'data\dev-runtime'
+$aiPortFile = Join-Path $devRuntimeDir 'ai-port.txt'
 
 if (-not (Test-Path $aiBackendDir)) {
   throw "AI backend source not found at: $aiBackendDir"
 }
+
+New-Item -ItemType Directory -Force -Path $devRuntimeDir | Out-Null
+Remove-Item -LiteralPath $aiPortFile -ErrorAction SilentlyContinue
 
 $aiPort = if ($Port) {
   $Port
@@ -18,12 +25,16 @@ $aiPort = if ($Port) {
 } else {
   '8012'
 }
+$fallbackAiPort = '18012'
+$allowReuseExisting = $ReuseExisting.IsPresent -or ($env:AI_DEV_REUSE_EXISTING -ne '0')
 
-# Lite mode: disable bridge/OpenAI calls and use local fallback replies.
+# Lite mode: disable bridge/OpenAI calls and keep local speech runtime lean.
 $env:LLM_MODE = 'disabled'
 if ($env:BRIDGE_BASE_URL) {
   Remove-Item Env:BRIDGE_BASE_URL -ErrorAction SilentlyContinue
 }
+$env:STT_PRELOAD = 'false'
+$env:TTS_PRELOAD = 'false'
 
 function Get-ListenerProcessInfo {
   param(
@@ -46,6 +57,7 @@ function Get-ListenerProcessInfo {
   if (-not [int]::TryParse($matched.Matches[0].Groups[1].Value, [ref]$ownerPid)) {
     return $null
   }
+
   $process = Get-Process -Id $ownerPid -ErrorAction SilentlyContinue
 
   return [PSCustomObject]@{
@@ -56,36 +68,159 @@ function Get-ListenerProcessInfo {
   }
 }
 
-$baseUrl = "http://127.0.0.1:$aiPort"
-$listener = Get-ListenerProcessInfo -Port ([int]$aiPort)
-if ($null -ne $listener) {
-  Write-Host "[ai-lite] detected existing listener on $baseUrl (pid=$($listener.ProcessId), process=$($listener.ProcessName))"
+function Get-AiHealth {
+  param(
+    [string]$BaseUrl
+  )
 
-  $isHealthyAi = $false
   try {
-    $health = Invoke-RestMethod -Uri "$baseUrl/health" -Method Get -TimeoutSec 2
-    $isHealthyAi = ($null -ne $health -and $health.status -eq 'ok')
+    return Invoke-RestMethod -Uri "$BaseUrl/health" -Method Get -TimeoutSec 2
   } catch {
-    $isHealthyAi = $false
+    return $null
   }
-
-  if ($isHealthyAi) {
-    Write-Host "[ai-lite] existing ai-backend is healthy. Reusing current instance."
-    exit 0
-  }
-
-  Write-Host "[ai-lite] port in use by a non-ai service or unhealthy process."
-  if ($listener.Path) {
-    Write-Host "[ai-lite] process path: $($listener.Path)"
-  }
-  if ($listener.CommandLine) {
-    Write-Host "[ai-lite] command line: $($listener.CommandLine)"
-  }
-  throw "Port $aiPort is already in use and did not pass health check at $baseUrl/health. Stop that process or set AI_BACKEND_PORT to a free port."
 }
 
-Write-Host "[ai-lite] starting ai-backend on http://127.0.0.1:$aiPort"
+function Test-AiRuntimeCompatible {
+  param(
+    [object]$Health
+  )
+
+  if ($null -eq $Health) {
+    return $false
+  }
+
+  if ($Health.status -ne 'ok') {
+    return $false
+  }
+
+  return ($Health.llm_mode -eq 'disabled')
+}
+
+function Test-IsAiBackendProcess {
+  param(
+    [object]$Listener
+  )
+
+  if ($null -eq $Listener) {
+    return $false
+  }
+
+  $commandLine = [string]$Listener.CommandLine
+  if (-not [string]::IsNullOrWhiteSpace($commandLine)) {
+    if ($commandLine -match 'services\\ai-backend' -or $commandLine -match 'app\.main:app' -or $commandLine -match 'uvicorn') {
+      return $true
+    }
+  }
+
+  $processName = [string]$Listener.ProcessName
+  return ($processName -match 'python')
+}
+
+function Stop-ListenerProcessTree {
+  param(
+    [object]$Listener,
+    [string]$Port
+  )
+
+  if ($null -eq $Listener) {
+    return
+  }
+
+  $listenerPid = [int]$Listener.ProcessId
+  try {
+    & taskkill /PID $listenerPid /T /F | Out-Null
+  } catch {
+    try {
+      Stop-Process -Id $listenerPid -Force -ErrorAction Stop
+    } catch {
+      Write-Host "[ai-lite] warning: could not stop pid=${listenerPid}: $($_.Exception.Message)"
+    }
+  }
+
+  for ($attempt = 0; $attempt -lt 15; $attempt++) {
+    Start-Sleep -Milliseconds 200
+    $stillUsed = Get-ListenerProcessInfo -Port ([int]$Port)
+    if ($null -eq $stillUsed) {
+      return
+    }
+  }
+}
+
+function Write-DevRuntimePort {
+  param(
+    [string]$Port
+  )
+
+  New-Item -ItemType Directory -Force -Path $devRuntimeDir | Out-Null
+  Set-Content -Path $aiPortFile -Value $Port -Encoding ascii
+}
+
+$candidatePorts = @([string]$aiPort)
+if ($aiPort -ne $fallbackAiPort) {
+  $candidatePorts += $fallbackAiPort
+}
+$candidatePorts += @('18013', '18014', '18015', '18016')
+$candidatePorts = $candidatePorts | Select-Object -Unique
+
+$resolvedAiPort = $null
+foreach ($candidatePort in $candidatePorts) {
+  $candidateUrl = "http://127.0.0.1:$candidatePort"
+  $listener = Get-ListenerProcessInfo -Port ([int]$candidatePort)
+
+  if ($null -eq $listener) {
+    $resolvedAiPort = $candidatePort
+    break
+  }
+
+  Write-Host "[ai-lite] detected existing listener on $candidateUrl (pid=$($listener.ProcessId), process=$($listener.ProcessName))"
+  $health = Get-AiHealth -BaseUrl $candidateUrl
+  $compatibleLite = Test-AiRuntimeCompatible -Health $health
+  if ($compatibleLite -and $allowReuseExisting) {
+    Write-DevRuntimePort -Port $candidatePort
+    Write-Host "[ai-lite] existing ai-backend is compatible. Reusing current instance."
+    exit 0
+  }
+  if ($compatibleLite -and -not $allowReuseExisting) {
+    Write-Host "[ai-lite] existing ai-backend is compatible but reuse is disabled. restarting to load latest code..."
+  }
+
+  $shouldAutoRestart = Test-IsAiBackendProcess -Listener $listener
+  if ($shouldAutoRestart) {
+    Write-Host "[ai-lite] existing listener looks like stale ai-backend. restarting on $candidateUrl ..."
+    Stop-ListenerProcessTree -Listener $listener -Port $candidatePort
+    $stillUsed = Get-ListenerProcessInfo -Port ([int]$candidatePort)
+    if ($null -eq $stillUsed) {
+      $resolvedAiPort = $candidatePort
+      break
+    }
+  }
+
+  if ($ForceRestart.IsPresent) {
+    Write-Host "[ai-lite] force restart enabled. trying to stop listener on $candidateUrl ..."
+    Stop-ListenerProcessTree -Listener $listener -Port $candidatePort
+    $stillUsed = Get-ListenerProcessInfo -Port ([int]$candidatePort)
+    if ($null -eq $stillUsed) {
+      $resolvedAiPort = $candidatePort
+      break
+    }
+  }
+
+  Write-Host "[ai-lite] listener on $candidateUrl is not compatible with current lite stack. Trying next candidate port..."
+}
+
+if ($null -eq $resolvedAiPort) {
+  throw "Unable to find a free AI backend port. Tried: $($candidatePorts -join ', ')."
+}
+
+$aiPort = $resolvedAiPort
+$baseUrl = "http://127.0.0.1:$aiPort"
+if ($aiPort -ne [string]$Port -and $Port) {
+  Write-Host "[ai-lite] requested port $Port was not available; switched to $aiPort"
+}
+
+Write-Host "[ai-lite] starting ai-backend on $baseUrl"
 Write-Host "[ai-lite] LLM_MODE=$env:LLM_MODE (bridge disabled)"
+Write-DevRuntimePort -Port $aiPort
 
 $previousErrorActionPreference = $ErrorActionPreference
 $ErrorActionPreference = 'Continue'

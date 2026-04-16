@@ -252,6 +252,11 @@
   flex-wrap: wrap;
 }
 
+.admin-logout-btn {
+  min-height: 38px;
+  border-radius: 999px;
+}
+
 .admin-link {
   text-decoration: none;
   color: var(--admin-text);

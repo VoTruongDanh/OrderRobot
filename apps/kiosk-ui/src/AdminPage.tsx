@@ -15,6 +15,7 @@ import {
   getRobotScalePercent,
   getMenuApiUrl,
   getOrdersApiUrl,
+  resolveBrowserSafeAiApiUrl,
   resolveBrowserSafeMenuApiUrl,
   normalizeEnvValue,
   saveAdminEnvConfig,
@@ -72,6 +73,7 @@ type EnvField = {
 
 type TtsApplyStatus = 'idle' | 'saving' | 'success' | 'error'
 type VoiceListenMode = 'always' | 'sequential'
+type AdminPageProps = { onLogout?: () => void }
 
 type VieneuDiagnostics = {
   available?: boolean
@@ -456,17 +458,22 @@ function normalizeApiBaseUrl(value: string): string {
   return String(value || '').trim().replace(/\/+$/, '')
 }
 
-function getAiApiCandidates(preferredUrl: string): string[] {
+function getCoreReloadCandidates(preferredUrl: string): string[] {
   const normalizedPreferred = normalizeApiBaseUrl(preferredUrl)
-  const defaults = [
-    '/api/ai',
-    'http://127.0.0.1:8080/api/ai',
-    'http://localhost:8080/api/ai',
-    'http://127.0.0.1:18012',
-    'http://127.0.0.1:8012',
-    'http://localhost:18012',
-    'http://localhost:8012',
-  ]
+  const defaults = ['/api/core', 'http://127.0.0.1:8080/api/core', 'http://localhost:8080/api/core']
+  const unique = new Set<string>()
+  if (normalizedPreferred.length > 0) {
+    unique.add(normalizedPreferred)
+  }
+  for (const url of defaults) {
+    unique.add(url)
+  }
+  return Array.from(unique)
+}
+
+function getAiApiCandidates(preferredUrl: string): string[] {
+  const normalizedPreferred = normalizeApiBaseUrl(resolveBrowserSafeAiApiUrl(preferredUrl))
+  const defaults = ['/api/ai', 'http://127.0.0.1:8080/api/ai', 'http://localhost:8080/api/ai']
   const unique = new Set<string>()
   // Always prioritize the currently configured/active URL first to reduce
   // noisy connection-refused logs from non-running ports.
@@ -705,7 +712,7 @@ function getCapabilitiesFromOpenApi(payload: unknown): VieneuBackendCapabilities
   }
 }
 
-export default function AdminPage() {
+export default function AdminPage({ onLogout }: AdminPageProps) {
   const [uiLanguage, setUiLanguage] = useState<UiLanguage>(() => loadAdminUiLanguage())
   const [activeTab, setActiveTab] = useState<AdminTab>('overview')
   const [showAdvancedConfig, setShowAdvancedConfig] = useState(false)
@@ -1484,9 +1491,44 @@ export default function AdminPage() {
         return
       }
 
+      const preferredCoreUrl = getFieldValue(normalizedFields, 'VITE_CORE_API_URL', getCoreApiUrl())
+      const coreReloadCandidates = getCoreReloadCandidates(preferredCoreUrl)
+      let coreReloadApiBase = ''
+      let coreReloadErrorMessage = ''
+      for (const apiBase of coreReloadCandidates) {
+        try {
+          const response = await fetch(`${apiBase}/config/reload`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+          })
+          const payload = (await response.json().catch(() => null)) as
+            | { detail?: unknown; pos_store_id?: unknown }
+            | null
+          if (!response.ok) {
+            const detail = typeof payload?.detail === 'string' ? payload.detail.trim() : ''
+            throw new Error(detail || `HTTP ${response.status}`)
+          }
+          coreReloadApiBase = apiBase
+          break
+        } catch (error) {
+          coreReloadErrorMessage = error instanceof Error ? error.message : 'unknown'
+        }
+      }
+
+      if (!coreReloadApiBase) {
+        setNotice({
+          tone: 'warning',
+          text: t(
+            `Da ghi .env, nhung core backend chua nap lai cau hinh moi: ${coreReloadErrorMessage || 'unknown error'}`,
+            `Saved .env, but core backend did not reload the new config: ${coreReloadErrorMessage || 'unknown error'}`,
+          ),
+        })
+        return
+      }
+
       setNotice({
         tone: 'success',
-        text: `${successText} ${t(`(.env da ghi qua ${syncedApiBase})`, `(.env persisted via ${syncedApiBase})`)}`,
+        text: `${successText} ${t(`(.env da ghi qua ${syncedApiBase}; core reload qua ${coreReloadApiBase})`, `(.env persisted via ${syncedApiBase}; core reloaded via ${coreReloadApiBase})`)}`,
       })
     },
     [currentAiApiUrl, t],
@@ -2645,6 +2687,11 @@ export default function AdminPage() {
               <p className="admin-chip admin-chip--ok">
                 Caption: {liveCaption.status}
               </p>
+              {onLogout ? (
+                <button className="admin-btn admin-btn--ghost admin-logout-btn" type="button" onClick={onLogout}>
+                  {t('Dang xuat', 'Sign Out')}
+                </button>
+              ) : null}
             </div>
           </header>
 

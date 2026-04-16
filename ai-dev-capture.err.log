@@ -1,0 +1,250 @@
+INFO:     Will watch for changes in these directories: ['C:\\CNX\\OrderRobot-Lite\\services\\ai-backend']
+INFO:     Uvicorn running on http://127.0.0.1:8012 (Press CTRL+C to quit)
+INFO:     Started reloader process [8072] using WatchFiles
+INFO:     Started server process [36756]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'services\ai-backend\app\__init__.py', 'services\ai-backend\tests\conftest.py', 'services\ai-backend\app\main.py', 'services\ai-backend\run_server.py', 'services\ai-backend\app\models.py', 'services\ai-backend\app\services\core_backend_client.py', 'services\ai-backend\tests\test_ai_backend.py', 'services\ai-backend\app\config.py', 'services\ai-backend\app\services\conversation_engine.py', 'services\ai-backend\tests\test_speech_service.py', 'services\ai-backend\app\services\provider_client.py', 'services\ai-backend\app\services\speech_service.py'. Reloading...
+Skipping import of cpp extensions due to incompatible torch version 2.11.0+cpu for torchao version 0.16.0             Please see https://github.com/pytorch/ao/issues/2919 for more info
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [36756]
+INFO:     Started server process [37068]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+Skipping import of cpp extensions due to incompatible torch version 2.11.0+cpu for torchao version 0.16.0             Please see https://github.com/pytorch/ao/issues/2919 for more info
+INFO:     tts_total_ms=1299 endpoint=synthesize chars=64 engine=edge
+INFO:     tts_total_ms=1023 endpoint=synthesize chars=56 engine=edge
+INFO:     tts_total_ms=1292 endpoint=synthesize chars=55 engine=edge
+INFO:     tts_total_ms=1855 endpoint=synthesize chars=55 engine=edge
+INFO:     tts_total_ms=2081 endpoint=synthesize chars=68 engine=edge
+INFO:     config_env_load status=ok loaded_keys=72 env_path=C:\CNX\OrderRobot-Lite\.env
+INFO:     tts_total_ms=1513 endpoint=synthesize chars=64 engine=edge
+INFO:     tts_total_ms=1205 endpoint=synthesize chars=72 engine=edge
+INFO:     tts_total_ms=1541 endpoint=synthesize chars=74 engine=edge
+INFO:     tts_total_ms=1090 endpoint=synthesize chars=68 engine=edge
+INFO:     tts_total_ms=1110 endpoint=synthesize chars=74 engine=edge
+INFO:     tts_total_ms=1140 endpoint=synthesize chars=35 engine=edge
+INFO:     tts_total_ms=1119 endpoint=synthesize chars=33 engine=edge
+INFO:     tts_total_ms=1112 endpoint=synthesize chars=28 engine=edge
+INFO:     config_env_sync status=ok updated_keys=72 env_path=C:\CNX\OrderRobot-Lite\.env
+INFO:     config_env_sync status=ok updated_keys=72 env_path=C:\CNX\OrderRobot-Lite\.env
+INFO:     config_env_load status=ok loaded_keys=72 env_path=C:\CNX\OrderRobot-Lite\.env
+INFO:     tts_total_ms=1272 endpoint=synthesize chars=64 engine=edge
+INFO:     tts_total_ms=776 endpoint=synthesize chars=56 engine=edge
+INFO:     tts_total_ms=1329 endpoint=synthesize chars=55 engine=edge
+INFO:     tts_total_ms=1112 endpoint=synthesize chars=64 engine=edge
+INFO:     tts_total_ms=1295 endpoint=synthesize chars=56 engine=edge
+INFO:     tts_total_ms=1553 endpoint=synthesize chars=55 engine=edge
+INFO:     tts_total_ms=1015 endpoint=synthesize chars=55 engine=edge
+INFO:     tts_total_ms=1064 endpoint=synthesize chars=68 engine=edge
+INFO:     tts_total_ms=1007 endpoint=synthesize chars=64 engine=edge
+INFO:     tts_total_ms=1462 endpoint=synthesize chars=72 engine=edge
+INFO:     config_env_sync status=ok updated_keys=72 env_path=C:\CNX\OrderRobot-Lite\.env
+INFO:     config_env_sync status=ok updated_keys=72 env_path=C:\CNX\OrderRobot-Lite\.env
+INFO:     tts_total_ms=1570 endpoint=synthesize chars=74 engine=edge
+INFO:     config_env_load status=ok loaded_keys=72 env_path=C:\CNX\OrderRobot-Lite\.env
+INFO:     tts_total_ms=1272 endpoint=synthesize chars=74 engine=edge
+INFO:     tts_total_ms=1360 endpoint=synthesize chars=64 engine=edge
+INFO:     tts_total_ms=1386 endpoint=synthesize chars=56 engine=edge
+INFO:     tts_total_ms=1796 endpoint=synthesize chars=64 engine=edge
+INFO:     tts_total_ms=1101 endpoint=synthesize chars=56 engine=edge
+INFO:     tts_total_ms=1111 endpoint=synthesize chars=55 engine=edge
+INFO:     tts_total_ms=1117 endpoint=synthesize chars=55 engine=edge
+INFO:     tts_total_ms=973 endpoint=synthesize chars=68 engine=edge
+INFO:     tts_total_ms=1157 endpoint=synthesize chars=64 engine=edge
+INFO:     tts_total_ms=1079 endpoint=synthesize chars=72 engine=edge
+INFO:     tts_total_ms=1046 endpoint=synthesize chars=74 engine=edge
+INFO:     tts_total_ms=1013 endpoint=synthesize chars=68 engine=edge
+INFO:     tts_total_ms=1125 endpoint=synthesize chars=74 engine=edge
+INFO:     tts_total_ms=1116 endpoint=synthesize chars=35 engine=edge
+INFO:     tts_total_ms=1223 endpoint=synthesize chars=33 engine=edge
+INFO:     tts_total_ms=1342 endpoint=synthesize chars=28 engine=edge
+INFO:     tts_total_ms=1542 endpoint=synthesize chars=64 engine=edge
+INFO:     tts_total_ms=1794 endpoint=synthesize chars=64 engine=edge
+INFO:     tts_total_ms=1597 endpoint=synthesize chars=64 engine=edge
+INFO:     tts_total_ms=1209 endpoint=synthesize chars=56 engine=edge
+INFO:     tts_total_ms=917 endpoint=synthesize chars=55 engine=edge
+INFO:     tts_total_ms=1116 endpoint=synthesize chars=55 engine=edge
+INFO:     tts_total_ms=1304 endpoint=synthesize chars=68 engine=edge
+INFO:     tts_total_ms=1243 endpoint=synthesize chars=64 engine=edge
+INFO:     tts_total_ms=1245 endpoint=synthesize chars=72 engine=edge
+INFO:     tts_total_ms=1111 endpoint=synthesize chars=74 engine=edge
+INFO:     turn_first_text_ms=94 session_id=SES-6d82b6282d turn_id=turn-1 endpoint=turn_stream quick_checkout=False
+INFO:     turn_total_ms=96 turn_first_text_ms=94 turn_first_audio_ms=-1 session_id=SES-6d82b6282d turn_id=turn-1 endpoint=turn_stream quick_checkout=False
+INFO:     tts_total_ms=1091 endpoint=synthesize chars=68 engine=edge
+INFO:     tts_total_ms=1172 endpoint=synthesize chars=74 engine=edge
+INFO:     turn_total_ms=0 session_id=SES-6d82b6282d turn_id=turn-3 endpoint=turn quick_checkout=False
+INFO:     tts_total_ms=1109 endpoint=synthesize chars=35 engine=edge
+Failed to create order: Client error '400 Bad Request' for url 'http://127.0.0.1:8011/orders'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400
+Traceback (most recent call last):
+  File "C:\CNX\OrderRobot-Lite\services\ai-backend\app\services\conversation_engine.py", line 659, in handle_turn
+    order = await self.core_client.create_order(
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<5 lines>...
+    )
+    ^
+  File "C:\CNX\OrderRobot-Lite\services\ai-backend\app\services\core_backend_client.py", line 24, in create_order
+    response.raise_for_status()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Pls\AppData\Roaming\Python\Python314\site-packages\httpx\_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '400 Bad Request' for url 'http://127.0.0.1:8011/orders'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400
+INFO:     turn_first_text_ms=522 session_id=SES-6d82b6282d turn_id=turn-2 endpoint=turn_stream quick_checkout=True
+INFO:     turn_total_ms=523 turn_first_text_ms=522 turn_first_audio_ms=-1 session_id=SES-6d82b6282d turn_id=turn-2 endpoint=turn_stream quick_checkout=True
+INFO:     tts_total_ms=873 endpoint=synthesize chars=33 engine=edge
+INFO:     tts_total_ms=1093 endpoint=synthesize chars=28 engine=edge
+INFO:     turn_total_ms=0 session_id=SES-6d82b6282d turn_id=turn-5 endpoint=turn quick_checkout=False
+Failed to create order: Client error '400 Bad Request' for url 'http://127.0.0.1:8011/orders'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400
+Traceback (most recent call last):
+  File "C:\CNX\OrderRobot-Lite\services\ai-backend\app\services\conversation_engine.py", line 659, in handle_turn
+    order = await self.core_client.create_order(
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<5 lines>...
+    )
+    ^
+  File "C:\CNX\OrderRobot-Lite\services\ai-backend\app\services\core_backend_client.py", line 24, in create_order
+    response.raise_for_status()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\Pls\AppData\Roaming\Python\Python314\site-packages\httpx\_models.py", line 829, in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+httpx.HTTPStatusError: Client error '400 Bad Request' for url 'http://127.0.0.1:8011/orders'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400
+INFO:     turn_first_text_ms=142 session_id=SES-6d82b6282d turn_id=turn-4 endpoint=turn_stream quick_checkout=True
+INFO:     turn_total_ms=142 turn_first_text_ms=142 turn_first_audio_ms=-1 session_id=SES-6d82b6282d turn_id=turn-4 endpoint=turn_stream quick_checkout=True
+INFO:     config_env_load status=ok loaded_keys=72 env_path=C:\CNX\OrderRobot-Lite\.env
+INFO:     tts_total_ms=1340 endpoint=synthesize chars=64 engine=edge
+INFO:     tts_total_ms=1760 endpoint=synthesize chars=56 engine=edge
+INFO:     tts_total_ms=1419 endpoint=synthesize chars=55 engine=edge
+INFO:     tts_total_ms=944 endpoint=synthesize chars=55 engine=edge
+INFO:     tts_total_ms=1570 endpoint=synthesize chars=68 engine=edge
+INFO:     tts_total_ms=1427 endpoint=synthesize chars=64 engine=edge
+INFO:     tts_total_ms=1261 endpoint=synthesize chars=72 engine=edge
+INFO:     tts_total_ms=940 endpoint=synthesize chars=74 engine=edge
+INFO:     tts_total_ms=1354 endpoint=synthesize chars=68 engine=edge
+INFO:     tts_total_ms=1288 endpoint=synthesize chars=74 engine=edge
+INFO:     tts_total_ms=1018 endpoint=synthesize chars=35 engine=edge
+INFO:     tts_total_ms=1179 endpoint=synthesize chars=33 engine=edge
+INFO:     tts_total_ms=1161 endpoint=synthesize chars=28 engine=edge
+INFO:     tts_total_ms=1411 endpoint=synthesize chars=64 engine=edge
+INFO:     tts_total_ms=1219 endpoint=synthesize chars=56 engine=edge
+INFO:     tts_total_ms=1307 endpoint=synthesize chars=55 engine=edge
+INFO:     config_env_load status=ok loaded_keys=72 env_path=C:\CNX\OrderRobot-Lite\.env
+INFO:     tts_total_ms=1298 endpoint=synthesize chars=55 engine=edge
+INFO:     tts_total_ms=1291 endpoint=synthesize chars=68 engine=edge
+INFO:     config_env_sync status=ok updated_keys=72 env_path=C:\CNX\OrderRobot-Lite\.env
+INFO:     config_env_load status=ok loaded_keys=72 env_path=C:\CNX\OrderRobot-Lite\.env
+INFO:     tts_total_ms=1365 endpoint=synthesize chars=64 engine=edge
+INFO:     tts_total_ms=2271 endpoint=synthesize chars=64 engine=edge
+INFO:     tts_total_ms=1355 endpoint=synthesize chars=72 engine=edge
+INFO:     config_env_sync status=ok updated_keys=72 env_path=C:\CNX\OrderRobot-Lite\.env
+INFO:     config_env_sync status=ok updated_keys=72 env_path=C:\CNX\OrderRobot-Lite\.env
+INFO:     tts_total_ms=1932 endpoint=synthesize chars=74 engine=edge
+INFO:     config_env_load status=ok loaded_keys=72 env_path=C:\CNX\OrderRobot-Lite\.env
+INFO:     tts_total_ms=1207 endpoint=synthesize chars=74 engine=edge
+INFO:     tts_total_ms=1462 endpoint=synthesize chars=64 engine=edge
+INFO:     tts_total_ms=1349 endpoint=synthesize chars=56 engine=edge
+INFO:     tts_total_ms=1416 endpoint=synthesize chars=55 engine=edge
+INFO:     tts_total_ms=1320 endpoint=synthesize chars=64 engine=edge
+INFO:     tts_total_ms=1114 endpoint=synthesize chars=56 engine=edge
+INFO:     tts_total_ms=1184 endpoint=synthesize chars=55 engine=edge
+INFO:     tts_total_ms=972 endpoint=synthesize chars=55 engine=edge
+INFO:     tts_total_ms=1194 endpoint=synthesize chars=68 engine=edge
+INFO:     tts_total_ms=942 endpoint=synthesize chars=64 engine=edge
+INFO:     tts_total_ms=1108 endpoint=synthesize chars=72 engine=edge
+INFO:     tts_total_ms=1688 endpoint=synthesize chars=74 engine=edge
+INFO:     tts_total_ms=989 endpoint=synthesize chars=68 engine=edge
+INFO:     tts_total_ms=1642 endpoint=synthesize chars=74 engine=edge
+INFO:     tts_total_ms=1260 endpoint=synthesize chars=35 engine=edge
+INFO:     tts_total_ms=1145 endpoint=synthesize chars=33 engine=edge
+INFO:     tts_total_ms=1036 endpoint=synthesize chars=28 engine=edge
+INFO:     tts_total_ms=1357 endpoint=synthesize chars=64 engine=edge
+INFO:     tts_total_ms=1155 endpoint=synthesize chars=56 engine=edge
+INFO:     tts_total_ms=1281 endpoint=synthesize chars=55 engine=edge
+INFO:     tts_total_ms=988 endpoint=synthesize chars=55 engine=edge
+INFO:     tts_total_ms=1099 endpoint=synthesize chars=68 engine=edge
+INFO:     tts_total_ms=1121 endpoint=synthesize chars=64 engine=edge
+INFO:     tts_total_ms=1143 endpoint=synthesize chars=72 engine=edge
+INFO:     config_env_sync status=ok updated_keys=72 env_path=C:\CNX\OrderRobot-Lite\.env
+INFO:     config_env_sync status=ok updated_keys=72 env_path=C:\CNX\OrderRobot-Lite\.env
+INFO:     tts_total_ms=1470 endpoint=synthesize chars=74 engine=edge
+INFO:     config_env_load status=ok loaded_keys=72 env_path=C:\CNX\OrderRobot-Lite\.env
+INFO:     tts_total_ms=1499 endpoint=synthesize chars=74 engine=edge
+INFO:     tts_total_ms=1136 endpoint=synthesize chars=64 engine=edge
+INFO:     tts_total_ms=1606 endpoint=synthesize chars=56 engine=edge
+INFO:     tts_total_ms=1343 endpoint=synthesize chars=64 engine=edge
+INFO:     tts_total_ms=1251 endpoint=synthesize chars=56 engine=edge
+INFO:     tts_total_ms=1547 endpoint=synthesize chars=55 engine=edge
+INFO:     tts_total_ms=1222 endpoint=synthesize chars=55 engine=edge
+INFO:     tts_total_ms=1316 endpoint=synthesize chars=68 engine=edge
+INFO:     tts_total_ms=1263 endpoint=synthesize chars=64 engine=edge
+INFO:     tts_total_ms=1288 endpoint=synthesize chars=72 engine=edge
+INFO:     tts_total_ms=1227 endpoint=synthesize chars=74 engine=edge
+INFO:     tts_total_ms=1661 endpoint=synthesize chars=68 engine=edge
+INFO:     tts_total_ms=1363 endpoint=synthesize chars=74 engine=edge
+INFO:     tts_total_ms=1053 endpoint=synthesize chars=35 engine=edge
+INFO:     tts_total_ms=1209 endpoint=synthesize chars=33 engine=edge
+INFO:     tts_total_ms=1223 endpoint=synthesize chars=28 engine=edge
+INFO:     config_env_sync status=ok updated_keys=72 env_path=C:\CNX\OrderRobot-Lite\.env
+INFO:     config_env_sync status=ok updated_keys=72 env_path=C:\CNX\OrderRobot-Lite\.env
+INFO:     config_env_load status=ok loaded_keys=72 env_path=C:\CNX\OrderRobot-Lite\.env
+INFO:     tts_total_ms=1412 endpoint=synthesize chars=64 engine=edge
+INFO:     tts_total_ms=1189 endpoint=synthesize chars=56 engine=edge
+INFO:     tts_total_ms=1353 endpoint=synthesize chars=55 engine=edge
+INFO:     tts_total_ms=1205 endpoint=synthesize chars=55 engine=edge
+INFO:     tts_total_ms=1891 endpoint=synthesize chars=68 engine=edge
+INFO:     tts_total_ms=1329 endpoint=synthesize chars=64 engine=edge
+INFO:     tts_total_ms=1261 endpoint=synthesize chars=56 engine=edge
+INFO:     tts_total_ms=1220 endpoint=synthesize chars=55 engine=edge
+INFO:     tts_total_ms=1382 endpoint=synthesize chars=55 engine=edge
+INFO:     tts_total_ms=1225 endpoint=synthesize chars=68 engine=edge
+INFO:     tts_total_ms=1088 endpoint=synthesize chars=64 engine=edge
+INFO:     tts_total_ms=1161 endpoint=synthesize chars=72 engine=edge
+INFO:     tts_total_ms=1122 endpoint=synthesize chars=74 engine=edge
+INFO:     tts_total_ms=1024 endpoint=synthesize chars=68 engine=edge
+INFO:     tts_total_ms=992 endpoint=synthesize chars=74 engine=edge
+INFO:     tts_total_ms=1081 endpoint=synthesize chars=35 engine=edge
+INFO:     tts_total_ms=1558 endpoint=synthesize chars=33 engine=edge
+INFO:     tts_total_ms=1027 endpoint=synthesize chars=28 engine=edge
+INFO:     tts_total_ms=1400 endpoint=synthesize chars=64 engine=edge
+INFO:     tts_total_ms=1198 endpoint=synthesize chars=56 engine=edge
+INFO:     tts_total_ms=2690 endpoint=synthesize chars=55 engine=edge
+INFO:     tts_total_ms=1239 endpoint=synthesize chars=55 engine=edge
+INFO:     tts_total_ms=1285 endpoint=synthesize chars=68 engine=edge
+INFO:     config_env_load status=ok loaded_keys=72 env_path=C:\CNX\OrderRobot-Lite\.env
+INFO:     tts_total_ms=1351 endpoint=synthesize chars=64 engine=edge
+INFO:     tts_total_ms=1128 endpoint=synthesize chars=72 engine=edge
+INFO:     tts_total_ms=1188 endpoint=synthesize chars=74 engine=edge
+INFO:     config_env_sync status=ok updated_keys=72 env_path=C:\CNX\OrderRobot-Lite\.env
+INFO:     tts_total_ms=1259 endpoint=synthesize chars=68 engine=edge
+INFO:     config_env_load status=ok loaded_keys=72 env_path=C:\CNX\OrderRobot-Lite\.env
+INFO:     tts_total_ms=1316 endpoint=synthesize chars=64 engine=edge
+INFO:     tts_total_ms=1305 endpoint=synthesize chars=56 engine=edge
+INFO:     tts_total_ms=1092 endpoint=synthesize chars=55 engine=edge
+INFO:     tts_total_ms=1157 endpoint=synthesize chars=64 engine=edge
+INFO:     tts_total_ms=1330 endpoint=synthesize chars=56 engine=edge
+INFO:     tts_total_ms=1394 endpoint=synthesize chars=55 engine=edge
+INFO:     tts_total_ms=1430 endpoint=synthesize chars=55 engine=edge
+INFO:     tts_total_ms=1247 endpoint=synthesize chars=68 engine=edge
+INFO:     tts_total_ms=1111 endpoint=synthesize chars=64 engine=edge
+INFO:     tts_total_ms=1201 endpoint=synthesize chars=72 engine=edge
+INFO:     tts_total_ms=1266 endpoint=synthesize chars=74 engine=edge
+INFO:     tts_total_ms=1144 endpoint=synthesize chars=68 engine=edge
+INFO:     tts_total_ms=1534 endpoint=synthesize chars=74 engine=edge
+INFO:     tts_total_ms=1179 endpoint=synthesize chars=64 engine=edge
+INFO:     tts_total_ms=1315 endpoint=synthesize chars=56 engine=edge
+INFO:     tts_total_ms=1130 endpoint=synthesize chars=55 engine=edge
+INFO:     tts_total_ms=1398 endpoint=synthesize chars=64 engine=edge
+INFO:     tts_total_ms=1222 endpoint=synthesize chars=56 engine=edge
+INFO:     tts_total_ms=1265 endpoint=synthesize chars=55 engine=edge
+INFO:     tts_total_ms=1403 endpoint=synthesize chars=55 engine=edge
+INFO:     tts_total_ms=1388 endpoint=synthesize chars=68 engine=edge
+INFO:     tts_total_ms=1198 endpoint=synthesize chars=64 engine=edge
+INFO:     tts_total_ms=1319 endpoint=synthesize chars=72 engine=edge
+INFO:     tts_total_ms=1274 endpoint=synthesize chars=74 engine=edge
+INFO:     tts_total_ms=1112 endpoint=synthesize chars=68 engine=edge
+INFO:     tts_total_ms=1035 endpoint=synthesize chars=74 engine=edge

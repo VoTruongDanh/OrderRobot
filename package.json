@@ -9,7 +9,7 @@
     "install:ui": "npm --prefix apps/kiosk-ui install",
     "install:python": "python -m pip install -r services/core-backend/requirements.txt -r services/ai-backend/requirements.txt",
     "install:all": "npm run install:ui && npm run install:python",
-    "dev:ui": "npm --prefix apps/kiosk-ui run dev:with-models",
+    "dev:ui": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-ui.ps1",
     "dev:core": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-core.ps1",
     "dev:ai": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-ai-lite.ps1",
     "dev:ai:lite": "npm run dev:ai",

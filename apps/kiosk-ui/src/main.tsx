@@ -115,8 +115,15 @@ function AdminLoginGate() {
     }
   }
 
+  const handleLogout = () => {
+    localStorage.removeItem(ADMIN_AUTH_TOKEN_KEY)
+    setIsAuthenticated(false)
+    setPassword('')
+    setError('')
+  }
+
   if (isAuthenticated) {
-    return <AdminPage />
+    return <AdminPage onLogout={handleLogout} />
   }
 
   return (

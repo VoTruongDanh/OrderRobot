@@ -659,15 +659,14 @@ class OrderService:
             raise ValueError("POS menu source tra ve rong hoac payload khong dung schema.")
         return items
 
-    @staticmethod
-    def _normalize_remote_menu_item(record: dict[str, Any], index: int) -> MenuItem | None:
+    def _normalize_remote_menu_item(self, record: dict[str, Any], index: int) -> MenuItem | None:
         product_obj = record.get("product", {}) if isinstance(record.get("product"), dict) else {}
         product_category = (
             product_obj.get("category", {})
             if isinstance(product_obj.get("category"), dict)
             else {}
         )
-        item_id = str(
+        raw_item_id = str(
             record.get("item_id")
             or record.get("productId")
             or record.get("product_id")
@@ -675,10 +674,18 @@ class OrderService:
             or product_obj.get("product_id")
             or record.get("id")
             or record.get("itemId")
-            or f"remote-item-{index}"
+            or ""
         ).strip()
-        if not item_id:
+        if not raw_item_id:
             return None
+        safe_item_id = self._safe_int(raw_item_id)
+        if safe_item_id is None or safe_item_id <= 0:
+            if self.remote_menu_strict_enabled:
+                raise ValueError(
+                    f"POS menu source item thu {index + 1} khong co productId/itemId hop le."
+                )
+            return None
+        item_id = str(safe_item_id)
 
         name = str(
             record.get("name")

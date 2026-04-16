@@ -33,9 +33,41 @@ app.add_middleware(
 )
 
 
+def _reload_runtime_config() -> dict[str, object]:
+    global settings, menu_repository, order_repository, order_service
+
+    settings = get_settings()
+    menu_repository = CsvMenuRepository(settings.menu_csv_path)
+    order_repository = CsvOrderRepository(settings.orders_csv_path)
+    order_service = OrderService(menu_repository, order_repository, settings)
+
+    logger.info(
+        "core_config_reload status=ok pos_store_id=%s pos_menu_source_mode=%s pos_menu_source_url=%s",
+        settings.pos_store_id,
+        settings.pos_menu_source_mode,
+        settings.pos_menu_source_url,
+    )
+    return {
+        "status": "ok",
+        "pos_store_id": settings.pos_store_id,
+        "pos_menu_source_mode": settings.pos_menu_source_mode,
+        "pos_menu_source_url": settings.pos_menu_source_url,
+    }
+
+
 @app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+def health() -> dict[str, object]:
+    return {
+        "status": "ok",
+        "pos_store_id": settings.pos_store_id,
+        "pos_menu_source_mode": settings.pos_menu_source_mode,
+        "pos_menu_source_url": settings.pos_menu_source_url,
+    }
+
+
+@app.post("/config/reload")
+def reload_config() -> dict[str, object]:
+    return _reload_runtime_config()
 
 
 @app.get("/menu", response_model=list[MenuItem])

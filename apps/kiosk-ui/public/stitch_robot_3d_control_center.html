@@ -3556,7 +3556,7 @@
     const DEFAULT_TAX_PERCENT = 10;
     const isLocalDevPort = (port) => ['5173', '4173', '3000'].includes(String(port || ''));
     const CORE_RUNTIME_FALLBACK_URL = isLocalDevPort(window.location.port) ? 'http://127.0.0.1:8011' : '/api/core';
-    const AI_RUNTIME_FALLBACK_URL = isLocalDevPort(window.location.port) ? 'http://127.0.0.1:8012' : '/api/ai';
+    const AI_RUNTIME_FALLBACK_URL = '/api/ai';
     const AI_RUNTIME_PROBE_TIMEOUT_MS = 1600;
     const isAdminPreviewMode = new URLSearchParams(window.location.search).get('adminPreview') === '1';
     if (isAdminPreviewMode) {
@@ -4266,11 +4266,23 @@
     }
 
     function normalizeAiApiUrl(value) {
-        return String(value || '')
+        const normalized = String(value || '')
             .trim()
             .replace('://127.0.0.1:8002', '://127.0.0.1:8012')
             .replace('://localhost:8002', '://localhost:8012')
             .replace(/\/$/, '');
+        if (!normalized) return AI_RUNTIME_FALLBACK_URL;
+        if (normalized.startsWith('/')) return normalized;
+        try {
+            const parsed = new URL(normalized, window.location.href);
+            const isLocalLikeHost = ['localhost', '127.0.0.1', '::1'].includes(String(parsed.hostname || '').toLowerCase());
+            if (isLocalLikeHost) {
+                return AI_RUNTIME_FALLBACK_URL;
+            }
+            return parsed.toString().replace(/\/$/, '');
+        } catch {
+            return normalized;
+        }
     }
 
     function readConfiguredAiApiUrl() {
@@ -9861,7 +9873,7 @@
         }
         const product = raw.product && typeof raw.product === 'object' ? raw.product : {};
         const productCategory = product.category && typeof product.category === 'object' ? product.category : {};
-        const itemId = String(
+        const rawItemId = String(
             raw.item_id
             || raw.productId
             || raw.product_id
@@ -9869,8 +9881,9 @@
             || product.product_id
             || raw.id
             || raw.itemId
-            || `item-${index}`
+            || ''
         ).trim();
+        const itemId = /^\d+$/.test(rawItemId) ? rawItemId : '';
         const name = String(
             raw.name
             || raw.item_name
@@ -9882,7 +9895,7 @@
             || raw.title
             || ''
         ).trim();
-        if (!name) return null;
+        if (!name || !itemId) return null;
         const category = String(
             raw.category
             || raw.categoryName
@@ -9950,17 +9963,7 @@
 
     function readMenuApiCandidates() {
         const coreMenuUrl = `${String(CORE_RUNTIME_FALLBACK_URL || '').replace(/\/$/, '')}/menu`;
-        const defaultsLocal = [
-            '/api/core/menu',
-            '/menu',
-            coreMenuUrl,
-            'http://127.0.0.1:8011/menu',
-            'http://localhost:8011/menu',
-            'http://127.0.0.1:18011/menu',
-            'http://localhost:18011/menu',
-        ];
-        const defaultsProd = ['/api/core/menu', '/menu', coreMenuUrl];
-        const defaults = isLocalDevPort(window.location.port) ? defaultsLocal : defaultsProd;
+        const defaults = ['/api/core/menu', coreMenuUrl];
         const isLocalLikeHost = (hostname) => {
             const host = String(hostname || '').trim().toLowerCase();
             return host === 'localhost' || host === '127.0.0.1' || host === '::1';
@@ -10024,7 +10027,8 @@
                 return [safeMenuApi];
             }
             if (coreApi) configured.push(`${coreApi.replace(/\/$/, '')}/menu`);
-            return Array.from(new Set([...configured, ...defaults]));
+            const uniqueConfigured = Array.from(new Set(configured.filter(Boolean)));
+            return uniqueConfigured.length > 0 ? uniqueConfigured : defaults;
         } catch {
             return defaults;
         }
@@ -10100,9 +10104,17 @@
                         renderMenuItems([]);
                         menuLoaded = true;
                         if (menuStatus) {
-                            menuStatus.textContent = 'Menu trống (API trả về 0 món). Kiểm tra data/menu.csv hoặc cấu hình core.';
+                            menuStatus.textContent = 'Menu online CNX đang trống hoặc dữ liệu không hợp lệ. Kiểm tra cấu hình core `/menu` và POS remote menu.';
                         }
                         return;
+                    }
+                    if (items.length === 1) {
+                        const onlyItem = items[0] || {};
+                        const onlyItemId = String(onlyItem.item_id || '').trim();
+                        const onlyItemName = String(onlyItem.name || '').trim();
+                        if (!/^\d+$/.test(onlyItemId) || onlyItemName.length < 2) {
+                            throw new Error('Payload menu online CNX không hợp lệ; từ chối hiển thị món fallback.');
+                        }
                     }
                     await enrichMenuItemsWithSizeData(items);
                     renderMenuItems(items);
@@ -10120,12 +10132,12 @@
             if (menuStatus) {
                 const reason = String(error?.message || '').trim();
                 menuStatus.textContent = reason
-                    ? `Lỗi tải menu: ${reason}`
-                    : 'Lỗi tải menu';
+                    ? `Lỗi tải menu online CNX: ${reason}`
+                    : 'Lỗi tải menu online CNX';
             }
             if (menuItemsGrid) {
                 const reason = toSafeText(String(error?.message || 'Không ro loi'));
-                menuItemsGrid.innerHTML = `<p class="menu-status">Không tải được menu. ${reason}</p>`;
+                menuItemsGrid.innerHTML = `<p class="menu-status">Không tải được menu online CNX qua core API. ${reason}</p>`;
             }
         }
     }

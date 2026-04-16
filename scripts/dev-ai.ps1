@@ -8,10 +8,15 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
 $aiBackendDir = Join-Path $repoRoot 'services\ai-backend'
+$devRuntimeDir = Join-Path $repoRoot 'data\dev-runtime'
+$aiPortFile = Join-Path $devRuntimeDir 'ai-port.txt'
 
 if (-not (Test-Path $aiBackendDir)) {
   throw "AI backend source not found at: $aiBackendDir"
 }
+
+New-Item -ItemType Directory -Force -Path $devRuntimeDir | Out-Null
+Remove-Item -LiteralPath $aiPortFile -ErrorAction SilentlyContinue
 
 $aiPort = if ($Port) {
   $Port
@@ -30,6 +35,8 @@ if (-not $env:LLM_MODE) {
 if ($env:BRIDGE_BASE_URL) {
   Remove-Item Env:BRIDGE_BASE_URL -ErrorAction SilentlyContinue
 }
+$env:STT_PRELOAD = 'false'
+$env:TTS_PRELOAD = 'false'
 # Prefer VieNeu realtime TTS by default for local kiosk voice.
 if (-not $env:TTS_ENGINE) {
   $env:TTS_ENGINE = 'vieneu'
@@ -133,6 +140,45 @@ function Test-IsAiBackendProcess {
   return ($processName -match 'python')
 }
 
+function Stop-ListenerProcessTree {
+  param(
+    [object]$Listener,
+    [string]$Port
+  )
+
+  if ($null -eq $Listener) {
+    return
+  }
+
+  $listenerPid = [int]$Listener.ProcessId
+  try {
+    & taskkill /PID $listenerPid /T /F | Out-Null
+  } catch {
+    try {
+      Stop-Process -Id $listenerPid -Force -ErrorAction Stop
+    } catch {
+      Write-Host "[ai] warning: could not stop pid=${listenerPid}: $($_.Exception.Message)"
+    }
+  }
+
+  for ($attempt = 0; $attempt -lt 15; $attempt++) {
+    Start-Sleep -Milliseconds 200
+    $stillUsed = Get-ListenerProcessInfo -Port ([int]$Port)
+    if ($null -eq $stillUsed) {
+      return
+    }
+  }
+}
+
+function Write-DevRuntimePort {
+  param(
+    [string]$Port
+  )
+
+  New-Item -ItemType Directory -Force -Path $devRuntimeDir | Out-Null
+  Set-Content -Path $aiPortFile -Value $Port -Encoding ascii
+}
+
 $candidatePorts = @([string]$aiPort)
 if ($aiPort -ne $fallbackAiPort) {
   $candidatePorts += $fallbackAiPort
@@ -154,6 +200,7 @@ foreach ($candidatePort in $candidatePorts) {
   $health = Get-AiHealth -BaseUrl $candidateUrl
   $compatibleLite = (Test-AiRuntimeCompatible -Health $health) -and ($health.llm_mode -eq 'disabled')
   if ($compatibleLite -and $allowReuseExisting) {
+    Write-DevRuntimePort -Port $candidatePort
     Write-Host "[ai] existing ai-backend is compatible (realtime + lite). Reusing current instance."
     exit 0
   }
@@ -164,13 +211,7 @@ foreach ($candidatePort in $candidatePorts) {
   $shouldAutoRestart = (Test-IsAiBackendProcess -Listener $listener)
   if ($shouldAutoRestart) {
     Write-Host "[ai] existing listener looks like outdated ai-backend. restarting on $candidateUrl ..."
-    try {
-      Stop-Process -Id $listener.ProcessId -Force -ErrorAction Stop
-      Start-Sleep -Milliseconds 700
-    } catch {
-      Write-Host "[ai] warning: could not stop pid=$($listener.ProcessId): $($_.Exception.Message)"
-    }
-
+    Stop-ListenerProcessTree -Listener $listener -Port $candidatePort
     $stillUsed = Get-ListenerProcessInfo -Port ([int]$candidatePort)
     if ($null -eq $stillUsed) {
       $resolvedPort = $candidatePort
@@ -180,13 +221,7 @@ foreach ($candidatePort in $candidatePorts) {
 
   if ($ForceRestart.IsPresent) {
     Write-Host "[ai] force restart enabled. trying to stop listener on $candidateUrl ..."
-    try {
-      Stop-Process -Id $listener.ProcessId -Force -ErrorAction Stop
-      Start-Sleep -Milliseconds 600
-    } catch {
-      Write-Host "[ai] warning: could not stop pid=$($listener.ProcessId): $($_.Exception.Message)"
-    }
-
+    Stop-ListenerProcessTree -Listener $listener -Port $candidatePort
     $stillUsed = Get-ListenerProcessInfo -Port ([int]$candidatePort)
     if ($null -eq $stillUsed) {
       $resolvedPort = $candidatePort
@@ -209,6 +244,7 @@ if ($aiPort -ne [string]$Port -and $Port) {
 
 Write-Host "[ai] starting ai-backend on http://127.0.0.1:$aiPort"
 Write-Host "[ai] LLM_MODE=$env:LLM_MODE"
+Write-DevRuntimePort -Port $aiPort
 
 $previousErrorActionPreference = $ErrorActionPreference
 $ErrorActionPreference = 'Continue'
