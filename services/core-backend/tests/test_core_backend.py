@@ -9,7 +9,7 @@ import json
 from fastapi.testclient import TestClient
 from app.config import Settings
 from app.config import get_settings
-from app.models import OrderLineItem, OrderRecord
+from app.models import CreateOrderLineInput, CreateOrderRequest, MenuItem, OrderLineItem, OrderRecord
 from app.repositories.csv_repositories import CsvMenuRepository, CsvOrderRepository
 from app.services.order_service import OrderService
 
@@ -60,6 +60,8 @@ def build_settings(tmp_path: Path, **overrides: object) -> Settings:
         "pos_menu_source_url": "",
         "pos_size_source_url": "",
         "pos_default_size_name": "M",
+        "pos_store_profile_map_json": "",
+        "pos_store_profiles": {},
     }
     defaults.update(overrides)
     return Settings(**defaults)
@@ -261,6 +263,76 @@ def test_get_item_size_options_maps_legacy_item_id_to_product_id_via_remote_menu
     assert [option.size_name for option in options] == ["S", "M"]
     assert all(option.product_id == 7 for option in options)
     assert any(option.is_default and option.size_name == "M" for option in options)
+
+
+def test_list_menu_can_override_store_id_per_request(tmp_path: Path) -> None:
+    menu_path = tmp_path / "menu.csv"
+    orders_path = tmp_path / "orders.csv"
+    write_menu(menu_path)
+
+    settings = build_settings(
+        tmp_path,
+        menu_csv_path=menu_path,
+        orders_csv_path=orders_path,
+        pos_store_id=9,
+        pos_menu_source_mode="remote_strict",
+        pos_menu_source_url="http://example.test/api/v1/product-availability/filter?storeId={storeId}&page=0&size=100&sort=",
+        pos_size_source_url="http://example.test/api/v1/product-size/filter?productId={productId}&page=0&size=10&sort=",
+    )
+    service = OrderService(
+        CsvMenuRepository(menu_path),
+        CsvOrderRepository(orders_path),
+        settings,
+    )
+
+    requested_urls: list[str] = []
+
+    def fake_request_json(
+        url: str,
+        *,
+        method: str,
+        body=None,
+        extra_headers=None,
+        require_auth: bool = False,
+    ) -> dict:
+        requested_urls.append(url)
+        assert method == "GET"
+        assert body is None
+        assert require_auth is False
+        if "product-availability" in url:
+            return {
+                "data": {
+                    "content": [
+                        {
+                            "storeId": 10,
+                            "productId": 23,
+                            "productName": "Nuoc Ep Tao",
+                            "productDescription": "Store 10 item",
+                            "categoryName": "Nuoc ep",
+                            "isAvailable": True,
+                        }
+                    ]
+                }
+            }
+        return {
+            "data": {
+                "content": [
+                    {
+                        "size": {"sizeId": 2, "sizeName": "M", "sizeSortOrder": 2},
+                        "priceAfterDiscount": 42000,
+                        "isAvailable": True,
+                    }
+                ]
+            }
+        }
+
+    service._request_json = fake_request_json  # type: ignore[method-assign]
+
+    items = service.list_menu(store_id=10)
+
+    assert items[0].item_id == "23"
+    assert items[0].price == Decimal("42000")
+    assert any("storeId=10" in url for url in requested_urls)
 
 
 def test_list_menu_remote_strict_fails_fast_when_remote_record_missing_required_fields(tmp_path: Path) -> None:
@@ -544,3 +616,87 @@ def test_get_settings_infers_pos_store_id_from_menu_source_url_when_missing(monk
 
     assert settings.pos_store_id == 15
     assert "storeId=15" in settings.pos_menu_source_url
+
+
+def test_get_settings_parses_pos_store_profile_map_json(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("MENU_CSV_PATH", str(tmp_path / "menu.csv"))
+    monkeypatch.setenv("ORDERS_CSV_PATH", str(tmp_path / "orders.csv"))
+    monkeypatch.setenv(
+        "POS_STORE_PROFILE_MAP_JSON",
+        json.dumps(
+            {
+                "1": {"username": "cashier-store-1@example.test", "password": "secret-1", "tagNumber": "11"},
+                "9": {"token": "Bearer token-store-9"},
+            }
+        ),
+    )
+
+    settings = get_settings()
+
+    assert settings.pos_store_profiles[1].username == "cashier-store-1@example.test"
+    assert settings.pos_store_profiles[1].tag_number == "11"
+    assert settings.pos_store_profiles[9].token == "Bearer token-store-9"
+
+
+def test_create_order_fails_fast_when_pos_account_belongs_to_other_store(tmp_path: Path) -> None:
+    menu_path = tmp_path / "menu.csv"
+    orders_path = tmp_path / "orders.csv"
+    write_menu(menu_path)
+
+    settings = build_settings(
+        tmp_path,
+        menu_csv_path=menu_path,
+        orders_csv_path=orders_path,
+        pos_api_base_url="http://example.test/api/v1",
+        pos_api_username="cashier-store-9@example.test",
+        pos_api_password="secret",
+        pos_auth_login_url="http://example.test/api/v1/auth/login",
+        pos_menu_source_mode="remote_strict",
+        pos_menu_source_url="http://example.test/api/v1/product-availability/filter?storeId={storeId}",
+        pos_size_source_url="http://example.test/api/v1/product-size/filter?productId={productId}",
+    )
+    service = OrderService(
+        CsvMenuRepository(menu_path),
+        CsvOrderRepository(orders_path),
+        settings,
+    )
+
+    service._get_remote_menu_items_by_ids = lambda item_ids, store_id=None: {  # type: ignore[method-assign]
+        "8": MenuItem(
+            item_id="8",
+            name="Mocha",
+            category="Tra",
+            description="Store-scoped item",
+            price=Decimal("54000"),
+            available=True,
+            tags=[],
+        )
+    }
+    service._fetch_remote_menu_lookup = lambda store_id=None: {}  # type: ignore[method-assign]
+    service._resolve_product_size = lambda product_id, preferred_size_name=None, preferred_size_id=None: {  # type: ignore[method-assign]
+        "size_id": 1,
+        "price": Decimal("54000"),
+    }
+
+    def fake_fetch_auth_me(context):
+        session = service._get_auth_session(context)
+        session.user_store_id = 9
+        session.user_role = "CASHIER"
+        session.user_email = "cashier-store-9@example.test"
+        return {"store": {"storeId": 9}, "role": "CASHIER"}
+
+    service._fetch_auth_me = fake_fetch_auth_me  # type: ignore[method-assign]
+
+    payload = CreateOrderRequest(
+        session_id="session-store-1",
+        customer_text="cho em 1 mocha size s",
+        items=[CreateOrderLineInput(item_id="8", quantity=1, size_name="S", size_id=1)],
+    )
+
+    try:
+        service.create_order(payload, store_id=1)
+        assert False, "Expected store mismatch error"
+    except ValueError as exc:
+        detail = str(exc)
+        assert "thuoc cua hang 9" in detail
+        assert "cua hang 1" in detail

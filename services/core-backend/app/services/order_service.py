@@ -5,6 +5,7 @@ import logging
 import re
 import unicodedata
 from collections import Counter
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -13,7 +14,7 @@ from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
-from app.config import Settings
+from app.config import PosStoreProfile, Settings
 from app.models import CreateOrderRequest, MenuItem, MenuItemSizeOption, OrderLineItem, OrderRecord
 from app.repositories.contracts import MenuRepository, OrderRepository
 
@@ -66,6 +67,28 @@ ALLOWED_PAYMENT_METHODS = {"CASH", "ONLINE_PAYMENT", "CARD_PAYMENT", "WALLET"}
 ALLOWED_ORDER_STATUS = {"CREATED", "PAID", "COMPLETED", "IN_PROGRESS", "REFUNDED", "CANCELLED"}
 
 
+@dataclass(slots=True)
+class PosAuthContext:
+    key: str
+    store_id: int | None
+    token: str
+    username: str
+    password: str
+    login_url: str
+    refresh_url: str
+    tag_number: str
+
+
+@dataclass(slots=True)
+class PosAuthSession:
+    access_token: str = ""
+    refresh_token: str = ""
+    access_token_expires_at: datetime | None = None
+    user_store_id: int | None = None
+    user_role: str = ""
+    user_email: str = ""
+
+
 class OrderService:
     def __init__(
         self,
@@ -76,21 +99,84 @@ class OrderService:
         self.menu_repository = menu_repository
         self.order_repository = order_repository
         self.settings = settings
-        self._cached_access_token = ""
-        self._cached_refresh_token = ""
-        self._access_token_expires_at: datetime | None = None
+        self._auth_sessions: dict[str, PosAuthSession] = {}
 
     @property
     def remote_pos_enabled(self) -> bool:
         has_static_token = bool(self.settings.pos_api_token)
         has_login_credentials = bool(self.settings.pos_api_username and self.settings.pos_api_password)
-        return bool(self.settings.pos_api_base_url and (has_static_token or has_login_credentials))
+        has_store_profile = any(
+            profile.token or (profile.username and profile.password)
+            for profile in self.settings.pos_store_profiles.values()
+        )
+        return bool(
+            self.settings.pos_api_base_url
+            and (has_static_token or has_login_credentials or has_store_profile)
+        )
 
     @property
     def remote_menu_strict_enabled(self) -> bool:
         return self.settings.pos_menu_source_mode == "remote_strict"
 
-    def list_menu(self) -> list[MenuItem]:
+    def _resolve_store_id(self, store_id: int | None = None) -> int | None:
+        if store_id is None:
+            return self.settings.pos_store_id
+        try:
+            safe_store_id = int(store_id)
+        except (TypeError, ValueError):
+            return self.settings.pos_store_id
+        return safe_store_id if safe_store_id > 0 else self.settings.pos_store_id
+
+    def _resolve_menu_source_url(self, store_id: int | None = None) -> str:
+        source = self.settings.pos_menu_source_url.strip()
+        if not source:
+            return ""
+        resolved_store_id = self._resolve_store_id(store_id)
+        if resolved_store_id is None:
+            return source
+        if "{storeId}" in source:
+            return source.replace("{storeId}", str(resolved_store_id))
+        parsed = urlparse(source)
+        query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+        query["storeId"] = str(resolved_store_id)
+        return urlunparse(
+            (parsed.scheme, parsed.netloc, parsed.path, parsed.params, urlencode(query, doseq=True), parsed.fragment)
+        )
+
+    def _resolve_auth_context(self, store_id: int | None = None) -> PosAuthContext:
+        resolved_store_id = self._resolve_store_id(store_id)
+        profile: PosStoreProfile | None = None
+        if resolved_store_id is not None:
+            profile = self.settings.pos_store_profiles.get(resolved_store_id)
+
+        token = str(profile.token if profile and profile.token else self.settings.pos_api_token).strip()
+        username = str(profile.username if profile and profile.username else self.settings.pos_api_username).strip()
+        password = str(profile.password if profile and profile.password else self.settings.pos_api_password)
+        tag_number = str(
+            profile.tag_number
+            if profile and profile.tag_number
+            else self.settings.pos_tag_number
+        ).strip() or "1"
+        key = f"store:{resolved_store_id}" if profile and resolved_store_id is not None else "default"
+        return PosAuthContext(
+            key=key,
+            store_id=resolved_store_id,
+            token=token,
+            username=username,
+            password=password,
+            login_url=self.settings.pos_auth_login_url,
+            refresh_url=self.settings.pos_auth_refresh_url,
+            tag_number=tag_number,
+        )
+
+    def _get_auth_session(self, context: PosAuthContext) -> PosAuthSession:
+        session = self._auth_sessions.get(context.key)
+        if session is None:
+            session = PosAuthSession()
+            self._auth_sessions[context.key] = session
+        return session
+
+    def list_menu(self, *, store_id: int | None = None) -> list[MenuItem]:
         if not self.remote_menu_strict_enabled:
             return self.menu_repository.list_menu()
         if not self.settings.pos_menu_source_url.strip():
@@ -98,8 +184,8 @@ class OrderService:
         if not self.settings.pos_size_source_url.strip():
             raise ValueError("POS menu strict mode bat buoc cau hinh POS_SIZE_SOURCE_URL.")
 
-        items = self._fetch_remote_menu_items()
-        remote_menu_lookup = self._fetch_remote_menu_lookup()
+        items = self._fetch_remote_menu_items(store_id=store_id)
+        remote_menu_lookup = self._fetch_remote_menu_lookup(store_id=store_id)
         enriched_items: list[MenuItem] = []
         for item in items:
             product_id = self._resolve_product_id(item.item_id, item, remote_menu_lookup)
@@ -135,15 +221,17 @@ class OrderService:
             )
         return enriched_items
 
-    def create_order(self, payload: CreateOrderRequest) -> OrderRecord:
+    def create_order(self, payload: CreateOrderRequest, *, store_id: int | None = None) -> OrderRecord:
         # When remote_menu_strict_enabled, ALWAYS use remote API for menu validation
         use_remote_menu = self.remote_menu_strict_enabled
         remote_live_mode = self.remote_pos_enabled and self.remote_menu_strict_enabled
+        guest_customer_mode = payload.table_id is not None and self.remote_menu_strict_enabled
         
         logger.info(
-            "create_order: use_remote_menu=%s remote_live_mode=%s (remote_pos_enabled=%s, remote_menu_strict_enabled=%s)",
+            "create_order: use_remote_menu=%s remote_live_mode=%s guest_customer_mode=%s (remote_pos_enabled=%s, remote_menu_strict_enabled=%s)",
             use_remote_menu,
             remote_live_mode,
+            guest_customer_mode,
             self.remote_pos_enabled,
             self.remote_menu_strict_enabled,
         )
@@ -160,7 +248,7 @@ class OrderService:
 
         # Use remote API if remote_menu_strict_enabled, regardless of remote_pos_enabled
         if use_remote_menu:
-            menu_items = self._get_remote_menu_items_by_ids(list(quantities.keys()))
+            menu_items = self._get_remote_menu_items_by_ids(list(quantities.keys()), store_id=store_id)
         else:
             menu_items = self.menu_repository.get_items_by_ids(list(quantities.keys()))
             
@@ -174,6 +262,16 @@ class OrderService:
             if not menu_item.available:
                 raise ValueError(f"Mon '{menu_item.name}' hien tam het hang.")
 
+        if guest_customer_mode:
+            return self._create_remote_customer_order(
+                payload,
+                quantities,
+                menu_items,
+                size_name_by_item=size_name_by_item,
+                size_id_by_item=size_id_by_item,
+                store_id=store_id,
+            )
+
         if remote_live_mode:
             return self._create_remote_pos_order(
                 payload,
@@ -181,6 +279,7 @@ class OrderService:
                 menu_items,
                 size_name_by_item=size_name_by_item,
                 size_id_by_item=size_id_by_item,
+                store_id=store_id,
             )
 
         line_items: list[OrderLineItem] = []
@@ -196,7 +295,7 @@ class OrderService:
                 product_id = self._safe_int(item_id)
                 if product_id is None and self.settings.pos_menu_source_url:
                     if remote_menu_lookup is None:
-                        remote_menu_lookup = self._fetch_remote_menu_lookup()
+                        remote_menu_lookup = self._fetch_remote_menu_lookup(store_id=store_id)
                     product_id = self._resolve_product_id(item_id, menu_item, remote_menu_lookup)
                 if product_id is not None:
                     size_info = self._resolve_product_size(
@@ -233,6 +332,96 @@ class OrderService:
         )
         return self.order_repository.create_order(order_record)
 
+    def _create_remote_customer_order(
+        self,
+        payload: CreateOrderRequest,
+        quantities: Counter[str],
+        menu_items: dict[str, MenuItem],
+        *,
+        size_name_by_item: dict[str, str],
+        size_id_by_item: dict[str, int],
+        store_id: int | None = None,
+    ) -> OrderRecord:
+        if payload.table_id is None:
+            raise ValueError("Chua xac dinh duoc ban cua khach. Vui long mo kiosk voi ?tableid=<id>.")
+        if not self.settings.pos_size_source_url:
+            raise ValueError("Chua cau hinh POS_SIZE_SOURCE_URL de map size cho mon.")
+
+        resolved_store_id = self._resolve_store_id(store_id)
+        if resolved_store_id is not None:
+            self._ensure_table_matches_store(payload.table_id, resolved_store_id)
+
+        remote_menu_lookup = self._fetch_remote_menu_lookup(store_id=store_id)
+        order_details: list[dict[str, int]] = []
+        line_items: list[OrderLineItem] = []
+        total_amount = Decimal("0")
+
+        for item_id, quantity in quantities.items():
+            menu_item = menu_items[item_id]
+            product_id = self._resolve_product_id(item_id, menu_item, remote_menu_lookup)
+            if product_id is None:
+                raise ValueError(
+                    f"Khong map duoc productId cho mon '{menu_item.name}' (item_id={item_id})."
+                )
+
+            preferred_size_name = size_name_by_item.get(item_id)
+            preferred_size_id = size_id_by_item.get(item_id)
+            size_info = self._resolve_product_size(
+                product_id,
+                preferred_size_name=preferred_size_name,
+                preferred_size_id=preferred_size_id,
+            )
+            if size_info is None:
+                raise ValueError(
+                    f"Khong tim thay size cho productId={product_id}. "
+                    "Kiem tra lai POS_SIZE_SOURCE_URL hoac product-size API."
+                )
+
+            unit_price = size_info["price"]
+            line_total = unit_price * quantity
+            total_amount += line_total
+            line_items.append(
+                OrderLineItem(
+                    item_id=str(product_id),
+                    name=menu_item.name,
+                    quantity=quantity,
+                    unit_price=unit_price,
+                    line_total=line_total,
+                )
+            )
+            order_details.append(
+                {
+                    "productId": product_id,
+                    "sizeId": size_info["size_id"],
+                    "quantity": quantity,
+                }
+            )
+
+        remote_payload: dict[str, Any] = {
+            "tableId": int(payload.table_id),
+            "paymentMethod": str(self.settings.pos_payment_method).strip().upper(),
+            "orderDetails": order_details,
+        }
+        note = payload.customer_text.strip()
+        if note:
+            remote_payload["note"] = note[:240]
+
+        self._validate_remote_customer_order_payload(remote_payload)
+        remote_order = self._request_json(
+            f"{self.settings.pos_api_base_url}/orders/customer",
+            method="POST",
+            body=remote_payload,
+            extra_headers={"Idempotency-Key": str(uuid4())},
+            require_auth=False,
+        )
+        return self._build_remote_order_record(
+            payload=payload,
+            line_items=line_items,
+            fallback_total_amount=total_amount,
+            remote_order=remote_order,
+            qr_require_auth=False,
+        )
+
     def _create_remote_pos_order(
         self,
         payload: CreateOrderRequest,
@@ -241,11 +430,14 @@ class OrderService:
         *,
         size_name_by_item: dict[str, str],
         size_id_by_item: dict[str, int],
+        store_id: int | None = None,
     ) -> OrderRecord:
         if not self.settings.pos_size_source_url:
             raise ValueError("Chua cau hinh POS_SIZE_SOURCE_URL de map size cho mon.")
+        auth_context = self._resolve_auth_context(store_id)
+        self._ensure_auth_context_matches_store(auth_context, store_id)
 
-        remote_menu_lookup = self._fetch_remote_menu_lookup()
+        remote_menu_lookup = self._fetch_remote_menu_lookup(store_id=store_id)
         order_details: list[dict[str, int]] = []
         line_items: list[OrderLineItem] = []
         total_amount = Decimal("0")
@@ -294,11 +486,12 @@ class OrderService:
         remote_payload: dict[str, Any] = {
             "orderType": str(self.settings.pos_order_type).strip().upper(),
             "paymentMethod": str(self.settings.pos_payment_method).strip().upper(),
-            "tagNumber": str(self.settings.pos_tag_number).strip(),
+            "tagNumber": auth_context.tag_number,
             "orderDetails": order_details,
         }
-        if self.settings.pos_store_id is not None:
-            remote_payload["storeId"] = self.settings.pos_store_id
+        resolved_store_id = self._resolve_store_id(store_id)
+        if resolved_store_id is not None:
+            remote_payload["storeId"] = resolved_store_id
         note = payload.customer_text.strip()
         if note:
             remote_payload["note"] = note[:240]
@@ -310,7 +503,27 @@ class OrderService:
             body=remote_payload,
             extra_headers={"Idempotency-Key": str(uuid4())},
             require_auth=True,
+            auth_store_id=store_id,
         )
+        return self._build_remote_order_record(
+            payload=payload,
+            line_items=line_items,
+            fallback_total_amount=total_amount,
+            remote_order=remote_order,
+            qr_require_auth=True,
+            qr_auth_store_id=store_id,
+        )
+
+    def _build_remote_order_record(
+        self,
+        *,
+        payload: CreateOrderRequest,
+        line_items: list[OrderLineItem],
+        fallback_total_amount: Decimal,
+        remote_order: dict[str, Any],
+        qr_require_auth: bool,
+        qr_auth_store_id: int | None = None,
+    ) -> OrderRecord:
         remote_order_data = (
             remote_order.get("data", {}) if isinstance(remote_order, dict) else {}
         )
@@ -320,7 +533,7 @@ class OrderService:
 
         remote_total_amount = _parse_decimal(
             remote_order_data.get("orderTotal"),
-            fallback=total_amount,
+            fallback=fallback_total_amount,
         )
         remote_status = self._normalize_remote_status(str(remote_order_data.get("orderStatus") or "CREATED"))
 
@@ -337,7 +550,8 @@ class OrderService:
             f"{self.settings.pos_api_base_url}/payments/sepay/qr",
             method="POST",
             body=qr_payload,
-            require_auth=True,
+            require_auth=qr_require_auth,
+            auth_store_id=qr_auth_store_id,
         )
         qr_data = qr_response.get("data", {}) if isinstance(qr_response, dict) else {}
         if isinstance(qr_data, dict):
@@ -413,50 +627,62 @@ class OrderService:
         )
         return self.order_repository.create_order(order_record)
 
-    def get_order(self, order_id: str) -> OrderRecord | None:
+    def get_order(self, order_id: str, *, store_id: int | None = None) -> OrderRecord | None:
         order = self.order_repository.get_order(order_id)
         if order is None:
             return None
-        if not (self.remote_pos_enabled and self.remote_menu_strict_enabled):
-            return order
 
         remote_id = self._safe_int(order.order_id)
         if remote_id is None:
             return order
 
+        if not self.remote_menu_strict_enabled:
+            return order
+
         try:
-            remote_order = self._request_json(
-                f"{self.settings.pos_api_base_url}/orders/{remote_id}",
-                method="GET",
-                body=None,
-                require_auth=True,
-            )
-            remote_data = remote_order.get("data", {}) if isinstance(remote_order, dict) else {}
-            if isinstance(remote_data, dict):
-                remote_status = self._normalize_remote_status(
-                    str(remote_data.get("orderStatus") or "")
+            if self.remote_pos_enabled:
+                auth_context = self._resolve_auth_context(store_id)
+                self._ensure_auth_context_matches_store(auth_context, store_id)
+                remote_order = self._request_json(
+                    f"{self.settings.pos_api_base_url}/orders/{remote_id}",
+                    method="GET",
+                    body=None,
+                    require_auth=True,
+                    auth_store_id=store_id,
                 )
-                if remote_status:
-                    order.status = remote_status.lower()
-                    order.payment_status = remote_status
-                remote_total = _parse_decimal(remote_data.get("orderTotal"), fallback=order.total_amount)
-                order.total_amount = remote_total
-                if order.payment_amount is None:
-                    order.payment_amount = remote_total
-                if remote_status.startswith("UNKNOWN_"):
-                    order.sync_error_code = "POS_STATUS_UNKNOWN"
-                    order.sync_error_detail = (
-                        f"POS tra ve orderStatus ngoai enum docs: {remote_status.replace('UNKNOWN_', '')}"
+                remote_data = remote_order.get("data", {}) if isinstance(remote_order, dict) else {}
+                if isinstance(remote_data, dict):
+                    remote_status = self._normalize_remote_status(
+                        str(remote_data.get("orderStatus") or "")
                     )
-                else:
-                    order.sync_error_code = None
-                    order.sync_error_detail = None
+                    if remote_status:
+                        order.status = remote_status.lower()
+                        order.payment_status = remote_status
+                    remote_total = _parse_decimal(remote_data.get("orderTotal"), fallback=order.total_amount)
+                    order.total_amount = remote_total
+                    if order.payment_amount is None:
+                        order.payment_amount = remote_total
+                    if remote_status.startswith("UNKNOWN_"):
+                        order.sync_error_code = "POS_STATUS_UNKNOWN"
+                        order.sync_error_detail = (
+                            f"POS tra ve orderStatus ngoai enum docs: {remote_status.replace('UNKNOWN_', '')}"
+                        )
+                    else:
+                        order.sync_error_code = None
+                        order.sync_error_detail = None
         except Exception as exc:
+            qr_sync_error = self._try_refresh_order_from_public_qr(order, remote_id)
+            if qr_sync_error is None:
+                return order
             order.payment_status = "SYNC_ERROR"
             order.sync_error_code = "POS_SYNC_FAILED"
             order.sync_error_detail = str(exc)[:240]
             return order
 
+        qr_sync_error = self._try_refresh_order_from_public_qr(order, remote_id)
+        if qr_sync_error is not None and not order.sync_error_code:
+            order.sync_error_code = "POS_QR_SYNC_FAILED"
+            order.sync_error_detail = qr_sync_error[:240]
         return order
 
     def list_orders(self, *, session_id: str | None = None, limit: int = 100) -> list[OrderRecord]:
@@ -488,17 +714,21 @@ class OrderService:
         if missing:
             result["ok"] = False
 
+        has_store_profile = any(
+            profile.token or (profile.username and profile.password)
+            for profile in self.settings.pos_store_profiles.values()
+        )
         auth_ready = bool(self.settings.pos_api_token.strip()) or bool(
             self.settings.pos_api_username.strip()
             and self.settings.pos_api_password.strip()
             and self.settings.pos_auth_login_url.strip()
-        )
+        ) or has_store_profile
         checks["auth_config"] = {
             "ok": auth_ready,
             "detail": (
                 "ok"
                 if auth_ready
-                else "thieu POS_API_TOKEN hoac POS_API_USERNAME/POS_API_PASSWORD/POS_AUTH_LOGIN_URL"
+                else "thieu POS_API_TOKEN hoac POS_API_USERNAME/POS_API_PASSWORD/POS_AUTH_LOGIN_URL hoac POS_STORE_PROFILE_MAP_JSON"
             ),
         }
         if not auth_ready:
@@ -556,7 +786,7 @@ class OrderService:
             result["message"] = "POS contract check failed"
         return result
 
-    def get_item_size_options(self, item_id: str) -> list[MenuItemSizeOption]:
+    def get_item_size_options(self, item_id: str, *, store_id: int | None = None) -> list[MenuItemSizeOption]:
         menu_item = self.menu_repository.get_menu_item(item_id)
         if not self.settings.pos_size_source_url:
             if menu_item is None:
@@ -566,10 +796,10 @@ class OrderService:
         product_id = self._safe_int(item_id)
         if product_id is None and self.settings.pos_menu_source_url:
             if menu_item is not None:
-                remote_menu_lookup = self._fetch_remote_menu_lookup()
+                remote_menu_lookup = self._fetch_remote_menu_lookup(store_id=store_id)
                 product_id = self._resolve_product_id(item_id, menu_item, remote_menu_lookup)
             else:
-                product_id = self._resolve_product_id_from_remote_item_id(item_id)
+                product_id = self._resolve_product_id_from_remote_item_id(item_id, store_id=store_id)
         if product_id is None:
             if menu_item is None:
                 return []
@@ -630,16 +860,21 @@ class OrderService:
             available=True,
         )
 
-    def _get_remote_menu_items_by_ids(self, item_ids: list[str]) -> dict[str, MenuItem]:
+    def _get_remote_menu_items_by_ids(
+        self,
+        item_ids: list[str],
+        *,
+        store_id: int | None = None,
+    ) -> dict[str, MenuItem]:
         normalized_item_ids = [str(item_id).strip() for item_id in item_ids if str(item_id).strip()]
         if not normalized_item_ids:
             return {}
-        remote_items = self._fetch_remote_menu_items()
+        remote_items = self._fetch_remote_menu_items(store_id=store_id)
         lookup = {item.item_id: item for item in remote_items}
         return {item_id: lookup[item_id] for item_id in normalized_item_ids if item_id in lookup}
 
-    def _fetch_remote_menu_items(self) -> list[MenuItem]:
-        source = self.settings.pos_menu_source_url.strip()
+    def _fetch_remote_menu_items(self, *, store_id: int | None = None) -> list[MenuItem]:
+        source = self._resolve_menu_source_url(store_id)
         if not source:
             if self.remote_menu_strict_enabled:
                 raise ValueError("POS_MENU_SOURCE_MODE=remote_strict nhung chua cau hinh POS_MENU_SOURCE_URL.")
@@ -831,6 +1066,97 @@ class OrderService:
             if quantity is None or quantity <= 0:
                 raise ValueError(f"POS orderDetails[{index}].quantity khong hop le.")
 
+    def _validate_remote_customer_order_payload(self, payload: dict[str, Any]) -> None:
+        table_id = self._safe_int(payload.get("tableId"))
+        if table_id is None or table_id <= 0:
+            raise ValueError("POS customer order tableId khong hop le.")
+
+        payment_method = str(payload.get("paymentMethod") or "").strip().upper()
+        if payment_method not in ALLOWED_PAYMENT_METHODS:
+            raise ValueError(
+                f"POS paymentMethod khong hop le: {payment_method or '(rong)'} "
+                f"(ho tro: {', '.join(sorted(ALLOWED_PAYMENT_METHODS))})."
+            )
+
+        order_details = payload.get("orderDetails")
+        if not isinstance(order_details, list) or not order_details:
+            raise ValueError("POS orderDetails bat buoc phai co it nhat 1 mon.")
+        for index, detail in enumerate(order_details, start=1):
+            if not isinstance(detail, dict):
+                raise ValueError(f"POS orderDetails[{index}] khong dung schema object.")
+            product_id = self._safe_int(detail.get("productId"))
+            size_id = self._safe_int(detail.get("sizeId"))
+            quantity = self._safe_int(detail.get("quantity"))
+            if product_id is None or product_id <= 0:
+                raise ValueError(f"POS orderDetails[{index}].productId khong hop le.")
+            if size_id is None or size_id <= 0:
+                raise ValueError(f"POS orderDetails[{index}].sizeId khong hop le.")
+            if quantity is None or quantity <= 0:
+                raise ValueError(f"POS orderDetails[{index}].quantity khong hop le.")
+
+    def _ensure_table_matches_store(self, table_id: int, store_id: int) -> None:
+        table_ids = self._fetch_customer_store_table_ids(store_id)
+        if not table_ids:
+            return
+        if int(table_id) not in table_ids:
+            raise ValueError(
+                f"Ban {table_id} khong thuoc cua hang {store_id}. Kiem tra lai URL ?storeid={store_id}&tableid={table_id}."
+            )
+
+    def _try_refresh_order_from_public_qr(self, order: OrderRecord, remote_order_id: int) -> str | None:
+        try:
+            qr_payload: dict[str, Any] = {"orderId": int(remote_order_id)}
+            qr_response = self._request_json(
+                f"{self.settings.pos_api_base_url}/payments/sepay/qr",
+                method="POST",
+                body=qr_payload,
+                require_auth=False,
+            )
+            qr_data = qr_response.get("data", {}) if isinstance(qr_response, dict) else {}
+            if not isinstance(qr_data, dict):
+                return None
+
+            payment_status = self._normalize_remote_status(
+                str(
+                    qr_data.get("status")
+                    or qr_data.get("paymentStatus")
+                    or qr_data.get("orderStatus")
+                    or order.payment_status
+                    or order.status
+                    or "CREATED"
+                )
+            )
+            order.payment_status = payment_status
+            if payment_status and payment_status != "UNKNOWN":
+                order.status = payment_status.lower()
+            order.payment_amount = _parse_decimal(
+                qr_data.get("amount", qr_data.get("paymentAmount")),
+                fallback=order.payment_amount or order.total_amount,
+            )
+            qr_content = _pick_first_text(
+                qr_data,
+                ("qrContent", "qrValue", "sepayQr", "bankQr", "paymentQrContent"),
+            )
+            qr_image_url = _normalize_qr_image_url(
+                _pick_first_text(
+                    qr_data,
+                    ("qrImageUrl", "qrUrl", "qrCodeUrl", "paymentQrImageUrl", "qrImageBase64"),
+                )
+            )
+            if qr_content:
+                order.payment_qr_content = qr_content
+            if qr_image_url:
+                order.payment_qr_image_url = qr_image_url
+            expires_at = _pick_first_text(qr_data, ("expiresAt", "expiredAt", "expireAt"))
+            if expires_at:
+                try:
+                    order.payment_expires_at = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+                except ValueError:
+                    order.payment_expires_at = None
+            return None
+        except Exception as exc:
+            return str(exc)
+
     @staticmethod
     def _normalize_remote_status(status: str) -> str:
         normalized = str(status or "").strip().upper()
@@ -842,8 +1168,8 @@ class OrderService:
             return f"UNKNOWN_{normalized}"
         return "UNKNOWN"
 
-    def _fetch_remote_menu_lookup(self) -> dict[str, int]:
-        source = self.settings.pos_menu_source_url.strip()
+    def _fetch_remote_menu_lookup(self, *, store_id: int | None = None) -> dict[str, int]:
+        source = self._resolve_menu_source_url(store_id)
         if not source:
             return {}
         payload = self._request_json(source, method="GET", require_auth=False)
@@ -871,8 +1197,13 @@ class OrderService:
                 lookup[normalized_name] = safe_product_id
         return lookup
 
-    def _resolve_product_id_from_remote_item_id(self, item_id: str) -> int | None:
-        source = self.settings.pos_menu_source_url.strip()
+    def _resolve_product_id_from_remote_item_id(
+        self,
+        item_id: str,
+        *,
+        store_id: int | None = None,
+    ) -> int | None:
+        source = self._resolve_menu_source_url(store_id)
         if not source:
             return None
         payload = self._request_json(source, method="GET", require_auth=False)
@@ -1056,6 +1387,26 @@ class OrderService:
             (parsed.scheme, parsed.netloc, parsed.path, parsed.params, rebuilt_query, parsed.fragment)
         )
 
+    def _fetch_customer_store_table_ids(self, store_id: int) -> set[int]:
+        if not self.settings.pos_api_base_url.strip():
+            return set()
+        source_url = (
+            f"{self.settings.pos_api_base_url}/store-tables/customer/filter"
+            f"?storeId={int(store_id)}&page=0&size=250&sort="
+        )
+        payload = self._request_json(source_url, method="GET", require_auth=False)
+        records = self._extract_records(payload)
+        table_ids: set[int] = set()
+        for record in records:
+            table_id = self._safe_int(
+                record.get("storeTableId")
+                or record.get("tableId")
+                or record.get("id")
+            )
+            if table_id is not None and table_id > 0:
+                table_ids.add(table_id)
+        return table_ids
+
     @staticmethod
     def _extract_records(payload: object) -> list[dict[str, Any]]:
         if isinstance(payload, list):
@@ -1086,6 +1437,7 @@ class OrderService:
         body: dict[str, Any] | None = None,
         extra_headers: dict[str, str] | None = None,
         require_auth: bool = False,
+        auth_store_id: int | None = None,
     ) -> dict[str, Any]:
         headers = {
             "Accept": "application/json",
@@ -1093,8 +1445,10 @@ class OrderService:
         }
         if body is not None:
             headers["Content-Type"] = "application/json"
+        auth_context: PosAuthContext | None = None
         if require_auth:
-            token = self._resolve_bearer_token()
+            auth_context = self._resolve_auth_context(auth_store_id)
+            token = self._resolve_bearer_token(auth_context)
             headers["Authorization"] = f"Bearer {token}"
         if extra_headers:
             headers.update(extra_headers)
@@ -1104,15 +1458,22 @@ class OrderService:
         except PermissionError:
             if not require_auth:
                 raise
-            if self.settings.pos_api_token.strip():
+            if auth_context is None:
+                auth_context = self._resolve_auth_context(auth_store_id)
+            if auth_context.token.strip():
                 raise ValueError(
                     "POS API tu choi token hien tai (401/403). Kiem tra lai POS_API_TOKEN."
                 ) from None
-            self._refresh_or_login_token(force_login=False)
-            headers["Authorization"] = f"Bearer {self._resolve_bearer_token()}"
+            self._refresh_or_login_token(auth_context, force_login=False)
+            headers["Authorization"] = f"Bearer {self._resolve_bearer_token(auth_context)}"
             try:
                 return self._request_json_once(url, method=method, body=body, headers=headers)
             except PermissionError as exc:
+                if auth_context is not None:
+                    try:
+                        self._ensure_auth_context_matches_store(auth_context, auth_store_id)
+                    except ValueError as scope_exc:
+                        raise scope_exc from exc
                 raise ValueError(
                     "Dang nhap POS API khong hop le hoac khong du quyen goi endpoint."
                 ) from exc
@@ -1147,55 +1508,58 @@ class OrderService:
             raise ValueError(f"{method} {url} tra ve payload khong hop le.")
         return payload
 
-    def _resolve_bearer_token(self) -> str:
-        static_token = self.settings.pos_api_token.strip()
+    def _resolve_bearer_token(self, context: PosAuthContext) -> str:
+        static_token = context.token.strip()
         if static_token:
             return self._normalize_bearer_token(static_token)
-        if self._is_access_token_valid():
-            return self._cached_access_token
-        self._refresh_or_login_token(force_login=False)
-        if self._cached_access_token:
-            return self._cached_access_token
+        session = self._get_auth_session(context)
+        if self._is_access_token_valid(context):
+            return session.access_token
+        self._refresh_or_login_token(context, force_login=False)
+        if session.access_token:
+            return session.access_token
         raise ValueError(
             "Chua dang nhap duoc POS API. Can POS_API_USERNAME/POS_API_PASSWORD hoac POS_API_TOKEN."
         )
 
-    def _is_access_token_valid(self) -> bool:
-        if not self._cached_access_token:
+    def _is_access_token_valid(self, context: PosAuthContext) -> bool:
+        session = self._get_auth_session(context)
+        if not session.access_token:
             return False
-        if self._access_token_expires_at is None:
+        if session.access_token_expires_at is None:
             return True
-        return datetime.now(UTC) + timedelta(seconds=12) < self._access_token_expires_at
+        return datetime.now(UTC) + timedelta(seconds=12) < session.access_token_expires_at
 
-    def _refresh_or_login_token(self, *, force_login: bool) -> None:
-        if not force_login and self._cached_refresh_token and self.settings.pos_auth_refresh_url:
+    def _refresh_or_login_token(self, context: PosAuthContext, *, force_login: bool) -> None:
+        session = self._get_auth_session(context)
+        if not force_login and session.refresh_token and context.refresh_url:
             try:
                 payload = self._request_json_once(
-                    self.settings.pos_auth_refresh_url,
+                    context.refresh_url,
                     method="POST",
-                    body={"refreshToken": self._cached_refresh_token},
+                    body={"refreshToken": session.refresh_token},
                     headers={
                         "Accept": "application/json",
                         "User-Agent": "OrderRobot-Core/1.0",
                         "Content-Type": "application/json",
                     },
                 )
-                self._store_login_payload(payload)
-                if self._cached_access_token:
+                self._store_login_payload(context, payload)
+                if session.access_token:
                     return
             except Exception:
                 pass
 
-        username = self.settings.pos_api_username.strip()
-        password = self.settings.pos_api_password
+        username = context.username.strip()
+        password = context.password
         if not username or not password:
             raise ValueError("Thieu POS_API_USERNAME/POS_API_PASSWORD de tu dang nhap POS API.")
-        if not self.settings.pos_auth_login_url:
+        if not context.login_url:
             raise ValueError("Thieu POS_AUTH_LOGIN_URL de tu dang nhap POS API.")
 
         try:
             payload = self._request_json_once(
-                self.settings.pos_auth_login_url,
+                context.login_url,
                 method="POST",
                 body={"username": username, "password": password},
                 headers={
@@ -1206,11 +1570,12 @@ class OrderService:
             )
         except PermissionError as exc:
             raise ValueError("Sai POS_API_USERNAME/POS_API_PASSWORD hoac tai khoan khong du quyen.") from exc
-        self._store_login_payload(payload)
-        if not self._cached_access_token:
+        self._store_login_payload(context, payload)
+        if not session.access_token:
             raise ValueError("Dang nhap POS API thanh cong nhung khong nhan duoc accessToken.")
 
-    def _store_login_payload(self, payload: dict[str, Any]) -> None:
+    def _store_login_payload(self, context: PosAuthContext, payload: dict[str, Any]) -> None:
+        session = self._get_auth_session(context)
         data = payload.get("data", {}) if isinstance(payload, dict) else {}
         if not isinstance(data, dict):
             return
@@ -1219,17 +1584,69 @@ class OrderService:
         access_expires_raw = str(data.get("accessTokenExpiresAt") or "").strip()
 
         if access_token:
-            self._cached_access_token = access_token
+            session.access_token = access_token
         if refresh_token:
-            self._cached_refresh_token = refresh_token
+            session.refresh_token = refresh_token
 
         if access_expires_raw:
             try:
-                self._access_token_expires_at = datetime.fromisoformat(
+                session.access_token_expires_at = datetime.fromisoformat(
                     access_expires_raw.replace("Z", "+00:00")
                 )
             except ValueError:
-                self._access_token_expires_at = None
+                session.access_token_expires_at = None
+        else:
+            session.access_token_expires_at = None
+
+    def _fetch_auth_me(self, context: PosAuthContext) -> dict[str, Any]:
+        token = self._resolve_bearer_token(context)
+        payload = self._request_json_once(
+            f"{self.settings.pos_api_base_url}/auth/me",
+            method="GET",
+            body=None,
+            headers={
+                "Accept": "application/json",
+                "User-Agent": "OrderRobot-Core/1.0",
+                "Authorization": f"Bearer {token}",
+            },
+        )
+        data = payload.get("data", {}) if isinstance(payload, dict) else {}
+        if not isinstance(data, dict):
+            return {}
+
+        session = self._get_auth_session(context)
+        store_obj = data.get("store", {}) if isinstance(data.get("store"), dict) else {}
+        session.user_store_id = self._safe_int(store_obj.get("storeId"))
+        session.user_role = str(data.get("role") or "").strip().upper()
+        session.user_email = str(data.get("email") or "").strip()
+        return data
+
+    def _ensure_auth_context_matches_store(self, context: PosAuthContext, store_id: int | None) -> None:
+        resolved_store_id = self._resolve_store_id(store_id)
+        if resolved_store_id is None:
+            return
+
+        session = self._get_auth_session(context)
+        auth_store_id = session.user_store_id
+        if auth_store_id is None:
+            try:
+                self._fetch_auth_me(context)
+                auth_store_id = session.user_store_id
+            except Exception:
+                auth_store_id = None
+        if auth_store_id is None or auth_store_id == resolved_store_id:
+            return
+
+        mapped_profile_configured = resolved_store_id in self.settings.pos_store_profiles
+        hint = (
+            " Hay cau hinh POS_STORE_PROFILE_MAP_JSON cho store nay."
+            if not mapped_profile_configured
+            else " Kiem tra lai tai khoan POS da map cho store nay."
+        )
+        raise ValueError(
+            "Tai khoan POS hien tai thuoc cua hang "
+            f"{auth_store_id}, khong the tao/tra cuu don cho cua hang {resolved_store_id}.{hint}"
+        )
 
     @staticmethod
     def _normalize_bearer_token(value: str) -> str:

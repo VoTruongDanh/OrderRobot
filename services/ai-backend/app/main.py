@@ -694,9 +694,9 @@ async def install_vieneu() -> dict[str, object]:
 
 
 @app.post("/sessions/start", response_model=ConversationResponse)
-async def start_session(_: SessionStartRequest) -> ConversationResponse:
+async def start_session(payload: SessionStartRequest) -> ConversationResponse:
     try:
-        return await conversation_engine.start_session()
+        return await conversation_engine.start_session(store_id=payload.store_id, table_id=payload.table_id)
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail="Core backend khong san sang.") from exc
     except ProviderError as exc:
@@ -712,6 +712,8 @@ async def handle_turn(session_id: str, payload: TurnRequest) -> ConversationResp
             payload.transcript,
             turn_id=payload.turn_id,
             quick_checkout=payload.quick_checkout,
+            store_id=payload.store_id,
+            table_id=payload.table_id,
         )
         logger.info(
             "turn_total_ms=%s session_id=%s turn_id=%s endpoint=turn quick_checkout=%s",
@@ -744,6 +746,8 @@ async def handle_turn_stream(session_id: str, payload: TurnRequest) -> Streaming
                 turn_id=payload.turn_id,
                 include_audio=payload.include_audio,
                 quick_checkout=payload.quick_checkout,
+                store_id=payload.store_id,
+                table_id=payload.table_id,
             ):
                 chunk_type = str(chunk.get("type") or "").lower() if isinstance(chunk, dict) else ""
                 if chunk_type in {"text", "text_final"} and not first_text_at:

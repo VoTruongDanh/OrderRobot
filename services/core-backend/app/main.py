@@ -42,16 +42,18 @@ def _reload_runtime_config() -> dict[str, object]:
     order_service = OrderService(menu_repository, order_repository, settings)
 
     logger.info(
-        "core_config_reload status=ok pos_store_id=%s pos_menu_source_mode=%s pos_menu_source_url=%s",
+        "core_config_reload status=ok pos_store_id=%s pos_menu_source_mode=%s pos_menu_source_url=%s pos_store_profile_count=%s",
         settings.pos_store_id,
         settings.pos_menu_source_mode,
         settings.pos_menu_source_url,
+        len(settings.pos_store_profiles),
     )
     return {
         "status": "ok",
         "pos_store_id": settings.pos_store_id,
         "pos_menu_source_mode": settings.pos_menu_source_mode,
         "pos_menu_source_url": settings.pos_menu_source_url,
+        "pos_store_profile_count": len(settings.pos_store_profiles),
     }
 
 
@@ -62,6 +64,7 @@ def health() -> dict[str, object]:
         "pos_store_id": settings.pos_store_id,
         "pos_menu_source_mode": settings.pos_menu_source_mode,
         "pos_menu_source_url": settings.pos_menu_source_url,
+        "pos_store_profile_count": len(settings.pos_store_profiles),
     }
 
 
@@ -71,9 +74,9 @@ def reload_config() -> dict[str, object]:
 
 
 @app.get("/menu", response_model=list[MenuItem])
-def list_menu() -> list[MenuItem]:
+def list_menu(store_id: int | None = Query(default=None, ge=1)) -> list[MenuItem]:
     try:
-        return order_service.list_menu()
+        return order_service.list_menu(store_id=store_id)
     except ValueError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
@@ -235,6 +238,20 @@ def _build_size_query_url(size_source: str, product_id: str) -> str:
     )
 
 
+def _build_store_scoped_source_url(source: str, store_id: int | None) -> str:
+    safe_source = str(source or "").strip()
+    if not safe_source or store_id is None:
+        return safe_source
+    if "{storeId}" in safe_source:
+        return safe_source.replace("{storeId}", str(store_id))
+    parsed = urlparse(safe_source)
+    query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    query["storeId"] = str(store_id)
+    return urlunparse(
+        (parsed.scheme, parsed.netloc, parsed.path, parsed.params, urlencode(query, doseq=True), parsed.fragment)
+    )
+
+
 def _extract_size_content(payload: object) -> list[dict]:
     if isinstance(payload, list):
         return [row for row in payload if isinstance(row, dict)]
@@ -377,10 +394,12 @@ def proxy_menu(
     source: str = Query(..., min_length=8, max_length=2048),
     size_source: str | None = Query(default=None, min_length=8, max_length=2048),
     size_name: str | None = Query(default=None, min_length=1, max_length=32),
+    store_id: int | None = Query(default=None, ge=1),
 ) -> list[MenuItem]:
+    scoped_source = _build_store_scoped_source_url(source, store_id)
     try:
         req = Request(
-            source,
+            scoped_source,
             headers={
                 "Accept": "application/json",
                 "User-Agent": "OrderRobot-Core/1.0",
@@ -435,10 +454,10 @@ def proxy_menu(
 
 
 @app.get("/menu/{item_id}", response_model=MenuItem)
-def get_menu_item(item_id: str) -> MenuItem:
+def get_menu_item(item_id: str, store_id: int | None = Query(default=None, ge=1)) -> MenuItem:
     if settings.pos_menu_source_mode == "remote_strict":
         try:
-            menu_items = order_service.list_menu()
+            menu_items = order_service.list_menu(store_id=store_id)
         except ValueError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
         item = next((entry for entry in menu_items if entry.item_id == item_id), None)
@@ -450,16 +469,22 @@ def get_menu_item(item_id: str) -> MenuItem:
 
 
 @app.get("/menu/{item_id}/sizes", response_model=list[MenuItemSizeOption])
-def get_menu_item_sizes(item_id: str) -> list[MenuItemSizeOption]:
-    return order_service.get_item_size_options(item_id)
+def get_menu_item_sizes(
+    item_id: str,
+    store_id: int | None = Query(default=None, ge=1),
+) -> list[MenuItemSizeOption]:
+    return order_service.get_item_size_options(item_id, store_id=store_id)
 
 
 @app.get("/menu/search", response_model=list[MenuItem])
-def search_menu(q: str = Query(default="", min_length=0, max_length=120)) -> list[MenuItem]:
+def search_menu(
+    q: str = Query(default="", min_length=0, max_length=120),
+    store_id: int | None = Query(default=None, ge=1),
+) -> list[MenuItem]:
     if settings.pos_menu_source_mode != "remote_strict":
         return menu_repository.search_menu(q)
     try:
-        menu_items = order_service.list_menu()
+        menu_items = order_service.list_menu(store_id=store_id)
     except ValueError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     normalized_query = q.casefold().strip()
@@ -495,12 +520,16 @@ def upsert_menu_item(item_id: str, payload: UpsertMenuItemRequest) -> MenuItem:
 
 
 @app.post("/orders", response_model=OrderRecord)
-def create_order(payload: CreateOrderRequest) -> OrderRecord:
+def create_order(
+    payload: CreateOrderRequest,
+    store_id: int | None = Query(default=None, ge=1),
+) -> OrderRecord:
     try:
         logger.info(
             "Creating order",
             extra={
                 "session_id": payload.session_id,
+                "store_id": store_id,
                 "items": [
                     {
                         "item_id": item.item_id,
@@ -512,7 +541,7 @@ def create_order(payload: CreateOrderRequest) -> OrderRecord:
                 ],
             },
         )
-        return order_service.create_order(payload)
+        return order_service.create_order(payload, store_id=store_id)
     except ValueError as exc:
         logger.error(
             "Order creation failed: %s",
@@ -535,8 +564,8 @@ def list_orders(
 
 
 @app.get("/orders/{order_id}", response_model=OrderRecord)
-def get_order(order_id: str) -> OrderRecord:
-    order = order_service.get_order(order_id)
+def get_order(order_id: str, store_id: int | None = Query(default=None, ge=1)) -> OrderRecord:
+    order = order_service.get_order(order_id, store_id=store_id)
     if order is None:
         raise HTTPException(status_code=404, detail="Khong tim thay hoa don.")
     return order

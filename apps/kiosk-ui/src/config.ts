@@ -10,6 +10,13 @@ function isLocalDevPort(port: string): boolean {
   return port === '5173' || port === '4173' || port === '3000'
 }
 
+function parsePositiveStoreId(value: string | null | undefined): string {
+  const normalized = String(value || '').trim()
+  if (!/^\d+$/.test(normalized)) return ''
+  const parsed = Number.parseInt(normalized, 10)
+  return Number.isFinite(parsed) && parsed > 0 ? String(parsed) : ''
+}
+
 function getDefaultCoreApiFallback(): string {
   if (typeof window !== 'undefined') {
     return isLocalDevPort(String(window.location.port || '')) ? 'http://127.0.0.1:8011' : '/api/core'
@@ -660,6 +667,77 @@ export function getAiApiUrl(): string {
   return resolveBrowserSafeAiApiUrl(configured)
 }
 
+export function getCurrentStoreId(): string {
+  if (typeof window === 'undefined') return ''
+  const searchParams = new URLSearchParams(window.location.search || '')
+  const path = String(window.location.pathname || '')
+  const candidates = [
+    searchParams.get('storeid'),
+    searchParams.get('storeId'),
+    searchParams.get('store_id'),
+  ]
+  const pathMatch =
+    path.match(/(?:^|\/)storeid=(\d+)(?:\/)?$/i) ||
+    path.match(/(?:^|\/)store[_-]?id[=/](\d+)(?:\/|$)/i)
+  if (pathMatch?.[1]) {
+    candidates.push(pathMatch[1])
+  }
+  for (const candidate of candidates) {
+    const safeStoreId = parsePositiveStoreId(candidate)
+    if (safeStoreId) return safeStoreId
+  }
+  return ''
+}
+
+export function getCurrentTableId(): string {
+  if (typeof window === 'undefined') return ''
+  const searchParams = new URLSearchParams(window.location.search || '')
+  const path = String(window.location.pathname || '')
+  const candidates = [
+    searchParams.get('tableid'),
+    searchParams.get('tableId'),
+    searchParams.get('table_id'),
+  ]
+  const pathMatch =
+    path.match(/(?:^|\/)tableid=(\d+)(?:\/)?$/i) ||
+    path.match(/(?:^|\/)table[_-]?id[=/](\d+)(?:\/|$)/i)
+  if (pathMatch?.[1]) {
+    candidates.push(pathMatch[1])
+  }
+  for (const candidate of candidates) {
+    const safeTableId = parsePositiveStoreId(candidate)
+    if (safeTableId) return safeTableId
+  }
+  return ''
+}
+
+export function appendStoreContextToUrl(rawUrl: string): string {
+  const safeUrl = String(rawUrl || '').trim()
+  const currentStoreId = getCurrentStoreId()
+  if (!safeUrl || !currentStoreId) return safeUrl
+  try {
+    const href = typeof window !== 'undefined' ? window.location.href : 'http://localhost/'
+    const parsed = new URL(safeUrl, href)
+    const pathname = String(parsed.pathname || '')
+    if (
+      pathname.endsWith('/menu') ||
+      pathname.includes('/menu/') ||
+      pathname.includes('/menu/proxy') ||
+      pathname.endsWith('/orders')
+    ) {
+      parsed.searchParams.set('store_id', currentStoreId)
+      return parsed.toString()
+    }
+    if (pathname.includes('product-availability/filter')) {
+      parsed.searchParams.set('storeId', currentStoreId)
+      return parsed.toString()
+    }
+    return parsed.toString()
+  } catch {
+    return safeUrl
+  }
+}
+
 function isLocalLikeHost(hostname: string): boolean {
   const host = String(hostname || '').trim().toLowerCase()
   return host === 'localhost' || host === '127.0.0.1' || host === '::1'
@@ -717,11 +795,11 @@ export function resolveBrowserSafeMenuApiUrl(menuApiUrl: string, coreApiUrl: str
 export function getMenuApiUrl(): string {
   const coreApiUrl = getCoreApiUrl()
   const configured = getEnvConfig('VITE_MENU_API_URL', `${coreApiUrl}/menu`)
-  return resolveBrowserSafeMenuApiUrl(configured, coreApiUrl)
+  return appendStoreContextToUrl(resolveBrowserSafeMenuApiUrl(configured, coreApiUrl))
 }
 
 export function getOrdersApiUrl(): string {
-  return getEnvConfig('VITE_ORDERS_API_URL', `${getCoreApiUrl()}/orders`)
+  return appendStoreContextToUrl(getEnvConfig('VITE_ORDERS_API_URL', `${getCoreApiUrl()}/orders`))
 }
 export function getProductSizeApiUrl(): string {
   return getEnvConfig(

@@ -51,6 +51,7 @@ class CreateOrderLineInput(BaseModel):
 class CreateOrderRequest(BaseModel):
     session_id: str
     customer_text: str = ""
+    table_id: int | None = Field(default=None, ge=1)
     items: list[CreateOrderLineInput] = Field(min_length=1)
 
 

@@ -46,6 +46,8 @@ class CartItem(BaseModel):
 
 class SessionStartRequest(BaseModel):
     source: Literal["camera", "manual"] = "camera"
+    store_id: int | None = Field(default=None, ge=1)
+    table_id: int | None = Field(default=None, ge=1)
 
 
 class TurnRequest(BaseModel):
@@ -53,6 +55,8 @@ class TurnRequest(BaseModel):
     turn_id: str | None = Field(default=None, min_length=1, max_length=120)
     include_audio: bool = True
     quick_checkout: bool = False
+    store_id: int | None = Field(default=None, ge=1)
+    table_id: int | None = Field(default=None, ge=1)
 
 
 class BridgeDebugChatRequest(BaseModel):
@@ -232,6 +236,7 @@ class CreateOrderLineItem(BaseModel):
 class CreateOrderRequest(BaseModel):
     session_id: str
     customer_text: str
+    table_id: int | None = Field(default=None, ge=1)
     items: list[CreateOrderLineItem]
 
 
@@ -249,6 +254,8 @@ class CreateOrderResponse(BaseModel):
 @dataclass(slots=True)
 class SessionState:
     session_id: str
+    store_id: int | None = None
+    table_id: int | None = None
     cart: dict[str, int] = field(default_factory=dict)
     cart_unit_price_by_item: dict[str, Decimal] = field(default_factory=dict)
     cart_size_by_item: dict[str, str] = field(default_factory=dict)

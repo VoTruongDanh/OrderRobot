@@ -1439,6 +1439,7 @@
             position: relative;
             pointer-events: auto;
             width: min(94vw, 700px);
+            max-height: min(86vh, 760px);
             border-radius: 28px;
             border: 1px solid rgba(131, 170, 196, 0.28);
             background:
@@ -1448,6 +1449,7 @@
             padding: 22px;
             display: grid;
             gap: 16px;
+            overflow: hidden;
         }
         .size-picker-card::before {
             content: '';
@@ -1507,6 +1509,10 @@
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: 12px;
+            max-height: min(44vh, 380px);
+            overflow: auto;
+            padding-right: 4px;
+            overscroll-behavior: contain;
         }
         .size-picker-option {
             display: grid;
@@ -1517,6 +1523,7 @@
             padding: 14px;
             text-align: left;
             cursor: pointer;
+            min-height: 112px;
             transition:
                 transform var(--ui-fast) ease,
                 box-shadow var(--ui-fast) ease,
@@ -1581,6 +1588,7 @@
         .size-picker-actions {
             display: flex;
             justify-content: flex-end;
+            padding-top: 2px;
         }
         .size-picker-cancel {
             border-radius: 12px;
@@ -3270,23 +3278,118 @@
                 padding: 12px 10px 16px;
             }
 
+            .size-picker-hud {
+                place-items: end center;
+            }
+
             .size-picker-card {
-                width: calc(100vw - 20px);
-                padding: 16px;
-                gap: 10px;
+                width: min(100vw, 100%);
+                max-width: none;
+                max-height: min(88vh, 760px);
+                margin-top: auto;
+                border-radius: 26px 26px 0 0;
+                padding: 16px 14px calc(14px + env(safe-area-inset-bottom, 0px));
+                gap: 12px;
             }
 
             .size-picker-hero {
-                grid-template-columns: 1fr;
+                grid-template-columns: 84px minmax(0, 1fr);
+                gap: 12px;
+                align-items: start;
             }
 
             .size-picker-media {
-                width: 100%;
-                height: 156px;
+                width: 84px;
+                height: 84px;
+                border-radius: 18px;
             }
 
             .size-picker-options {
                 grid-template-columns: 1fr;
+                max-height: min(48vh, 360px);
+                gap: 10px;
+                padding-right: 2px;
+            }
+
+            .size-picker-copy {
+                gap: 5px;
+            }
+
+            .size-picker-title {
+                font-size: 1.08rem;
+            }
+
+            .size-picker-sub {
+                font-size: 0.84rem;
+                line-height: 1.38;
+            }
+
+            .size-picker-item {
+                font-size: 1rem;
+            }
+
+            .size-picker-option {
+                grid-template-columns: minmax(0, 1fr) auto;
+                align-items: center;
+                gap: 4px 10px;
+                min-height: 84px;
+                padding: 12px;
+            }
+
+            .size-picker-option-size {
+                grid-column: 1;
+                grid-row: 1;
+                font-size: 0.96rem;
+            }
+
+            .size-picker-option-price {
+                grid-column: 2;
+                grid-row: 1;
+                font-size: 0.94rem;
+                text-align: right;
+            }
+
+            .size-picker-option-note {
+                grid-column: 1 / -1;
+                grid-row: 2;
+                font-size: 0.75rem;
+                line-height: 1.35;
+            }
+
+            .size-picker-option-tag {
+                grid-column: 1 / -1;
+                grid-row: 3;
+            }
+        }
+
+        @media (max-width: 420px) {
+            .size-picker-card {
+                padding-inline: 12px;
+            }
+
+            .size-picker-hero {
+                grid-template-columns: 72px minmax(0, 1fr);
+            }
+
+            .size-picker-media {
+                width: 72px;
+                height: 72px;
+            }
+
+            .size-picker-kicker {
+                font-size: 0.66rem;
+            }
+
+            .size-picker-title {
+                font-size: 1rem;
+            }
+
+            .size-picker-item {
+                font-size: 0.94rem;
+            }
+
+            .size-picker-option {
+                padding: 11px;
             }
         }
 
@@ -4136,6 +4239,78 @@
     const AI_RUNTIME_FALLBACK_URL = '/api/ai';
     const AI_RUNTIME_PROBE_TIMEOUT_MS = 1600;
     const isAdminPreviewMode = new URLSearchParams(window.location.search).get('adminPreview') === '1';
+    const STORE_CONTEXT_MISSING_MESSAGE = 'Chưa xác định được cửa hàng của bạn';
+    const TABLE_CONTEXT_MISSING_MESSAGE = 'Chưa xác định được bàn của bạn';
+    function parsePositiveId(value) {
+        const normalized = String(value || '').trim();
+        if (!/^\d+$/.test(normalized)) return null;
+        const parsed = Number.parseInt(normalized, 10);
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+    }
+    function resolveRuntimeStoreId() {
+        const search = new URLSearchParams(window.location.search);
+        const candidates = [
+            search.get('storeid'),
+            search.get('storeId'),
+            search.get('store_id'),
+        ];
+        const pathMatch =
+            String(window.location.pathname || '').match(/(?:^|\/)storeid=(\d+)(?:\/)?$/i)
+            || String(window.location.pathname || '').match(/(?:^|\/)store[_-]?id[=/](\d+)(?:\/|$)/i);
+        if (pathMatch && pathMatch[1]) {
+            candidates.push(pathMatch[1]);
+        }
+        for (const candidate of candidates) {
+            const parsed = parsePositiveId(candidate);
+            if (parsed !== null) return parsed;
+        }
+        return null;
+    }
+    function resolveRuntimeTableId() {
+        const search = new URLSearchParams(window.location.search);
+        const candidates = [
+            search.get('tableid'),
+            search.get('tableId'),
+            search.get('table_id'),
+        ];
+        const pathMatch =
+            String(window.location.pathname || '').match(/(?:^|\/)tableid=(\d+)(?:\/)?$/i)
+            || String(window.location.pathname || '').match(/(?:^|\/)table[_-]?id[=/](\d+)(?:\/|$)/i);
+        if (pathMatch && pathMatch[1]) {
+            candidates.push(pathMatch[1]);
+        }
+        for (const candidate of candidates) {
+            const parsed = parsePositiveId(candidate);
+            if (parsed !== null) return parsed;
+        }
+        return null;
+    }
+    const runtimeStoreId = isAdminPreviewMode ? null : resolveRuntimeStoreId();
+    const runtimeTableId = isAdminPreviewMode ? null : resolveRuntimeTableId();
+    function hasResolvedStoreId() {
+        return Number.isFinite(runtimeStoreId) && runtimeStoreId > 0;
+    }
+    function appendStoreContextToUrl(rawUrl) {
+        const safeUrl = String(rawUrl || '').trim();
+        if (!safeUrl || !hasResolvedStoreId()) return safeUrl;
+        try {
+            const parsed = new URL(safeUrl, window.location.href);
+            const pathname = String(parsed.pathname || '');
+            if (
+                pathname.endsWith('/menu')
+                || pathname.includes('/menu/')
+                || pathname.includes('/menu/proxy')
+                || pathname.endsWith('/orders')
+            ) {
+                parsed.searchParams.set('store_id', String(runtimeStoreId));
+            } else if (pathname.includes('product-availability/filter')) {
+                parsed.searchParams.set('storeId', String(runtimeStoreId));
+            }
+            return parsed.toString();
+        } catch {
+            return safeUrl;
+        }
+    }
     if (isAdminPreviewMode) {
         document.body.classList.add('admin-preview-mode');
     }
@@ -5749,7 +5924,7 @@
         }
         try {
             const coreApiBase = resolveCoreApiBaseUrl();
-            const response = await fetch(`${coreApiBase}/orders/${encodeURIComponent(safeOrderId)}`, {
+            const response = await fetch(appendStoreContextToUrl(`${coreApiBase}/orders/${encodeURIComponent(safeOrderId)}`), {
                 method: 'GET',
             });
             if (!response.ok) {
@@ -5940,7 +6115,7 @@
         if (!safeOrderId) return null;
         try {
             const coreApiBase = resolveCoreApiBaseUrl();
-            const response = await fetch(`${coreApiBase}/orders/${encodeURIComponent(safeOrderId)}`, {
+            const response = await fetch(appendStoreContextToUrl(`${coreApiBase}/orders/${encodeURIComponent(safeOrderId)}`), {
                 method: 'GET',
             });
             if (!response.ok) return null;
@@ -6871,11 +7046,18 @@
     }
 
     async function startConversationSession(source = 'camera', signal = undefined) {
+        if (!isAdminPreviewMode && !hasResolvedStoreId()) {
+            throw new Error(STORE_CONTEXT_MISSING_MESSAGE);
+        }
         const aiApiUrl = await ensureAiApiUrlReady();
         const response = await fetch(`${aiApiUrl}/sessions/start`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ source }),
+            body: JSON.stringify({
+                source,
+                store_id: hasResolvedStoreId() ? runtimeStoreId : undefined,
+                table_id: runtimeTableId || undefined,
+            }),
             signal,
         });
         if (!response.ok) {
@@ -6891,6 +7073,9 @@
     }
 
     async function sendConversationTurn(sessionId, transcript, turnId = '', signal = undefined, options = {}) {
+        if (!isAdminPreviewMode && !hasResolvedStoreId()) {
+            throw new Error(STORE_CONTEXT_MISSING_MESSAGE);
+        }
         const aiApiUrl = await ensureAiApiUrlReady();
         const quickCheckout = Boolean(options?.quickCheckout);
         const response = await fetch(`${aiApiUrl}/sessions/${encodeURIComponent(sessionId)}/turn`, {
@@ -6900,6 +7085,8 @@
                 transcript,
                 turn_id: turnId || undefined,
                 quick_checkout: quickCheckout,
+                store_id: hasResolvedStoreId() ? runtimeStoreId : undefined,
+                table_id: runtimeTableId || undefined,
             }),
             signal,
         });
@@ -6910,6 +7097,9 @@
     }
 
     async function streamConversationTurn(sessionId, transcript, turnId = '', onChunk, signal = undefined, options = {}) {
+        if (!isAdminPreviewMode && !hasResolvedStoreId()) {
+            throw new Error(STORE_CONTEXT_MISSING_MESSAGE);
+        }
         const aiApiUrl = await ensureAiApiUrlReady();
         const quickCheckout = Boolean(options?.quickCheckout);
         const response = await fetch(`${aiApiUrl}/sessions/${encodeURIComponent(sessionId)}/turn/stream`, {
@@ -6920,6 +7110,8 @@
                 turn_id: turnId || undefined,
                 include_audio: false,
                 quick_checkout: quickCheckout,
+                store_id: hasResolvedStoreId() ? runtimeStoreId : undefined,
+                table_id: runtimeTableId || undefined,
             }),
             signal,
         });
@@ -10053,7 +10245,10 @@
         if (Array.isArray(cached)) return cached;
         try {
             const coreApi = resolveCoreApiBaseUrl();
-            const response = await fetch(`${coreApi}/menu/${encodeURIComponent(itemId)}/sizes`, { method: 'GET' });
+            const response = await fetch(
+                appendStoreContextToUrl(`${coreApi}/menu/${encodeURIComponent(itemId)}/sizes`),
+                { method: 'GET' }
+            );
             if (!response.ok) {
                 menuSizeOptionsCache.set(itemId, []);
                 return [];
@@ -10712,7 +10907,7 @@
             if (!raw) return '';
             const parsed = JSON.parse(raw);
             return JSON.stringify({
-                posStoreId: String(parsed.POS_STORE_ID || '').trim(),
+                runtimeStoreId: String(runtimeStoreId || '').trim(),
                 posMenuSourceMode: String(parsed.POS_MENU_SOURCE_MODE || '').trim(),
                 posMenuSourceUrl: String(parsed.POS_MENU_SOURCE_URL || '').trim(),
                 posSizeSourceUrl: String(parsed.POS_SIZE_SOURCE_URL || '').trim(),
@@ -10779,6 +10974,17 @@
         if (nextMenuSignature && nextMenuSignature !== lastMenuConfigSignature) {
             invalidateMenuCache('config changed');
         }
+        if (!isAdminPreviewMode && !hasResolvedStoreId()) {
+            renderMenuItems([]);
+            menuLoaded = true;
+            if (menuStatus) {
+                menuStatus.textContent = `${STORE_CONTEXT_MISSING_MESSAGE}. Thêm ?storeid=9 vào URL để tải menu.`;
+            }
+            if (menuItemsGrid) {
+                menuItemsGrid.innerHTML = `<p class="menu-status">${toSafeText(STORE_CONTEXT_MISSING_MESSAGE)}. Thêm ?storeid=9 vào URL để tải menu.</p>`;
+            }
+            return;
+        }
         if (menuLoaded) return;
         if (menuLoadTask) return menuLoadTask;
         const candidates = readMenuApiCandidates();
@@ -10807,6 +11013,7 @@
                         requestUrl = parsed.toString();
                     }
                 } catch {}
+                requestUrl = appendStoreContextToUrl(requestUrl);
                 if (menuStatus) menuStatus.textContent = `Đang tải từ ${requestUrl}`;
                 try {
                     const controller = new AbortController();
@@ -10911,7 +11118,16 @@
     hideOrderFlow();
     updateMiniCart([]);
     setCartPanelOpen(false);
-    void ensureMenuLoaded();
+    if (isAdminPreviewMode || hasResolvedStoreId()) {
+        void ensureMenuLoaded();
+    } else {
+        if (menuStatus) {
+            menuStatus.textContent = `${STORE_CONTEXT_MISSING_MESSAGE}. Thêm ?storeid=9 vào URL để tải menu.`;
+        }
+        if (menuItemsGrid) {
+            menuItemsGrid.innerHTML = `<p class="menu-status">${toSafeText(STORE_CONTEXT_MISSING_MESSAGE)}. Thêm ?storeid=9 vào URL để tải menu.</p>`;
+        }
+    }
     bindSizePickerEvents();
     bindOrderReviewEvents();
     if (orderPopupCloseBtn) {
@@ -10956,6 +11172,9 @@
     }
     if (isAdminPreviewMode) {
         setVoiceStatus('Chế độ xem trước admin');
+        updateMenuPanelHeight(0);
+    } else if (!hasResolvedStoreId()) {
+        setVoiceStatus(STORE_CONTEXT_MISSING_MESSAGE);
         updateMenuPanelHeight(0);
     } else {
         setupSpeechRecognition();

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import json
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
@@ -17,6 +18,14 @@ def _resolve_root_dir() -> Path:
 
 ROOT_DIR = _resolve_root_dir()
 load_dotenv(ROOT_DIR / ".env")
+
+
+@dataclass(slots=True)
+class PosStoreProfile:
+    token: str = ""
+    username: str = ""
+    password: str = ""
+    tag_number: str | None = None
 
 
 @dataclass(slots=True)
@@ -37,6 +46,8 @@ class Settings:
     pos_menu_source_url: str
     pos_size_source_url: str
     pos_default_size_name: str
+    pos_store_profile_map_json: str = ""
+    pos_store_profiles: dict[int, PosStoreProfile] = field(default_factory=dict)
 
 
 def _extract_store_id_from_url(url: str) -> int | None:
@@ -65,6 +76,61 @@ def _sync_store_id_query(url: str, store_id: int | None) -> str:
     return urlunparse(
         (parsed.scheme, parsed.netloc, parsed.path, parsed.params, rebuilt_query, parsed.fragment)
     )
+
+
+def _parse_pos_store_profiles(raw_value: str) -> dict[int, PosStoreProfile]:
+    raw = str(raw_value or "").strip()
+    if not raw:
+        return {}
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+
+    profiles: dict[int, PosStoreProfile] = {}
+    for raw_store_id, raw_profile in payload.items():
+        try:
+            store_id = int(str(raw_store_id).strip())
+        except (TypeError, ValueError):
+            continue
+        if store_id <= 0 or not isinstance(raw_profile, dict):
+            continue
+
+        token = str(
+            raw_profile.get("token")
+            or raw_profile.get("accessToken")
+            or raw_profile.get("pos_api_token")
+            or ""
+        ).strip()
+        username = str(
+            raw_profile.get("username")
+            or raw_profile.get("email")
+            or raw_profile.get("pos_api_username")
+            or ""
+        ).strip()
+        password = str(
+            raw_profile.get("password")
+            or raw_profile.get("pos_api_password")
+            or ""
+        ).strip()
+        tag_number = str(
+            raw_profile.get("tagNumber")
+            or raw_profile.get("pos_tag_number")
+            or ""
+        ).strip()
+
+        if not token and not (username and password):
+            continue
+        profiles[store_id] = PosStoreProfile(
+            token=token,
+            username=username,
+            password=password,
+            tag_number=tag_number or None,
+        )
+
+    return profiles
 
 
 def get_settings() -> Settings:
@@ -100,6 +166,8 @@ def get_settings() -> Settings:
         pos_auth_refresh_url = f"{pos_api_base_url}/auth/refresh"
 
     pos_menu_source_url = _sync_store_id_query(pos_menu_source_url, pos_store_id)
+    pos_store_profile_map_json = str(os.getenv("POS_STORE_PROFILE_MAP_JSON", "")).strip()
+    pos_store_profiles = _parse_pos_store_profiles(pos_store_profile_map_json)
     raw_menu_source_mode = str(os.getenv("POS_MENU_SOURCE_MODE", "")).strip().lower()
     if raw_menu_source_mode in {"local", "remote_strict"}:
         pos_menu_source_mode = raw_menu_source_mode
@@ -123,4 +191,6 @@ def get_settings() -> Settings:
         pos_menu_source_mode=pos_menu_source_mode,
         pos_size_source_url=str(os.getenv("POS_SIZE_SOURCE_URL", "")).strip(),
         pos_default_size_name=str(os.getenv("POS_DEFAULT_SIZE_NAME", "")).strip(),
+        pos_store_profile_map_json=pos_store_profile_map_json,
+        pos_store_profiles=pos_store_profiles,
     )

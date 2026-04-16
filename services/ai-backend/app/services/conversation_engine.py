@@ -329,38 +329,67 @@ class ConversationEngine:
         self.provider_client = ProviderClient(settings) if settings.bridge_enabled else None
         self.sessions: dict[str, SessionState] = {}
         self.lock = asyncio.Lock()
-        self._menu_cache: list[MenuItem] | None = None
-        self._menu_cache_at: float = 0.0
+        self._menu_cache: dict[str, tuple[float, list[MenuItem]]] = {}
         self._quick_reply_cache: dict[str, tuple[float, str, str]] = {}
         self._local_only_turn_ids: set[str] = set()
-        self._size_options_cache: dict[str, tuple[float, list[MenuItemSizeOption]]] = {}
+        self._size_options_cache: dict[tuple[str, str], tuple[float, list[MenuItemSizeOption]]] = {}
 
-    async def _get_menu(self) -> list[MenuItem]:
-        """Get menu with caching (TTL=60s) to avoid HTTP round-trip every turn."""
-        now = time.monotonic()
-        if self._menu_cache is not None and (now - self._menu_cache_at) < MENU_CACHE_TTL:
-            return self._menu_cache
-        self._menu_cache = await self.core_client.list_menu()
-        self._menu_cache_at = now
-        return self._menu_cache
+    @staticmethod
+    def _normalize_store_id(store_id: int | None) -> int | None:
+        if store_id is None:
+            return None
+        try:
+            safe_store_id = int(store_id)
+        except (TypeError, ValueError):
+            return None
+        return safe_store_id if safe_store_id > 0 else None
 
-    async def _get_item_size_options(self, item_id: str) -> list[MenuItemSizeOption]:
+    @classmethod
+    def _store_cache_key(cls, store_id: int | None) -> str:
+        normalized = cls._normalize_store_id(store_id)
+        return str(normalized) if normalized is not None else "default"
+
+    @staticmethod
+    def _normalize_table_id(table_id: int | None) -> int | None:
+        if table_id is None:
+            return None
+        try:
+            safe_table_id = int(table_id)
+        except (TypeError, ValueError):
+            return None
+        return safe_table_id if safe_table_id > 0 else None
+
+    async def _get_menu(self, store_id: int | None = None) -> list[MenuItem]:
+        """Get menu with per-store caching (TTL=60s) to avoid HTTP round-trip every turn."""
         now = time.monotonic()
-        cached = self._size_options_cache.get(item_id)
+        if not isinstance(self._menu_cache, dict):
+            self._menu_cache = {}
+        cache_key = self._store_cache_key(store_id)
+        cached = self._menu_cache.get(cache_key)
+        if cached is not None and (now - cached[0]) < MENU_CACHE_TTL:
+            return cached[1]
+        menu_items = await self.core_client.list_menu(store_id=store_id)
+        self._menu_cache[cache_key] = (now, menu_items)
+        return menu_items
+
+    async def _get_item_size_options(self, item_id: str, store_id: int | None = None) -> list[MenuItemSizeOption]:
+        now = time.monotonic()
+        cache_key = (self._store_cache_key(store_id), item_id)
+        cached = self._size_options_cache.get(cache_key)
         if cached and (now - cached[0]) < MENU_CACHE_TTL:
             return cached[1]
         get_item_sizes = getattr(self.core_client, "get_item_sizes", None)
         if not callable(get_item_sizes):
             # Backward compatibility for old/mock core client without size endpoint.
-            self._size_options_cache[item_id] = (now, [])
+            self._size_options_cache[cache_key] = (now, [])
             return []
         try:
-            options = await get_item_sizes(item_id)
+            options = await get_item_sizes(item_id, store_id=store_id)
         except Exception as exc:
             logger.warning("get_item_sizes_failed item_id=%s error=%s", item_id, exc)
             options = []
         options_sorted = sorted(options, key=lambda opt: (not opt.is_default, opt.size_name))
-        self._size_options_cache[item_id] = (now, options_sorted)
+        self._size_options_cache[cache_key] = (now, options_sorted)
         return options_sorted
 
     @staticmethod
@@ -413,11 +442,18 @@ class ConversationEngine:
         state.pending_size_quantity = 1
         state.pending_size_options.clear()
 
-    async def start_session(self) -> ConversationResponse:
+    async def start_session(self, store_id: int | None = None, table_id: int | None = None) -> ConversationResponse:
         session_id = f"SES-{uuid4().hex[:10]}"
+        normalized_store_id = self._normalize_store_id(store_id)
+        normalized_table_id = self._normalize_table_id(table_id)
         async with self.lock:
             self._cleanup_expired_sessions()
-            self.sessions[session_id] = SessionState(session_id=session_id, greeted=True)
+            self.sessions[session_id] = SessionState(
+                session_id=session_id,
+                store_id=normalized_store_id,
+                table_id=normalized_table_id,
+                greeted=True,
+            )
 
         decision = Decision(
             scene="greeting_intro",
@@ -452,17 +488,52 @@ class ConversationEngine:
         transcript: str,
         turn_id: str | None = None,
         quick_checkout: bool = False,
+        store_id: int | None = None,
+        table_id: int | None = None,
     ) -> ConversationResponse:
+        normalized_store_id = self._normalize_store_id(store_id)
+        normalized_table_id = self._normalize_table_id(table_id)
         async with self.lock:
             self._cleanup_expired_sessions()
             state = self.sessions.get(session_id)
             if state is None:
-                state = SessionState(session_id=session_id)
+                state = SessionState(
+                    session_id=session_id,
+                    store_id=normalized_store_id,
+                    table_id=normalized_table_id,
+                )
                 self.sessions[session_id] = state
+            elif normalized_store_id is not None and state.store_id != normalized_store_id:
+                state.cart.clear()
+                state.cart_unit_price_by_item.clear()
+                state.cart_size_by_item.clear()
+                state.cart_size_id_by_item.clear()
+                self._clear_pending_size(state)
+                state.awaiting_confirmation = False
+                state.history.clear()
+                state.store_id = normalized_store_id
+                state.table_id = normalized_table_id
+            elif state.store_id is None and normalized_store_id is not None:
+                state.store_id = normalized_store_id
+            if (
+                normalized_table_id is not None
+                and state.table_id is not None
+                and state.table_id != normalized_table_id
+            ):
+                state.cart.clear()
+                state.cart_unit_price_by_item.clear()
+                state.cart_size_by_item.clear()
+                state.cart_size_id_by_item.clear()
+                self._clear_pending_size(state)
+                state.awaiting_confirmation = False
+                state.history.clear()
+                state.table_id = normalized_table_id
+            elif normalized_table_id is not None and state.table_id != normalized_table_id:
+                state.table_id = normalized_table_id
             self._touch_state(state)
             state.history.append(transcript)
 
-        menu = await self._get_menu()
+        menu = await self._get_menu(state.store_id)
         normalized_raw = normalize_text(transcript)
         normalized = _apply_stt_aliases(normalized_raw)
         
@@ -498,7 +569,7 @@ class ConversationEngine:
                     ),
                     menu,
                 )
-            options = await self._get_item_size_options(pending_item_id)
+            options = await self._get_item_size_options(pending_item_id, state.store_id)
             selected = self._find_size_in_text(normalized, options)
             if selected is not None:
                 state.cart[pending_item_id] = state.cart.get(pending_item_id, 0) + pending_quantity
@@ -600,7 +671,7 @@ class ConversationEngine:
                 for item_id, quantity in list(state.cart.items()):
                     if item_id in state.cart_size_by_item:
                         continue
-                    size_options = await self._get_item_size_options(item_id)
+                    size_options = await self._get_item_size_options(item_id, state.store_id)
                     if len(size_options) > 1:
                         menu_item = next((item for item in menu if item.item_id == item_id), None)
                         item_name = menu_item.name if menu_item is not None else "món đã chọn"
@@ -660,8 +731,10 @@ class ConversationEngine:
                         CreateOrderRequest(
                             session_id=session_id,
                             customer_text=transcript,
+                            table_id=state.table_id,
                             items=order_items,
-                        )
+                        ),
+                        store_id=state.store_id,
                     )
                 except Exception as create_order_error:
                     logger.error(
@@ -679,6 +752,10 @@ class ConversationEngine:
                         error_msg = "Có món trong giỏ không còn trong menu. Bạn thử lại hoặc chọn món khác nhé."
                     elif "tam het hang" in error_detail or "unavailable" in error_detail.lower():
                         error_msg = "Có món trong giỏ hiện đang hết hàng. Bạn chọn món khác giúp mình nhé."
+                    elif "ban cua khach" in error_detail.lower() or "tableid" in error_detail.lower():
+                        error_msg = "Chưa xác định được bàn của bạn. Mở kiosk với URL có ?storeid=...&tableid=... rồi thử lại nhé."
+                    elif "khong thuoc cua hang" in error_detail.lower():
+                        error_msg = "Bàn hiện tại không thuộc đúng cửa hàng đang mở. Bạn kiểm tra lại storeid và tableid trên URL giúp mình nhé."
                     else:
                         error_msg = "Mình gặp lỗi khi tạo đơn hàng. Bạn thử lại sau nhé."
                     
@@ -854,7 +931,7 @@ class ConversationEngine:
         if segment_matches:
             state.awaiting_confirmation = contains_any(normalized, CHECKOUT_KEYWORDS)
             for item, quantity in segment_matches:
-                size_options = await self._get_item_size_options(item.item_id)
+                size_options = await self._get_item_size_options(item.item_id, state.store_id)
                 selected_size = self._find_size_in_text(normalized, size_options)
                 if len(size_options) > 1 and selected_size is None:
                     self._clear_pending_size(state)
@@ -943,7 +1020,7 @@ class ConversationEngine:
                 # Single high-confidence match or one clearly dominates -> auto-add
                 item = best_match
                 quantity = extract_quantity(normalized, item_name=normalize_text(item.name))
-                size_options = await self._get_item_size_options(item.item_id)
+                size_options = await self._get_item_size_options(item.item_id, state.store_id)
                 selected_size = self._find_size_in_text(normalized, size_options)
                 if len(size_options) > 1 and selected_size is None:
                     self._clear_pending_size(state)
@@ -1268,6 +1345,8 @@ class ConversationEngine:
         turn_id: str | None = None,
         include_audio: bool = True,
         quick_checkout: bool = False,
+        store_id: int | None = None,
+        table_id: int | None = None,
     ):
         """Stream conversation response with incremental text and optional audio chunks."""
         local_only_turn_id = str(turn_id or "").strip()
@@ -1279,6 +1358,8 @@ class ConversationEngine:
                 transcript,
                 turn_id=turn_id,
                 quick_checkout=quick_checkout,
+                store_id=store_id,
+                table_id=table_id,
             )
         finally:
             if local_only_turn_id:
@@ -1407,7 +1488,8 @@ class ConversationEngine:
         response: ConversationResponse,
         transcript: str,
     ) -> dict[str, object]:
-        menu = await self._get_menu()
+        session_state = self.sessions.get(response.session_id)
+        menu = await self._get_menu(session_state.store_id if session_state is not None else None)
         recommended_ids = set(response.recommended_item_ids or [])
         return {
             "scene": response.scene,
@@ -2084,7 +2166,7 @@ class ConversationEngine:
     ) -> ConversationResponse:
         state = self.sessions[session_id]
         if menu is None:
-            menu = await self._get_menu()
+            menu = await self._get_menu(state.store_id)
         cart = build_cart_items(
             state.cart,
             menu,

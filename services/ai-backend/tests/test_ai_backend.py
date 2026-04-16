@@ -27,8 +27,12 @@ from app.services.provider_client import append_stream_content, split_completed_
 class FakeCoreBackendClient:
     def __init__(self) -> None:
         self.created_orders: list[tuple[str, list[dict[str, object]]]] = []
+        self.created_order_store_ids: list[int | None] = []
+        self.list_menu_store_ids: list[int | None] = []
+        self.item_size_store_ids: list[int | None] = []
 
-    async def list_menu(self) -> list[MenuItem]:
+    async def list_menu(self, store_id: int | None = None) -> list[MenuItem]:
+        self.list_menu_store_ids.append(store_id)
         return [
             MenuItem(
                 item_id="tra-dao",
@@ -50,16 +54,18 @@ class FakeCoreBackendClient:
             ),
         ]
 
-    async def create_order(self, payload):
+    async def create_order(self, payload, store_id: int | None = None):
         self.created_orders.append(
             (
                 payload.session_id,
                 [item.model_dump() for item in payload.items],
             )
         )
+        self.created_order_store_ids.append(store_id)
         return CreateOrderResponse(order_id="ORD-TEST")
 
-    async def get_item_sizes(self, item_id: str) -> list[MenuItemSizeOption]:
+    async def get_item_sizes(self, item_id: str, store_id: int | None = None) -> list[MenuItemSizeOption]:
+        self.item_size_store_ids.append(store_id)
         return []
 
 
@@ -88,13 +94,13 @@ class FakeProviderClient:
 
 
 class FailingMenuCoreBackendClient(FakeCoreBackendClient):
-    async def list_menu(self) -> list[MenuItem]:
+    async def list_menu(self, store_id: int | None = None) -> list[MenuItem]:
         raise RuntimeError("list_menu should not be called for session greeting start")
 
 
 class CappuccinoCoreBackendClient(FakeCoreBackendClient):
-    async def list_menu(self) -> list[MenuItem]:
-        base = await super().list_menu()
+    async def list_menu(self, store_id: int | None = None) -> list[MenuItem]:
+        base = await super().list_menu(store_id=store_id)
         base.append(
             MenuItem(
                 item_id="cappuccino",
@@ -110,7 +116,8 @@ class CappuccinoCoreBackendClient(FakeCoreBackendClient):
 
 
 class SizeAwareCoreBackendClient(FakeCoreBackendClient):
-    async def get_item_sizes(self, item_id: str) -> list[MenuItemSizeOption]:
+    async def get_item_sizes(self, item_id: str, store_id: int | None = None) -> list[MenuItemSizeOption]:
+        self.item_size_store_ids.append(store_id)
         if item_id != "tra-dao":
             return []
         return [
@@ -146,9 +153,9 @@ class MenuRemovesTraDaoAfterFirstFetchCoreBackendClient(FakeCoreBackendClient):
         super().__init__()
         self._menu_fetch_count = 0
 
-    async def list_menu(self) -> list[MenuItem]:
+    async def list_menu(self, store_id: int | None = None) -> list[MenuItem]:
         self._menu_fetch_count += 1
-        menu = await super().list_menu()
+        menu = await super().list_menu(store_id=store_id)
         if self._menu_fetch_count >= 2:
             return [item for item in menu if item.item_id != "tra-dao"]
         return menu
@@ -274,6 +281,11 @@ def test_turn_request_accepts_optional_turn_id() -> None:
     assert payload.turn_id == "turn-123"
 
 
+def test_turn_request_accepts_optional_store_id() -> None:
+    payload = TurnRequest.model_validate({"transcript": "xin chao", "store_id": 9})
+    assert payload.store_id == 9
+
+
 @pytest.mark.anyio
 async def test_conversation_engine_can_recommend_and_create_order() -> None:
     settings = Settings(
@@ -307,6 +319,34 @@ async def test_conversation_engine_can_recommend_and_create_order() -> None:
     created = await engine.handle_turn(start.session_id, "xac nhan")
     assert created.order_created is True
     assert created.order_id == "ORD-TEST"
+
+
+@pytest.mark.anyio
+async def test_conversation_engine_passes_store_id_to_core_client() -> None:
+    settings = Settings(
+        ai_base_url="",
+        ai_api_key="",
+        ai_model="",
+        core_backend_url="http://127.0.0.1:8001",
+        voice_lang="vi-VN",
+        voice_style="cute_friendly",
+        tts_voice="vietnam",
+        tts_rate="165",
+        stt_model="small",
+        stt_device="cpu",
+        stt_compute_type="int8",
+    )
+    core_client = FakeCoreBackendClient()
+    engine = ConversationEngine(settings, core_client)
+
+    start = await engine.start_session(store_id=9)
+    await engine.handle_turn(start.session_id, "Cho minh 1 tra dao cam sa", store_id=9)
+    await engine.handle_turn(start.session_id, "xac nhan", store_id=9)
+    await engine.handle_turn(start.session_id, "xac nhan", store_id=9)
+
+    assert core_client.list_menu_store_ids
+    assert core_client.list_menu_store_ids[0] == 9
+    assert core_client.created_order_store_ids[-1] == 9
 
 
 @pytest.mark.anyio
@@ -610,10 +650,10 @@ async def test_menu_cache_avoids_repeated_calls() -> None:
     list_menu_call_count = 0
     original_list_menu = core_client.list_menu
 
-    async def tracked_list_menu():
+    async def tracked_list_menu(store_id: int | None = None):
         nonlocal list_menu_call_count
         list_menu_call_count += 1
-        return await original_list_menu()
+        return await original_list_menu(store_id=store_id)
 
     core_client.list_menu = tracked_list_menu
     engine = ConversationEngine(settings, core_client)
@@ -1350,4 +1390,3 @@ def test_render_lite_bridge_required_reply_redirects_to_ordering_product() -> No
     normalized_reply = normalize_text(reply)
     assert "chi hieu duoc yeu cau goi mon" in normalized_reply or "chi ho tro dat mon" in normalized_reply
     assert "san pham" in normalized_reply or "mon" in normalized_reply
-

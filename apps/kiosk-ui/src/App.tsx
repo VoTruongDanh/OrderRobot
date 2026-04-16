@@ -10,6 +10,52 @@ import {
   subscribeAdminConfigChanges,
 } from './config'
 
+function parseStoreIdFromLocation(locationLike: Pick<Location, 'pathname' | 'search'>): string {
+  const searchParams = new URLSearchParams(locationLike.search || '')
+  const path = String(locationLike.pathname || '')
+  const candidates = [
+    searchParams.get('storeid'),
+    searchParams.get('storeId'),
+    searchParams.get('store_id'),
+  ]
+  const pathMatch =
+    path.match(/(?:^|\/)storeid=(\d+)(?:\/)?$/i) ||
+    path.match(/(?:^|\/)store[_-]?id[=/](\d+)(?:\/|$)/i)
+  if (pathMatch?.[1]) {
+    candidates.push(pathMatch[1])
+  }
+  for (const candidate of candidates) {
+    const normalized = String(candidate || '').trim()
+    if (/^\d+$/.test(normalized) && Number.parseInt(normalized, 10) > 0) {
+      return normalized
+    }
+  }
+  return ''
+}
+
+function parseTableIdFromLocation(locationLike: Pick<Location, 'pathname' | 'search'>): string {
+  const searchParams = new URLSearchParams(locationLike.search || '')
+  const path = String(locationLike.pathname || '')
+  const candidates = [
+    searchParams.get('tableid'),
+    searchParams.get('tableId'),
+    searchParams.get('table_id'),
+  ]
+  const pathMatch =
+    path.match(/(?:^|\/)tableid=(\d+)(?:\/)?$/i) ||
+    path.match(/(?:^|\/)table[_-]?id[=/](\d+)(?:\/|$)/i)
+  if (pathMatch?.[1]) {
+    candidates.push(pathMatch[1])
+  }
+  for (const candidate of candidates) {
+    const normalized = String(candidate || '').trim()
+    if (/^\d+$/.test(normalized) && Number.parseInt(normalized, 10) > 0) {
+      return normalized
+    }
+  }
+  return ''
+}
+
 function App() {
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
   const lastForwardedRobotCommandAtRef = useRef(0)
@@ -17,6 +63,17 @@ function App() {
   const [cameraPreviewVisible, setCameraPreviewVisible] = useState<boolean>(() =>
     getCameraPreviewVisible(),
   )
+  const storeId = parseStoreIdFromLocation(window.location)
+  const tableId = parseTableIdFromLocation(window.location)
+  const iframeSrc = (() => {
+    if (!storeId) return '/stitch_robot_3d_control_center.html'
+    const params = new URLSearchParams(window.location.search || '')
+    params.set('storeid', storeId)
+    if (tableId) {
+      params.set('tableid', tableId)
+    }
+    return `/stitch_robot_3d_control_center.html?${params.toString()}`
+  })()
 
   useEffect(() => {
     const syncAdminConfigToIframe = () => {
@@ -86,13 +143,28 @@ function App() {
     return unsubscribe
   }, [])
 
+  if (!storeId) {
+    return (
+      <main className="sample-shell sample-shell--empty">
+        <section className="store-gate-card" role="status" aria-live="polite">
+          <p className="store-gate-card__eyebrow">Store Routing Required</p>
+          <h1>Chưa xác định được cửa hàng của bạn</h1>
+          <p>
+            Kiosk chỉ khởi động khi URL có mã cửa hàng, ví dụ <code>?storeid=9</code> hoặc{' '}
+            <code>/storeid=9</code>.
+          </p>
+        </section>
+      </main>
+    )
+  }
+
   return (
     <div className="sample-shell">
       <div className="sample-frame" role="region" aria-label="Stitch Robot 3D Control Center">
         <iframe
           className="sample-iframe"
           ref={iframeRef}
-          src="/stitch_robot_3d_control_center.html"
+          src={iframeSrc}
           title="Stitch Robot 3D Control Center"
           allow="autoplay; microphone; camera"
           onLoad={() => {

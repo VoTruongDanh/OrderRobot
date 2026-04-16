@@ -185,12 +185,6 @@ const ESSENTIAL_ENV_KEYS = new Set([
   'SESSION_TIMEOUT_MINUTES',
   'VOICE_LISTEN_MODE',
   'POS_API_BASE_URL',
-  'POS_API_TOKEN',
-  'POS_API_USERNAME',
-  'POS_API_PASSWORD',
-  'POS_AUTH_LOGIN_URL',
-  'POS_AUTH_REFRESH_URL',
-  'POS_STORE_ID',
   'POS_ORDER_TYPE',
   'POS_PAYMENT_METHOD',
   'POS_TAG_NUMBER',
@@ -198,6 +192,16 @@ const ESSENTIAL_ENV_KEYS = new Set([
   'POS_MENU_SOURCE_URL',
   'POS_SIZE_SOURCE_URL',
   'POS_DEFAULT_SIZE_NAME',
+])
+
+const HIDDEN_ADMIN_ENV_KEYS = new Set([
+  'POS_API_TOKEN',
+  'POS_API_USERNAME',
+  'POS_API_PASSWORD',
+  'POS_AUTH_LOGIN_URL',
+  'POS_AUTH_REFRESH_URL',
+  'POS_STORE_ID',
+  'POS_STORE_PROFILE_MAP_JSON',
 ])
 
 const VIENEU_CODEC_REPO_DISTILL = 'neuphonic/distill-neucodec'
@@ -215,6 +219,7 @@ const ENV_TEMPLATE: EnvField[] = [
   { key: 'POS_AUTH_LOGIN_URL', label: 'POS Auth Login URL', value: 'http://cnxvn.ddns.net:8080/api/v1/auth/login' },
   { key: 'POS_AUTH_REFRESH_URL', label: 'POS Auth Refresh URL', value: 'http://cnxvn.ddns.net:8080/api/v1/auth/refresh' },
   { key: 'POS_STORE_ID', label: 'POS Store ID', value: '9' },
+  { key: 'POS_STORE_PROFILE_MAP_JSON', label: 'POS Store Profile Map JSON', value: '' },
   { key: 'POS_ORDER_TYPE', label: 'POS Order Type', value: 'POS' },
   { key: 'POS_PAYMENT_METHOD', label: 'POS Payment Method', value: 'ONLINE_PAYMENT' },
   { key: 'POS_TAG_NUMBER', label: 'POS Tag Number', value: '1' },
@@ -511,8 +516,9 @@ function validateLivePosConfig(fields: EnvField[]): string | null {
     isTruthyValue(get('POS_API_USERNAME')) &&
     isTruthyValue(get('POS_API_PASSWORD')) &&
     isTruthyValue(get('POS_AUTH_LOGIN_URL'))
-  if (!hasToken && !hasCredentialLogin) {
-    missing.push('POS_API_TOKEN or POS_API_USERNAME/POS_API_PASSWORD/POS_AUTH_LOGIN_URL')
+  const hasStoreProfileMap = isTruthyValue(get('POS_STORE_PROFILE_MAP_JSON'))
+  if (!hasToken && !hasCredentialLogin && !hasStoreProfileMap) {
+    missing.push('POS_API_TOKEN or POS_API_USERNAME/POS_API_PASSWORD/POS_AUTH_LOGIN_URL or POS_STORE_PROFILE_MAP_JSON')
   }
   if (missing.length > 0) {
     return `Live POS mode missing required config: ${missing.join(', ')}`
@@ -528,20 +534,14 @@ function normalizeFieldsForPersistence(fields: EnvField[]): EnvField[] {
   const posApiBase = normalizeApiBaseUrl(getFieldValue(fields, 'POS_API_BASE_URL', ''))
   const canonicalPosLoginUrl = posApiBase ? `${posApiBase}/auth/login` : ''
   const canonicalPosRefreshUrl = posApiBase ? `${posApiBase}/auth/refresh` : ''
-  const posStoreId = getFieldValue(fields, 'POS_STORE_ID', '').trim()
   const posSizeSourceUrl = getFieldValue(fields, 'POS_SIZE_SOURCE_URL', '').trim()
   const posDefaultSizeName = getFieldValue(fields, 'POS_DEFAULT_SIZE_NAME', '').trim()
-  const syncStoreIdInUrl = (rawUrl: string): string => {
-    const safeUrl = String(rawUrl || '').trim()
-    if (!safeUrl || !posStoreId) return safeUrl
-    try {
-      const parsed = new URL(safeUrl)
-      parsed.searchParams.set('storeId', posStoreId)
-      return parsed.toString()
-    } catch {
-      return safeUrl
-    }
-  }
+  const canonicalMenuSourceUrl = posApiBase
+    ? `${posApiBase}/product-availability/filter?storeId={storeId}&page=0&size=1000&sort=`
+    : ''
+  const canonicalSizeSourceUrl = posApiBase
+    ? `${posApiBase}/product-size/filter?productId={productId}&page=0&size=10&sort=`
+    : ''
   const normalizeTaxPercent = (raw: string) => {
     const parsed = Number.parseFloat(String(raw || '').trim())
     if (!Number.isFinite(parsed)) return '10'
@@ -559,15 +559,21 @@ function normalizeFieldsForPersistence(fields: EnvField[]): EnvField[] {
     if (field.key === 'VITE_ORDERS_API_URL' && canonicalOrdersUrl) {
       return field.value === canonicalOrdersUrl ? field : { ...field, value: canonicalOrdersUrl }
     }
-    if (field.key === 'POS_MENU_SOURCE_URL') {
-      const nextMenuSourceUrl = syncStoreIdInUrl(field.value)
-      return field.value === nextMenuSourceUrl ? field : { ...field, value: nextMenuSourceUrl }
+    if (field.key === 'POS_MENU_SOURCE_URL' && canonicalMenuSourceUrl) {
+      return field.value === canonicalMenuSourceUrl
+        ? field
+        : { ...field, value: canonicalMenuSourceUrl }
     }
     if (field.key === 'POS_AUTH_LOGIN_URL' && canonicalPosLoginUrl) {
       return field.value === canonicalPosLoginUrl ? field : { ...field, value: canonicalPosLoginUrl }
     }
     if (field.key === 'POS_AUTH_REFRESH_URL' && canonicalPosRefreshUrl) {
       return field.value === canonicalPosRefreshUrl ? field : { ...field, value: canonicalPosRefreshUrl }
+    }
+    if (field.key === 'POS_SIZE_SOURCE_URL' && canonicalSizeSourceUrl) {
+      return field.value === canonicalSizeSourceUrl
+        ? field
+        : { ...field, value: canonicalSizeSourceUrl }
     }
     if (field.key === 'VITE_PRODUCT_SIZE_API_URL' && posSizeSourceUrl) {
       return field.value === posSizeSourceUrl ? field : { ...field, value: posSizeSourceUrl }
@@ -835,7 +841,8 @@ export default function AdminPage({ onLogout }: AdminPageProps) {
         (envFieldMap.POS_API_USERNAME || '').trim() &&
         (envFieldMap.POS_API_PASSWORD || '').trim() &&
         (envFieldMap.POS_AUTH_LOGIN_URL || '').trim()
-      ),
+      ) ||
+      (envFieldMap.POS_STORE_PROFILE_MAP_JSON || '').trim(),
   )
   const livePosValidationError = useMemo(() => validateLivePosConfig(envFields), [envFields])
 
@@ -882,20 +889,29 @@ export default function AdminPage({ onLogout }: AdminPageProps) {
   })
 
   const essentialFields = useMemo(
-    () => envFields.filter((field) => ESSENTIAL_ENV_KEYS.has(field.key)),
+    () =>
+      envFields.filter(
+        (field) => ESSENTIAL_ENV_KEYS.has(field.key) && !HIDDEN_ADMIN_ENV_KEYS.has(field.key),
+      ),
     [envFields],
   )
   const advancedFields = useMemo(
     () =>
       envFields.filter(
         (field) =>
-          !ESSENTIAL_ENV_KEYS.has(field.key) && field.key !== 'VOICE_ALWAYS_LISTEN',
+          !ESSENTIAL_ENV_KEYS.has(field.key) &&
+          !HIDDEN_ADMIN_ENV_KEYS.has(field.key) &&
+          field.key !== 'VOICE_ALWAYS_LISTEN',
       ),
     [envFields],
   )
 
   const envText = useMemo(
-    () => envFields.map((field) => `${field.key}=${normalizeEnvValue(field.key, field.value)}`).join('\n'),
+    () =>
+      envFields
+        .filter((field) => !HIDDEN_ADMIN_ENV_KEYS.has(field.key))
+        .map((field) => `${field.key}=${normalizeEnvValue(field.key, field.value)}`)
+        .join('\n'),
     [envFields],
   )
   const essentialEnvText = useMemo(

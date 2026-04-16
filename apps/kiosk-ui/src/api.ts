@@ -1,4 +1,4 @@
-import { getAiApiUrl, getMenuApiUrl, getOrdersApiUrl } from './config'
+import { appendStoreContextToUrl, getAiApiUrl, getCurrentStoreId, getCurrentTableId, getMenuApiUrl, getOrdersApiUrl } from './config'
 import type {
   BridgeDebugChatResult,
   BridgeSessionEndResult,
@@ -28,15 +28,22 @@ export async function fetchMenu(): Promise<MenuItem[]> {
 }
 
 export async function fetchOrder(orderId: string): Promise<OrderRecord> {
-  const response = await fetch(`${getOrdersApiUrl()}/${orderId}`)
+  const ordersBase = String(getOrdersApiUrl() || '').replace(/\?.*$/, '').replace(/\/$/, '')
+  const response = await fetch(appendStoreContextToUrl(`${ordersBase}/${orderId}`))
   return readJson<OrderRecord>(response)
 }
 
 export async function startSession(source: 'camera' | 'manual'): Promise<ConversationResponse> {
+  const storeId = getCurrentStoreId()
+  const tableId = getCurrentTableId()
   const response = await fetch(`${getAiApiUrl()}/sessions/start`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ source }),
+    body: JSON.stringify({
+      source,
+      store_id: storeId ? Number(storeId) : undefined,
+      table_id: tableId ? Number(tableId) : undefined,
+    }),
   })
   return readJson<ConversationResponse>(response)
 }
@@ -55,10 +62,17 @@ export async function sendTurn(
   transcript: string,
   turnId?: string,
 ): Promise<ConversationResponse> {
+  const storeId = getCurrentStoreId()
+  const tableId = getCurrentTableId()
   const response = await fetch(`${getAiApiUrl()}/sessions/${sessionId}/turn`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ transcript, turn_id: turnId }),
+    body: JSON.stringify({
+      transcript,
+      turn_id: turnId,
+      store_id: storeId ? Number(storeId) : undefined,
+      table_id: tableId ? Number(tableId) : undefined,
+    }),
   })
   return readJson<ConversationResponse>(response)
 }
@@ -87,10 +101,17 @@ export async function* sendTurnStream(
   turnId?: string,
   signal?: AbortSignal,
 ): AsyncGenerator<StreamChunk> {
+  const storeId = getCurrentStoreId()
+  const tableId = getCurrentTableId()
   const response = await fetch(`${getAiApiUrl()}/sessions/${sessionId}/turn/stream`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ transcript, turn_id: turnId }),
+    body: JSON.stringify({
+      transcript,
+      turn_id: turnId,
+      store_id: storeId ? Number(storeId) : undefined,
+      table_id: tableId ? Number(tableId) : undefined,
+    }),
     signal,
   })
 
@@ -330,7 +351,7 @@ async function readError(response: Response): Promise<string> {
 }
 
 function buildSpeechWebSocketUrl() {
-  const httpUrl = new URL(getAiApiUrl())
+  const httpUrl = new URL(getAiApiUrl(), window.location.href)
   httpUrl.protocol = httpUrl.protocol === 'https:' ? 'wss:' : 'ws:'
   httpUrl.pathname = '/speech/transcribe/ws'
   httpUrl.search = ''
