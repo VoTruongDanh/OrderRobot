@@ -24,7 +24,6 @@ RUN pip install --no-cache-dir -r /tmp/requirements.docker.txt
 RUN pip install --no-cache-dir --no-deps vieneu==1.3.0
 
 COPY services/ai-backend /app/services/ai-backend
-COPY .env.example /app/.env.example
 
 WORKDIR /app/services/ai-backend
 

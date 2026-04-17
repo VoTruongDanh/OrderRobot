@@ -944,6 +944,11 @@ export function resolveBrowserSafeAiApiUrl(aiApiUrl: string): string {
     if (sameOrigin) {
       return parsed.toString()
     }
+    // In local/dev-like browser contexts (including docker-exposed localhost ports),
+    // keep explicit localhost AI URLs instead of forcing /api/ai reverse proxy paths.
+    if (isLocalDevBrowserContext()) {
+      return parsed.toString()
+    }
     if (isLocalLikeHost(parsed.hostname)) {
       return '/api/ai'
     }

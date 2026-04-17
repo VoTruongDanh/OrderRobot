@@ -9,7 +9,6 @@ COPY services/core-backend/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
 COPY services/core-backend /app/services/core-backend
-COPY .env.example /app/.env.example
 
 WORKDIR /app/services/core-backend
 
