@@ -9,7 +9,10 @@ __pycache__/
 .agent/
 .agents/
 .cursor/
-.github/
+.github/*
+!.github/workflows/
+!.github/workflows/*.yml
+!.github/workflows/*.yaml
 .kiro/
 agent/
 mau/
