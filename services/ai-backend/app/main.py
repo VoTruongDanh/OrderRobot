@@ -6,6 +6,7 @@ import io
 from importlib import metadata as importlib_metadata
 import json
 import logging
+import os
 import re
 import subprocess
 import sys
@@ -125,9 +126,7 @@ def _write_env_updates(env_path: Path, updates: dict[str, str]) -> None:
 
 
 def _read_env_values(env_path: Path, keys: set[str]) -> dict[str, str]:
-    if not env_path.exists():
-        return {}
-    parsed = dotenv_values(env_path)
+    parsed = dotenv_values(env_path) if env_path.exists() else {}
     values: dict[str, str] = {}
     for raw_key, raw_value in parsed.items():
         key = str(raw_key or "").strip()
@@ -136,6 +135,18 @@ def _read_env_values(env_path: Path, keys: set[str]) -> dict[str, str]:
         if keys and key not in keys:
             continue
         values[key] = "" if raw_value is None else str(raw_value)
+
+    # In Docker deployments we often inject settings via environment variables
+    # (docker-compose) instead of a mounted .env file. Fill missing keys from
+    # process env to keep /config/env/load consistent across local + Docker.
+    key_candidates = keys or set(os.environ.keys())
+    for key in key_candidates:
+        if not key or not ENV_KEY_PATTERN.match(key):
+            continue
+        if key in values:
+            continue
+        if key in os.environ:
+            values[key] = str(os.environ.get(key) or "")
     return values
 
 
