@@ -26,7 +26,8 @@ WORKDIR /app
 
 COPY --from=build /app/apps/kiosk-ui/dist ./dist
 COPY --from=build /app/apps/kiosk-ui/package*.json ./
-RUN npm ci --omit=dev
+COPY --from=build /app/apps/kiosk-ui/vite.config.ts ./vite.config.ts
+RUN npm ci
 
 EXPOSE 3000
 CMD ["npx", "vite", "preview", "--host", "0.0.0.0", "--port", "3000"]

@@ -70,11 +70,11 @@ export default defineConfig(({ mode }) => {
   const coreFallbackPorts = ['18011', '18013', '18014', '18015', '18016']
   const aiFallbackPorts = ['18012', '18013', '18014', '18015', '18016']
   const viteHost = rootEnv.VITE_DEV_HOST || rootEnv.DEV_BIND_HOST || process.env.VITE_DEV_HOST || process.env.DEV_BIND_HOST
-  const allowedHosts = ['cnxvn.ddns.net']
+  const allowedHosts = ['frontend', 'orderrobot-ui', 'localhost', 'cnxvn.ddns.net']
 
   return {
     // Read env from monorepo root so Admin fallback uses the same .env as backends.
-    envDir: '../..',
+    envDir: '../..',      
     plugins: [react()],
     server: {
       host: resolveViteHost(viteHost),
