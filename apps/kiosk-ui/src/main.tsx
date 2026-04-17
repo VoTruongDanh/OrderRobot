@@ -6,6 +6,7 @@ import './index.css'
 import App from './App.tsx'
 import AdminPage from './AdminPage.tsx'
 import DebugPage from './DebugPage.tsx'
+import ApiDocsPage from './ApiDocsPage.tsx'
 import { getAllAdminEnvConfig } from './config'
 
 const ADMIN_AUTH_TOKEN_KEY = 'admin.auth.accessToken'
@@ -200,13 +201,20 @@ function AdminLoginGate() {
 
 const isAdminRoute = window.location.pathname === '/admin'
 const isDebugRoute = window.location.pathname === '/debug'
-const routeClass = isAdminRoute ? 'route-admin' : isDebugRoute ? 'route-debug' : 'route-kiosk'
+const isApiDocsRoute = window.location.pathname === '/api-docs'
+const routeClass = isAdminRoute
+  ? 'route-admin'
+  : isDebugRoute
+    ? 'route-debug'
+    : isApiDocsRoute
+      ? 'route-debug'
+      : 'route-kiosk'
 
 document.body.classList.remove('route-kiosk', 'route-admin', 'route-debug')
 document.body.classList.add(routeClass)
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    {isAdminRoute ? <AdminLoginGate /> : isDebugRoute ? <DebugPage /> : <App />}
+    {isAdminRoute ? <AdminLoginGate /> : isDebugRoute ? <DebugPage /> : isApiDocsRoute ? <ApiDocsPage /> : <App />}
   </StrictMode>,
 )

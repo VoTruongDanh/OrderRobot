@@ -3419,7 +3419,7 @@
             }
 
             #sliding-menu {
-                height: 66vh !important;
+                height: 70vh !important;
             }
         }
 
@@ -3458,6 +3458,10 @@
                 right: 10px;
                 top: 118px;
                 bottom: auto;
+            }
+
+            #sliding-menu {
+                height: 74vh !important;
             }
 
             .cart-mini-panel {
@@ -6246,6 +6250,8 @@
     }
     const runtimeStoreId = isAdminPreviewMode ? null : resolveRuntimeStoreId();
     const runtimeTableId = isAdminPreviewMode ? null : resolveRuntimeTableId();
+    let runtimeStoreDisplayName = '';
+    let runtimeTableDisplayName = Number.isFinite(runtimeTableId) && runtimeTableId > 0 ? `Bàn ${runtimeTableId}` : '';
     function hasResolvedStoreId() {
         return Number.isFinite(runtimeStoreId) && runtimeStoreId > 0;
     }
@@ -6256,13 +6262,13 @@
             chips.push({
                 icon: 'storefront',
                 label: 'Cửa hàng',
-                value: `#${runtimeStoreId}`,
+                value: runtimeStoreDisplayName || 'Đang đồng bộ',
             });
             if (Number.isFinite(runtimeTableId) && runtimeTableId > 0) {
                 chips.push({
                     icon: 'table_restaurant',
                     label: 'Bàn',
-                    value: `#${runtimeTableId}`,
+                    value: runtimeTableDisplayName || `Bàn ${runtimeTableId}`,
                 });
             } else {
                 chips.push({
@@ -13307,6 +13313,7 @@
             item_id: itemId,
             id: itemId,
             name,
+            store_name: String(raw.storeName || raw.store_name || '').trim(),
             category,
             description,
             price,
@@ -13437,11 +13444,13 @@
         if (!Array.isArray(items) || items.length === 0) {
             currentMenuItems = [];
             menuSizeOptionsCache.clear();
+            runtimeStoreDisplayName = '';
             if (menuShellBadge) {
                 menuShellBadge.textContent = '0 món';
             }
             if (menuItemsGrid) menuItemsGrid.innerHTML = '<p class="menu-status">Chưa có dữ liệu menu.</p>';
             if (menuCategoryRow) menuCategoryRow.innerHTML = '';
+            renderVoiceMiniContext();
             return;
         }
 
@@ -13450,10 +13459,14 @@
             ...item,
             _category: normalizeCategory(item),
         }));
+        runtimeStoreDisplayName = String(
+            currentMenuItems.find((item) => String(item?.store_name || '').trim())?.store_name || ''
+        ).trim();
         const availableCategories = new Set(currentMenuItems.map((item) => item._category));
         if (activeMenuCategory !== 'all' && !availableCategories.has(activeMenuCategory)) {
             activeMenuCategory = 'all';
         }
+        renderVoiceMiniContext();
         renderCategoryFilters();
         renderMenuCards();
     }
