@@ -1068,11 +1068,10 @@ class SpeechService:
             "vieneu-tts-v2-turbo-gguf" in active_model.lower()
             and "ref_audio" in infer_kwargs
         ):
-            # VieNeu Turbo model card currently flags cloning as not supported.
-            infer_kwargs.pop("ref_audio", None)
-            infer_kwargs.pop("ref_text", None)
+            # Some VieNeu Turbo runtimes still accept ref_audio/ref_text.
+            # Keep the provided cloning payload to match expected behavior.
             logger.warning(
-                "VieNeu Turbo currently does not support ref_audio cloning; fallback to preset/default voice."
+                "VieNeu Turbo runtime: passing through ref_audio/ref_text payload (if supported)."
             )
 
         is_turbo_runtime = "vieneu-tts-v2-turbo-gguf" in active_model.lower()

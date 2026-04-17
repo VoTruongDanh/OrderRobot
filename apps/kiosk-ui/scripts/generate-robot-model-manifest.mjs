@@ -202,6 +202,19 @@ const zipSummary = extractZipArchives()
 const conversionSummary = convertSourcesToGlb()
 const files = collectFilesByExtension(modelsDir, new Set(['.glb', '.gltf'])).sort((a, b) => a.localeCompare(b))
 
+let existingManifest = null
+let existingModels = null
+let existingGeneratedAt = null
+if (fs.existsSync(manifestPath)) {
+  try {
+    existingManifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
+    existingModels = existingManifest?.models
+    existingGeneratedAt = existingManifest?.generated_at
+  } catch {
+    // If parsing fails, fall back to generating a fresh manifest.
+  }
+}
+
 const models = files.map((fullPath) => {
   const ext = path.extname(fullPath).toLowerCase()
   const stem = path.basename(fullPath, ext)
@@ -214,10 +227,13 @@ const models = files.map((fullPath) => {
   }
 })
 
-const output = {
-  generated_at: new Date().toISOString(),
-  models,
-}
+// Keep `generated_at` stable when the model list hasn't changed, to avoid "dirty" diffs
+// during packaging/build pipelines.
+const newModelsJson = JSON.stringify(models)
+const modelsUnchanged = existingModels && JSON.stringify(existingModels) === newModelsJson
+const generatedAt = modelsUnchanged && existingGeneratedAt ? existingGeneratedAt : new Date().toISOString()
+
+const output = { generated_at: generatedAt, models }
 
 fs.writeFileSync(manifestPath, `${JSON.stringify(output, null, 2)}\n`, 'utf8')
 console.log(`robot-model manifest updated: ${manifestPath} (${models.length} model(s))`)

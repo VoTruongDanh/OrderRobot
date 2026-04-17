@@ -97,7 +97,9 @@ class Settings:
 
 
 def get_settings() -> Settings:
-    load_dotenv(ENV_CONFIG_PATH, override=True)
+    # Do not override values already set in the environment (e.g. by pytest monkeypatch).
+    # Use .env only as defaults.
+    load_dotenv(ENV_CONFIG_PATH, override=False)
 
     default_cpu_threads = max(1, min(os.cpu_count() or 4, 8))
     llm_mode = os.getenv("LLM_MODE", "disabled").strip().lower() or "disabled"

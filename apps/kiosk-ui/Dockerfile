@@ -20,9 +20,13 @@ ENV VITE_ORDERS_API_URL=${VITE_ORDERS_API_URL}
 
 RUN npm run build:ui
 
-FROM nginx:1.27-alpine
+FROM node:24-alpine
 
-COPY deploy/nginx/default.conf /etc/nginx/conf.d/default.conf
-COPY --from=build /app/apps/kiosk-ui/dist /usr/share/nginx/html
+WORKDIR /app
+RUN npm install -g serve
 
-EXPOSE 80
+COPY --from=build /app/apps/kiosk-ui/dist /app/dist
+
+EXPOSE 3000
+
+CMD ["serve", "-s", "/app/dist", "-l", "3000"]

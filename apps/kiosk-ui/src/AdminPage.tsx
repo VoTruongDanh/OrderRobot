@@ -1950,7 +1950,10 @@ export default function AdminPage({ onLogout }: AdminPageProps) {
               if (payload?.detail) {
                 detail = payload.detail
               }
-            } catch {}
+            } catch (parseErr) {
+              // Ignore malformed JSON; keep the default `detail`.
+              void parseErr
+            }
             throw new Error(detail)
           }
           installPayload = (await response.json()) as {

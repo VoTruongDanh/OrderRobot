@@ -134,7 +134,9 @@ def _parse_pos_store_profiles(raw_value: str) -> dict[int, PosStoreProfile]:
 
 
 def get_settings() -> Settings:
-    load_dotenv(ROOT_DIR / ".env", override=True)
+    # Do not override values already set in the environment (e.g. by pytest monkeypatch
+    # or by the process that launches the server). Use .env only as defaults.
+    load_dotenv(ROOT_DIR / ".env", override=False)
 
     menu_csv = Path(os.getenv("MENU_CSV_PATH", "data/menu.csv"))
     orders_csv = Path(os.getenv("ORDERS_CSV_PATH", "data/orders.csv"))

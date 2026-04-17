@@ -1,6 +1,6 @@
 services:
   core:
-    image: orderrobot-core:latest
+    image: orderrobot-core-backend:v1.2.0
     env_file:
       - .env.docker
     environment:
@@ -9,6 +9,8 @@ services:
       ORDERS_CSV_PATH: /app/data/orders.csv
     volumes:
       - ./data:/app/data
+    ports:
+      - "127.0.0.1:8011:8011"
     expose:
       - "8011"
     healthcheck:
@@ -18,7 +20,7 @@ services:
       retries: 5
 
   ai:
-    image: orderrobot-ai:latest
+    image: orderrobot-ai-backend:v1.2.0
     env_file:
       - .env.docker
     environment:
@@ -33,6 +35,8 @@ services:
     volumes:
       - ./data:/app/data
       - ./.env.docker:/app/.env.docker
+    ports:
+      - "127.0.0.1:8012:8012"
     expose:
       - "8012"
     depends_on:
@@ -45,9 +49,9 @@ services:
       retries: 6
 
   ui:
-    image: orderrobot-ui:latest
+    image: orderrobot-ui:v1.2.0
     ports:
-      - "8080:80"
+      - "3000:3000"
     depends_on:
       core:
         condition: service_healthy

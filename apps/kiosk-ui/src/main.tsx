@@ -55,7 +55,7 @@ function isNetworkLikeError(err: unknown): boolean {
   return /failed to fetch|networkerror|load failed|cors|network request failed/i.test(message)
 }
 
-function AdminLoginGate() {
+export function AdminLoginGate() {
   const [username, setUsername] = useState(() => localStorage.getItem(ADMIN_AUTH_USER_KEY) || '')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
