@@ -25,6 +25,13 @@ $corePort = if ($Port) {
 } else {
   '8011'
 }
+$bindHost = if ($env:DEV_BIND_HOST) {
+  [string]$env:DEV_BIND_HOST
+} elseif ($env:HOST) {
+  [string]$env:HOST
+} else {
+  '0.0.0.0'
+}
 $fallbackCorePort = '18011'
 $allowReuseExisting = $ReuseExisting.IsPresent -or ($env:CORE_DEV_REUSE_EXISTING -ne '0')
 
@@ -33,7 +40,7 @@ function Get-ListenerProcessInfo {
     [int]$Port
   )
 
-  $portPattern = "^\s*TCP\s+127\.0\.0\.1:$Port\s+\S+\s+LISTENING\s+(\d+)\s*$"
+  $portPattern = "^\s*TCP\s+(?:127\.0\.0\.1|0\.0\.0\.0|\[::\]|::):$Port\s+\S+\s+LISTENING\s+(\d+)\s*$"
   $matched = $null
   try {
     $matched = netstat -ano -p tcp | Select-String -Pattern $portPattern | Select-Object -First 1
@@ -217,7 +224,8 @@ if ($null -eq $resolvedCorePort) {
 }
 
 $corePort = $resolvedCorePort
-$baseUrl = "http://127.0.0.1:$corePort"
+$displayHost = if ($bindHost -eq '0.0.0.0') { '0.0.0.0' } else { $bindHost }
+$baseUrl = "http://${displayHost}:$corePort"
 if ($corePort -ne [string]$Port -and $Port) {
   Write-Host "[core] requested port $Port was not available; switched to $corePort"
 }
@@ -236,6 +244,7 @@ try {
   & python -m uvicorn app.main:app `
     --reload `
     --reload-dir $coreBackendDir `
+    --host $bindHost `
     --port $corePort `
     --app-dir $coreBackendDir
 } finally {

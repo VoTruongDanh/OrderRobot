@@ -25,6 +25,13 @@ $aiPort = if ($Port) {
 } else {
   '8012'
 }
+$bindHost = if ($env:DEV_BIND_HOST) {
+  [string]$env:DEV_BIND_HOST
+} elseif ($env:HOST) {
+  [string]$env:HOST
+} else {
+  '0.0.0.0'
+}
 $fallbackAiPort = '18012'
 $allowReuseExisting = $ReuseExisting.IsPresent -or ($env:AI_DEV_REUSE_EXISTING -eq '1')
 
@@ -50,7 +57,7 @@ function Get-ListenerProcessInfo {
   # NOTE:
   # Get-NetTCPConnection can hang on some Windows builds/environments.
   # Use netstat parsing for deterministic behavior during local dev boot.
-  $portPattern = "^\s*TCP\s+127\.0\.0\.1:$Port\s+\S+\s+LISTENING\s+(\d+)\s*$"
+  $portPattern = "^\s*TCP\s+(?:127\.0\.0\.1|0\.0\.0\.0|\[::\]|::):$Port\s+\S+\s+LISTENING\s+(\d+)\s*$"
   $matched = $null
   try {
     $matched = netstat -ano -p tcp | Select-String -Pattern $portPattern | Select-Object -First 1
@@ -237,12 +244,13 @@ if ($null -eq $resolvedPort) {
 }
 
 $aiPort = $resolvedPort
-$baseUrl = "http://127.0.0.1:$aiPort"
+$displayHost = if ($bindHost -eq '0.0.0.0') { '0.0.0.0' } else { $bindHost }
+$baseUrl = "http://${displayHost}:$aiPort"
 if ($aiPort -ne [string]$Port -and $Port) {
   Write-Host "[ai] requested port $Port was not available; switched to $aiPort"
 }
 
-Write-Host "[ai] starting ai-backend on http://127.0.0.1:$aiPort"
+Write-Host "[ai] starting ai-backend on $baseUrl"
 Write-Host "[ai] LLM_MODE=$env:LLM_MODE"
 Write-DevRuntimePort -Port $aiPort
 
@@ -257,6 +265,7 @@ try {
   & python -m uvicorn app.main:app `
     --reload `
     --reload-dir $aiBackendDir `
+    --host $bindHost `
     --port $aiPort `
     --app-dir $aiBackendDir
 } finally {

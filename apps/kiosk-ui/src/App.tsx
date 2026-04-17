@@ -147,12 +147,12 @@ function App() {
     return (
       <main className="sample-shell sample-shell--empty">
         <section className="store-gate-card" role="status" aria-live="polite">
-          <p className="store-gate-card__eyebrow">Store Routing Required</p>
-          <h1>Chưa xác định được cửa hàng của bạn</h1>
-          <p>
-            Kiosk chỉ khởi động khi URL có mã cửa hàng, ví dụ <code>?storeid=9</code> hoặc{' '}
-            <code>/storeid=9</code>.
-          </p>
+          <div className="store-gate-card__icon" aria-hidden="true">
+            <span>!</span>
+          </div>
+          <p className="store-gate-card__eyebrow">Kiosk Error</p>
+          <h1>Thiếu thông tin cửa hàng</h1>
+          <p className="store-gate-card__lead">Không thể khởi động kiosk lúc này.</p>
         </section>
       </main>
     )

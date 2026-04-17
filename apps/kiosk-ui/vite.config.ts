@@ -2,11 +2,18 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 
 function toLoopbackUrl(port: string): string {
   return `http://127.0.0.1:${port}`
+}
+
+function resolveViteHost(value: string | undefined): true | string {
+  const raw = String(value || '').trim().toLowerCase()
+  if (!raw) return '127.0.0.1'
+  if (raw === 'true' || raw === 'all' || raw === '0.0.0.0') return true
+  return String(value || '').trim()
 }
 
 const viteConfigDir = path.dirname(fileURLToPath(import.meta.url))
@@ -56,17 +63,20 @@ function toProxyTarget(portFile: string, configuredPort: string, fallbackPorts: 
 }
 
 // https://vite.dev/config/
-export default defineConfig(() => {
-  const configuredCorePort = String(process.env.CORE_BACKEND_PORT || '8011').trim() || '8011'
-  const configuredAiPort = String(process.env.AI_BACKEND_PORT || '8012').trim() || '8012'
+export default defineConfig(({ mode }) => {
+  const rootEnv = loadEnv(mode, path.resolve(viteConfigDir, '../..'), '')
+  const configuredCorePort = String(rootEnv.CORE_BACKEND_PORT || process.env.CORE_BACKEND_PORT || '8011').trim() || '8011'
+  const configuredAiPort = String(rootEnv.AI_BACKEND_PORT || process.env.AI_BACKEND_PORT || '8012').trim() || '8012'
   const coreFallbackPorts = ['18011', '18013', '18014', '18015', '18016']
   const aiFallbackPorts = ['18012', '18013', '18014', '18015', '18016']
+  const viteHost = rootEnv.VITE_DEV_HOST || rootEnv.DEV_BIND_HOST || process.env.VITE_DEV_HOST || process.env.DEV_BIND_HOST
 
   return {
     // Read env from monorepo root so Admin fallback uses the same .env as backends.
     envDir: '../..',
     plugins: [react()],
     server: {
+      host: resolveViteHost(viteHost),
       proxy: {
         '/api/core': {
           target: toProxyTarget(corePortFile, configuredCorePort, coreFallbackPorts),

@@ -67,8 +67,8 @@ body.route-debug #root {
 .store-gate-card {
   position: relative;
   isolation: isolate;
-  width: min(620px, 100%);
-  padding: clamp(24px, 5vw, 40px);
+  width: min(460px, 100%);
+  padding: clamp(22px, 4vw, 32px);
   border-radius: 32px;
   background:
     linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(240, 247, 255, 0.92)),
@@ -79,6 +79,8 @@ body.route-debug #root {
     inset 0 1px 0 rgba(255, 255, 255, 0.74);
   color: #17324d;
   overflow: hidden;
+  display: grid;
+  gap: 12px;
 }
 
 .store-gate-card::before {
@@ -90,36 +92,40 @@ body.route-debug #root {
   z-index: -1;
 }
 
+.store-gate-card__icon {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.12), rgba(37, 99, 235, 0.1));
+  border: 1px solid rgba(120, 154, 187, 0.2);
+  color: #21446e;
+  font-size: 1.4rem;
+  font-weight: 800;
+}
+
 .store-gate-card__eyebrow {
-  margin: 0 0 14px;
-  font-size: 12px;
+  margin: 0;
+  font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: #2f7192;
+  color: #587792;
 }
 
 .store-gate-card h1 {
-  margin: 0 0 12px;
-  font-size: clamp(30px, 5vw, 44px);
-  line-height: 1.05;
-  letter-spacing: -0.03em;
+  margin: 0;
+  font-size: clamp(28px, 4.5vw, 38px);
+  line-height: 1.08;
+  letter-spacing: -0.025em;
 }
 
-.store-gate-card p {
+.store-gate-card__lead {
   margin: 0;
   font-size: clamp(15px, 2vw, 17px);
-  line-height: 1.72;
+  line-height: 1.5;
   color: #4a6278;
-  max-width: 48ch;
-}
-
-.store-gate-card code {
-  padding: 4px 10px;
-  border-radius: 999px;
-  background: rgba(16, 94, 135, 0.08);
-  color: #0f5e87;
-  font-weight: 700;
 }
 
 @media (max-width: 640px) {

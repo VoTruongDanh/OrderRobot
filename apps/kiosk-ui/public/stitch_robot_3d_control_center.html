@@ -1809,22 +1809,27 @@
         .bank-picker-card {
             display: grid;
             gap: 14px;
+            min-width: 0;
         }
         .bank-picker-head {
             display: flex;
             align-items: center;
             justify-content: space-between;
             gap: 12px;
+            min-width: 0;
         }
         .bank-picker-copy {
             display: grid;
             gap: 4px;
+            min-width: 0;
+            flex: 1 1 auto;
         }
         .bank-picker-title {
             margin: 0;
             font-size: 1.02rem;
             font-weight: 800;
             color: #0f172a;
+            line-height: 1.2;
         }
         .bank-picker-sub {
             margin: 0;
@@ -1833,6 +1838,7 @@
             color: #5b6b80;
         }
         .bank-picker-close {
+            flex: 0 0 auto;
             min-height: 40px;
             padding: 0 14px;
             border-radius: 999px;
@@ -1843,12 +1849,44 @@
             font-weight: 800;
             cursor: pointer;
         }
+        .bank-picker-search-shell {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-height: 46px;
+            padding: 0 14px;
+            border-radius: 18px;
+            border: 1px solid rgba(191, 204, 230, 0.72);
+            background: rgba(255, 255, 255, 0.98);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.42);
+        }
+        .bank-picker-search-icon {
+            flex: 0 0 auto;
+            font-size: 1.02rem;
+            color: #68829f;
+        }
+        .bank-picker-search-input {
+            width: 100%;
+            min-width: 0;
+            border: none;
+            outline: none;
+            background: transparent;
+            padding: 0;
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: #123152;
+        }
+        .bank-picker-search-input::placeholder {
+            color: #8aa0b9;
+            font-weight: 500;
+        }
         .bank-picker-list {
             display: grid;
             gap: 10px;
-            max-height: min(46vh, 360px);
+            max-height: min(44vh, 340px);
             overflow: auto;
             padding-right: 2px;
+            min-width: 0;
         }
         .bank-picker-app {
             display: grid;
@@ -3988,6 +4026,12 @@
             .order-popup-qr-actions {
                 justify-content: center;
             }
+            .bank-picker-head {
+                align-items: flex-start;
+            }
+            .bank-picker-search-shell {
+                min-height: 44px;
+            }
             .bank-picker-app {
                 grid-template-columns: 42px minmax(0, 1fr);
             }
@@ -4014,6 +4058,37 @@
             .voice-mini-panel {
                 right: 116px;
                 max-height: 126px;
+            }
+
+            .bank-picker-head {
+                flex-wrap: wrap;
+            }
+
+            .bank-picker-close {
+                min-height: 38px;
+                padding: 0 12px;
+            }
+
+            .bank-picker-title {
+                font-size: 0.95rem;
+            }
+
+            .bank-picker-sub {
+                font-size: 0.76rem;
+            }
+
+            .bank-picker-search-shell {
+                min-height: 42px;
+                padding: 0 12px;
+                border-radius: 16px;
+            }
+
+            .bank-picker-search-input {
+                font-size: 0.86rem;
+            }
+
+            .bank-picker-list {
+                max-height: min(40vh, 300px);
             }
 
             .voice-mini-title {
@@ -5853,6 +5928,10 @@
 </div>
 <button class="bank-picker-close" id="bank-picker-close-btn" type="button">Quay lại</button>
 </div>
+<label class="bank-picker-search-shell" for="bank-picker-search-input">
+<span class="material-symbols-outlined bank-picker-search-icon" aria-hidden="true">search</span>
+<input class="bank-picker-search-input" id="bank-picker-search-input" type="text" placeholder="Tìm ngân hàng hoặc app..." autocomplete="off"/>
+</label>
 <div class="bank-picker-list" id="bank-picker-list">
 <p class="bank-picker-loading">Đang tải danh sách ngân hàng hỗ trợ deeplink...</p>
 </div>
@@ -6041,6 +6120,7 @@
     const orderPopupCopyCodeBtn = document.getElementById('order-popup-copy-code-btn');
     const orderPopupCountdown = document.getElementById('order-popup-countdown');
     const bankPickerCard = document.getElementById('bank-picker-card');
+    const bankPickerSearchInput = document.getElementById('bank-picker-search-input');
     const bankPickerList = document.getElementById('bank-picker-list');
     const bankPickerCloseBtn = document.getElementById('bank-picker-close-btn');
     const bankPickerSub = document.getElementById('bank-picker-sub');
@@ -6307,6 +6387,7 @@
     let activeOrderPaymentLaunchUrl = '';
     let activeOrderPaymentLaunchLabel = '';
     let bankPickerAppsCache = null;
+    let bankPickerQuery = '';
     let activeSizePickerResolver = null;
     let activeOrderFlowToken = 0;
     const handledOrderIds = [];
@@ -8096,14 +8177,31 @@
         return bankPickerAppsCache;
     }
 
+    function getFilteredBankPickerApps(apps, query = '') {
+        const normalized = String(query || '').trim().toLowerCase();
+        if (!normalized) {
+            return Array.isArray(apps) ? apps : [];
+        }
+        return (Array.isArray(apps) ? apps : []).filter((app) => {
+            const haystacks = [
+                app?.appName,
+                app?.bankName,
+                app?.appId,
+            ];
+            return haystacks.some((value) => String(value || '').toLowerCase().includes(normalized));
+        });
+    }
+
     function renderBankPickerList(apps) {
         if (!bankPickerList) return;
         if (!Array.isArray(apps) || apps.length === 0) {
-            bankPickerList.innerHTML = '<p class="bank-picker-empty">Không tải được danh sách ngân hàng hỗ trợ deeplink.</p>';
+            bankPickerList.innerHTML = bankPickerQuery
+                ? '<p class="bank-picker-empty">Không tìm thấy ngân hàng hoặc app nào khớp từ khóa.</p>'
+                : '<p class="bank-picker-empty">Không tải được danh sách ngân hàng hỗ trợ deeplink.</p>';
             return;
         }
         const launchBase = String(activeOrderPaymentLaunchUrl || '').trim();
-        bankPickerList.innerHTML = apps.slice(0, 18).map((app) => {
+        bankPickerList.innerHTML = apps.slice(0, 24).map((app) => {
             const launchUrl = new URL(launchBase, window.location.href);
             launchUrl.searchParams.set('app', app.appId);
             const tagClass = app.autofill ? '' : ' bank-picker-app-tag--basic';
@@ -8128,6 +8226,10 @@
         });
     }
 
+    function refreshBankPickerList() {
+        renderBankPickerList(getFilteredBankPickerApps(bankPickerAppsCache, bankPickerQuery));
+    }
+
     async function showBankPickerModal() {
         if (!bankPickerCard) {
             openPaymentLaunchTarget();
@@ -8147,15 +8249,22 @@
             ratingPopupCard.hidden = true;
         }
         bankPickerCard.hidden = false;
+        bankPickerQuery = '';
+        if (bankPickerSearchInput) {
+            bankPickerSearchInput.value = '';
+        }
         if (bankPickerList) {
             bankPickerList.innerHTML = '<p class="bank-picker-loading">Đang tải danh sách ngân hàng hỗ trợ deeplink...</p>';
         }
         if (bankPickerSub) {
-            bankPickerSub.textContent = 'Chọn app ngân hàng. App có nhãn Autofill sẽ điền sẵn tốt hơn khi được hỗ trợ.';
+            bankPickerSub.textContent = 'Tìm app hoặc tên ngân hàng. Nhãn Autofill sẽ tự điền tốt hơn khi app hỗ trợ.';
         }
         try {
             const apps = await loadBankDeeplinkApps();
-            renderBankPickerList(apps);
+            refreshBankPickerList();
+            if (bankPickerSearchInput && window.innerWidth <= 720) {
+                setTimeout(() => bankPickerSearchInput.focus({ preventScroll: true }), 40);
+            }
         } catch (error) {
             if (bankPickerList) {
                 bankPickerList.innerHTML = `<p class="bank-picker-empty">Không tải được danh sách ngân hàng: ${toSafeText(String(error?.message || 'network-error'))}</p>`;
@@ -8166,6 +8275,10 @@
     function closeBankPickerModal() {
         if (!bankPickerCard) return;
         bankPickerCard.hidden = true;
+        bankPickerQuery = '';
+        if (bankPickerSearchInput) {
+            bankPickerSearchInput.value = '';
+        }
         if (orderPopupCard) {
             orderPopupCard.hidden = false;
         }
@@ -13524,6 +13637,12 @@
     if (bankPickerCloseBtn) {
         bankPickerCloseBtn.addEventListener('click', () => {
             closeBankPickerModal();
+        });
+    }
+    if (bankPickerSearchInput) {
+        bankPickerSearchInput.addEventListener('input', () => {
+            bankPickerQuery = String(bankPickerSearchInput.value || '').trim();
+            refreshBankPickerList();
         });
     }
     if (cartMiniCheckoutBtn) {
