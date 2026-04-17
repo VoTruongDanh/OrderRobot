@@ -6189,7 +6189,12 @@
     const DEFAULT_TTS_STREAM_PLAYBACK_RATE = 1.15;
     const DEFAULT_TAX_PERCENT = 10;
     const isLocalDevPort = (port) => ['5173', '4173', '3000'].includes(String(port || ''));
-    const CORE_RUNTIME_FALLBACK_URL = isLocalDevPort(window.location.port) ? 'http://127.0.0.1:8011' : '/api/core';
+    const isLocalLikeHost = (hostname) => {
+        const host = String(hostname || '').trim().toLowerCase();
+        return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+    };
+    const isLocalDevBrowserContext = () => isLocalDevPort(window.location.port) && isLocalLikeHost(window.location.hostname);
+    const CORE_RUNTIME_FALLBACK_URL = isLocalDevBrowserContext() ? 'http://127.0.0.1:8011' : '/api/core';
     const AI_RUNTIME_FALLBACK_URL = '/api/ai';
     const AI_RUNTIME_PROBE_TIMEOUT_MS = 1600;
     const isAdminPreviewMode = new URLSearchParams(window.location.search).get('adminPreview') === '1';
@@ -7083,7 +7088,20 @@
             .replace('://127.0.0.1:8001', '://127.0.0.1:8011')
             .replace('://localhost:8001', '://localhost:8011')
             .replace(/\/$/, '');
-        return configured || CORE_RUNTIME_FALLBACK_URL;
+        if (!configured) return CORE_RUNTIME_FALLBACK_URL;
+        if (configured.startsWith('/')) return configured;
+        try {
+            const parsed = new URL(configured, window.location.href);
+            if (!isLocalDevBrowserContext()) {
+                const p = String(parsed.port || '');
+                if (isLocalLikeHost(parsed.hostname) && (p === '8011' || p === '18011')) {
+                    return CORE_RUNTIME_FALLBACK_URL;
+                }
+            }
+            return parsed.toString().replace(/\/$/, '');
+        } catch {
+            return configured || CORE_RUNTIME_FALLBACK_URL;
+        }
     }
 
     function toSafeInt(value, min, max) {
@@ -13300,13 +13318,9 @@
     function readMenuApiCandidates() {
         const coreMenuUrl = `${String(CORE_RUNTIME_FALLBACK_URL || '').replace(/\/$/, '')}/menu`;
         const defaults = ['/api/core/menu', coreMenuUrl];
-        const isLocalLikeHost = (hostname) => {
-            const host = String(hostname || '').trim().toLowerCase();
-            return host === 'localhost' || host === '127.0.0.1' || host === '::1';
-        };
         const rewriteLocalCoreToProxy = (value) => {
             const raw = String(value || '').trim();
-            if (!raw || isLocalDevPort(window.location.port)) return raw;
+            if (!raw || isLocalDevBrowserContext()) return raw;
             if (raw.startsWith('/')) return raw;
             try {
                 const parsed = new URL(raw, window.location.href);
@@ -13325,7 +13339,7 @@
                 const parsed = new URL(raw, window.location.href);
                 const p = String(parsed.port || '');
                 if (
-                    !isLocalDevPort(window.location.port)
+                    !isLocalDevBrowserContext()
                     && isLocalLikeHost(parsed.hostname)
                     && (p === '8011' || p === '18011')
                     && String(parsed.pathname || '').startsWith('/menu')
@@ -13334,7 +13348,7 @@
                 }
                 if (
                     parsed.origin === window.location.origin
-                    || (isLocalLikeHost(parsed.hostname) && isLocalDevPort(window.location.port))
+                    || (isLocalLikeHost(parsed.hostname) && isLocalDevBrowserContext())
                 ) {
                     return parsed.toString();
                 }

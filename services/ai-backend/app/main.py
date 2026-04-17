@@ -21,6 +21,7 @@ from fastapi.responses import Response, StreamingResponse
 from dotenv import dotenv_values
 
 from app.config import ENV_CONFIG_PATH, get_settings
+from app.config import ROOT_DIR
 from app.models import (
     BridgeDebugChatRequest,
     BridgeDebugChatResponse,
@@ -31,6 +32,8 @@ from app.models import (
     EnvSyncRequest,
     EnvSyncResponse,
     FeedbackRequest,
+    SharedAdminStateResponse,
+    SharedAdminStateSyncRequest,
     SessionStartRequest,
     SpeechSynthesisRequest,
     SpeechTranscriptionResponse,
@@ -55,6 +58,7 @@ VIENEU_INSTALL_TIMEOUT_SECONDS = 900
 bridge_keepalive_task: asyncio.Task[None] | None = None
 ENV_KEY_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 ENV_ASSIGNMENT_PATTERN = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=")
+SHARED_ADMIN_STATE_PATH = ROOT_DIR / "data" / "shared-admin-state.json"
 
 app = FastAPI(title="Order Robot AI Backend", version="1.0.0")
 
@@ -133,6 +137,28 @@ def _read_env_values(env_path: Path, keys: set[str]) -> dict[str, str]:
             continue
         values[key] = "" if raw_value is None else str(raw_value)
     return values
+
+
+def _read_shared_admin_state(state_path: Path) -> dict[str, object]:
+    if not state_path.exists():
+        return {}
+    try:
+        raw = state_path.read_text(encoding="utf-8").strip()
+        if not raw:
+            return {}
+        payload = json.loads(raw)
+        return payload if isinstance(payload, dict) else {}
+    except Exception:
+        return {}
+
+
+def _write_shared_admin_state(state_path: Path, updates: dict[str, object]) -> dict[str, object]:
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    current = _read_shared_admin_state(state_path)
+    next_state = dict(current)
+    next_state.update(updates)
+    state_path.write_text(json.dumps(next_state, ensure_ascii=False, indent=2), encoding="utf-8")
+    return next_state
 
 
 @app.on_event("startup")
@@ -518,6 +544,41 @@ async def load_env_config(payload: EnvLoadRequest) -> EnvLoadResponse:
         env_path=str(env_path),
         fields=loaded,
         loaded_keys=len(loaded),
+    )
+
+
+@app.post("/config/admin-state/load", response_model=SharedAdminStateResponse)
+async def load_shared_admin_state() -> SharedAdminStateResponse:
+    state_path = SHARED_ADMIN_STATE_PATH
+    fields = await asyncio.to_thread(_read_shared_admin_state, state_path)
+    return SharedAdminStateResponse(
+        status="ok",
+        state_path=str(state_path),
+        fields=fields,
+    )
+
+
+@app.post("/config/admin-state/sync", response_model=SharedAdminStateResponse)
+async def sync_shared_admin_state(payload: SharedAdminStateSyncRequest) -> SharedAdminStateResponse:
+    updates: dict[str, object] = {}
+    if payload.robot_scale_percent is not None:
+        updates["robot_scale_percent"] = max(60, min(170, int(payload.robot_scale_percent)))
+    if payload.camera_preview_visible is not None:
+        updates["camera_preview_visible"] = bool(payload.camera_preview_visible)
+    if payload.mic_noise_filter_strength is not None:
+        updates["mic_noise_filter_strength"] = max(0, min(100, int(payload.mic_noise_filter_strength)))
+    if payload.robot_studio_config is not None:
+        updates["robot_studio_config"] = payload.robot_studio_config
+
+    if not updates:
+        raise HTTPException(status_code=400, detail="No shared admin fields provided.")
+
+    state_path = SHARED_ADMIN_STATE_PATH
+    fields = await asyncio.to_thread(_write_shared_admin_state, state_path, updates)
+    return SharedAdminStateResponse(
+        status="ok",
+        state_path=str(state_path),
+        fields=fields,
     )
 
 

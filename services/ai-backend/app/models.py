@@ -164,6 +164,20 @@ class EnvLoadResponse(BaseModel):
     loaded_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
+class SharedAdminStateSyncRequest(BaseModel):
+    robot_scale_percent: int | None = None
+    camera_preview_visible: bool | None = None
+    mic_noise_filter_strength: int | None = None
+    robot_studio_config: dict[str, object] | None = None
+
+
+class SharedAdminStateResponse(BaseModel):
+    status: Literal["ok"]
+    state_path: str
+    fields: dict[str, object] = Field(default_factory=dict)
+    loaded_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
 class SpeechSynthesisRequest(BaseModel):
     text: str = Field(min_length=1, max_length=1200)
     voice: str | None = None

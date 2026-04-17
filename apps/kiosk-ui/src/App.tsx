@@ -4,6 +4,8 @@ import {
   ADMIN_ROBOT_STUDIO_COMMAND_KEY,
   getAllAdminEnvConfig,
   getCameraPreviewVisible,
+  hydrateAdminEnvConfigFromServer,
+  hydrateSharedAdminStateFromServer,
   getMicNoiseFilterStrength,
   getRobotScalePercent,
   getRobotStudioConfig,
@@ -74,6 +76,30 @@ function App() {
     }
     return `/stitch_robot_3d_control_center.html?${params.toString()}`
   })()
+
+  useEffect(() => {
+    void hydrateAdminEnvConfigFromServer()
+    void hydrateSharedAdminStateFromServer()
+    const intervalId = window.setInterval(() => {
+      void hydrateAdminEnvConfigFromServer()
+      void hydrateSharedAdminStateFromServer()
+    }, 3000)
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        void hydrateAdminEnvConfigFromServer()
+        void hydrateSharedAdminStateFromServer()
+      }
+    }
+
+    window.addEventListener('focus', handleVisibility)
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => {
+      window.clearInterval(intervalId)
+      window.removeEventListener('focus', handleVisibility)
+      document.removeEventListener('visibilitychange', handleVisibility)
+    }
+  }, [])
 
   useEffect(() => {
     const syncAdminConfigToIframe = () => {

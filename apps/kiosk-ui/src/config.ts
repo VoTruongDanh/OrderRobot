@@ -10,6 +10,16 @@ function isLocalDevPort(port: string): boolean {
   return port === '5173' || port === '4173' || port === '3000'
 }
 
+function isLocalLikeHost(hostname: string): boolean {
+  const host = String(hostname || '').trim().toLowerCase()
+  return host === 'localhost' || host === '127.0.0.1' || host === '::1'
+}
+
+function isLocalDevBrowserContext(): boolean {
+  if (typeof window === 'undefined') return false
+  return isLocalDevPort(String(window.location.port || '')) && isLocalLikeHost(window.location.hostname)
+}
+
 function parsePositiveStoreId(value: string | null | undefined): string {
   const normalized = String(value || '').trim()
   if (!/^\d+$/.test(normalized)) return ''
@@ -19,9 +29,34 @@ function parsePositiveStoreId(value: string | null | undefined): string {
 
 function getDefaultCoreApiFallback(): string {
   if (typeof window !== 'undefined') {
-    return isLocalDevPort(String(window.location.port || '')) ? 'http://127.0.0.1:8011' : '/api/core'
+    return isLocalDevBrowserContext() ? 'http://127.0.0.1:8011' : '/api/core'
   }
   return '/api/core'
+}
+
+function resolveBrowserSafeCoreApiUrl(coreApiUrl: string): string {
+  const rawCoreApi = String(coreApiUrl || '').trim()
+  if (!rawCoreApi) {
+    return getDefaultCoreApiFallback()
+  }
+  if (rawCoreApi.startsWith('/')) {
+    return rawCoreApi
+  }
+  try {
+    const href = typeof window !== 'undefined' ? window.location.href : 'http://localhost/'
+    const parsed = new URL(rawCoreApi, href)
+    const normalized = parsed.toString().replace(/\/$/, '')
+    if (isLocalDevBrowserContext()) {
+      return normalized
+    }
+    const port = String(parsed.port || '')
+    if (isLocalLikeHost(parsed.hostname) && (port === '8011' || port === '18011')) {
+      return '/api/core'
+    }
+    return normalized
+  } catch {
+    return rawCoreApi
+  }
 }
 
 function getDefaultAiApiFallback(): string {
@@ -37,6 +72,17 @@ const ADMIN_ROBOT_SCALE_PERCENT_KEY = 'admin.robot.scalePercent'
 const ADMIN_CAMERA_PREVIEW_VISIBLE_KEY = 'admin.camera.previewVisible'
 export const ADMIN_ROBOT_STUDIO_CONFIG_KEY = 'admin.robot.studio.v1'
 export const ADMIN_ROBOT_STUDIO_COMMAND_KEY = 'admin.robot.studio.command.v1'
+const ADMIN_SHARED_STATE_SYNC_DELAY_MS = 250
+
+type SharedAdminStatePayload = {
+  robot_scale_percent?: number
+  camera_preview_visible?: boolean
+  mic_noise_filter_strength?: number
+  robot_studio_config?: RobotStudioConfigV1
+}
+
+let sharedAdminStateSyncTimer: number | null = null
+let adminEnvHydrationInFlight: Promise<boolean> | null = null
 
 const ROBOT_STUDIO_ASSET_DB_NAME = 'orderrobot-robot-studio-assets'
 const ROBOT_STUDIO_ASSET_STORE_NAME = 'assets'
@@ -608,6 +654,34 @@ export function saveAdminEnvConfig(nextConfig: Record<string, string>): void {
   emitAdminConfigUpdated({ config: normalized })
 }
 
+export async function hydrateAdminEnvConfigFromServer(): Promise<boolean> {
+  if (adminEnvHydrationInFlight) {
+    return adminEnvHydrationInFlight
+  }
+  adminEnvHydrationInFlight = (async () => {
+    try {
+      const response = await fetch(`${getAdminSharedStateApiBase()}/config/env/load`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keys: [] }),
+      })
+      if (!response.ok) return false
+      const payload = (await response.json()) as { fields?: Record<string, string> }
+      const fields = payload?.fields
+      if (!fields || typeof fields !== 'object' || Object.keys(fields).length === 0) {
+        return false
+      }
+      saveAdminEnvConfig(fields)
+      return true
+    } catch {
+      return false
+    } finally {
+      adminEnvHydrationInFlight = null
+    }
+  })()
+  return adminEnvHydrationInFlight
+}
+
 export function subscribeAdminConfigChanges(onChange: () => void): () => void {
   const handleCustomEvent = () => onChange()
   const handleStorage = (event: StorageEvent) => {
@@ -659,12 +733,128 @@ export function getAdminConfigUpdatedAt(): number | null {
 }
 
 export function getCoreApiUrl(): string {
-  return getEnvConfig('VITE_CORE_API_URL', getDefaultCoreApiFallback())
+  return resolveBrowserSafeCoreApiUrl(getEnvConfig('VITE_CORE_API_URL', getDefaultCoreApiFallback()))
 }
 
 export function getAiApiUrl(): string {
   const configured = getEnvConfig('VITE_AI_API_URL', getDefaultAiApiFallback())
   return resolveBrowserSafeAiApiUrl(configured)
+}
+
+function getAdminSharedStateApiBase(): string {
+  return String(getAiApiUrl() || '/api/ai').replace(/\/+$/, '')
+}
+
+function buildSharedAdminStatePayload(): SharedAdminStatePayload {
+  return {
+    robot_scale_percent: getRobotScalePercent(),
+    camera_preview_visible: getCameraPreviewVisible(),
+    mic_noise_filter_strength: getMicNoiseFilterStrength(),
+    robot_studio_config: getRobotStudioConfig(),
+  }
+}
+
+async function persistSharedAdminStateNow(): Promise<void> {
+  const apiBase = getAdminSharedStateApiBase()
+  await fetch(`${apiBase}/config/admin-state/sync`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(buildSharedAdminStatePayload()),
+  })
+}
+
+function scheduleSharedAdminStateSync(): void {
+  if (typeof window === 'undefined') return
+  if (sharedAdminStateSyncTimer !== null) {
+    window.clearTimeout(sharedAdminStateSyncTimer)
+  }
+  sharedAdminStateSyncTimer = window.setTimeout(() => {
+    sharedAdminStateSyncTimer = null
+    void persistSharedAdminStateNow().catch(() => {
+      // Shared sync is best-effort; local storage remains the immediate source on the current device.
+    })
+  }, ADMIN_SHARED_STATE_SYNC_DELAY_MS)
+}
+
+export async function hydrateSharedAdminStateFromServer(): Promise<boolean> {
+  const apiBase = getAdminSharedStateApiBase()
+  let payload: { fields?: SharedAdminStatePayload } | null = null
+  try {
+    const response = await fetch(`${apiBase}/config/admin-state/load`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    })
+    if (!response.ok) {
+      return false
+    }
+    payload = (await response.json()) as { fields?: SharedAdminStatePayload }
+  } catch {
+    return false
+  }
+
+  const fields = payload?.fields
+  if (!fields || typeof fields !== 'object') {
+    return false
+  }
+
+  if (Object.keys(fields).length === 0) {
+    const hasExplicitLocalSharedState =
+      localStorage.getItem(ADMIN_ROBOT_SCALE_PERCENT_KEY) !== null ||
+      localStorage.getItem(ADMIN_CAMERA_PREVIEW_VISIBLE_KEY) !== null ||
+      localStorage.getItem(ADMIN_MIC_NOISE_FILTER_STRENGTH_KEY) !== null ||
+      localStorage.getItem(ADMIN_ROBOT_STUDIO_CONFIG_KEY) !== null
+    if (hasExplicitLocalSharedState) {
+      try {
+        await persistSharedAdminStateNow()
+        return true
+      } catch {
+        return false
+      }
+    }
+    return false
+  }
+
+  let changed = false
+
+  if (typeof fields.robot_scale_percent === 'number') {
+    const nextScale = clampRobotScalePercent(fields.robot_scale_percent)
+    if (String(nextScale) !== String(localStorage.getItem(ADMIN_ROBOT_SCALE_PERCENT_KEY) ?? '')) {
+      localStorage.setItem(ADMIN_ROBOT_SCALE_PERCENT_KEY, String(nextScale))
+      changed = true
+    }
+  }
+
+  if (typeof fields.camera_preview_visible === 'boolean') {
+    const nextVisible = String(Boolean(fields.camera_preview_visible))
+    if (nextVisible !== String(localStorage.getItem(ADMIN_CAMERA_PREVIEW_VISIBLE_KEY) ?? '')) {
+      localStorage.setItem(ADMIN_CAMERA_PREVIEW_VISIBLE_KEY, nextVisible)
+      changed = true
+    }
+  }
+
+  if (typeof fields.mic_noise_filter_strength === 'number') {
+    const nextStrength = clampMicStrength(fields.mic_noise_filter_strength)
+    if (String(nextStrength) !== String(localStorage.getItem(ADMIN_MIC_NOISE_FILTER_STRENGTH_KEY) ?? '')) {
+      localStorage.setItem(ADMIN_MIC_NOISE_FILTER_STRENGTH_KEY, String(nextStrength))
+      localStorage.setItem(ADMIN_MIC_NOISE_FILTER_KEY, getMicNoiseFilterLevelFromStrength(nextStrength))
+      changed = true
+    }
+  }
+
+  if (fields.robot_studio_config && typeof fields.robot_studio_config === 'object') {
+    const nextConfig = normalizeRobotStudioConfig(fields.robot_studio_config)
+    const nextRaw = JSON.stringify(nextConfig)
+    if (nextRaw !== String(localStorage.getItem(ADMIN_ROBOT_STUDIO_CONFIG_KEY) || '')) {
+      localStorage.setItem(ADMIN_ROBOT_STUDIO_CONFIG_KEY, nextRaw)
+      changed = true
+    }
+  }
+
+  if (changed) {
+    emitAdminConfigUpdated({ source: 'shared-admin-state' })
+  }
+  return changed
 }
 
 export function getCurrentStoreId(): string {
@@ -736,11 +926,6 @@ export function appendStoreContextToUrl(rawUrl: string): string {
   } catch {
     return safeUrl
   }
-}
-
-function isLocalLikeHost(hostname: string): boolean {
-  const host = String(hostname || '').trim().toLowerCase()
-  return host === 'localhost' || host === '127.0.0.1' || host === '::1'
 }
 
 export function resolveBrowserSafeAiApiUrl(aiApiUrl: string): string {
@@ -839,6 +1024,7 @@ export function setMicNoiseFilterLevel(level: MicNoiseFilterLevel): void {
   const mappedStrength = level === 'off' ? 0 : level === 'strong' ? 100 : 60
   localStorage.setItem(ADMIN_MIC_NOISE_FILTER_STRENGTH_KEY, String(mappedStrength))
   emitAdminConfigUpdated({ micNoiseFilterStrength: mappedStrength })
+  scheduleSharedAdminStateSync()
 }
 
 export function setMicNoiseFilterStrength(strength: number): void {
@@ -846,6 +1032,7 @@ export function setMicNoiseFilterStrength(strength: number): void {
   localStorage.setItem(ADMIN_MIC_NOISE_FILTER_STRENGTH_KEY, String(safeStrength))
   localStorage.setItem(ADMIN_MIC_NOISE_FILTER_KEY, getMicNoiseFilterLevelFromStrength(safeStrength))
   emitAdminConfigUpdated({ micNoiseFilterStrength: safeStrength })
+  scheduleSharedAdminStateSync()
 }
 
 export function getRobotScalePercent(): number {
@@ -858,6 +1045,7 @@ export function setRobotScalePercent(scalePercent: number): void {
   const safeValue = clampRobotScalePercent(scalePercent)
   localStorage.setItem(ADMIN_ROBOT_SCALE_PERCENT_KEY, String(safeValue))
   emitAdminConfigUpdated({ robotScalePercent: safeValue })
+  scheduleSharedAdminStateSync()
 }
 
 export function getCameraPreviewVisible(): boolean {
@@ -869,6 +1057,7 @@ export function getCameraPreviewVisible(): boolean {
 export function setCameraPreviewVisible(visible: boolean): void {
   localStorage.setItem(ADMIN_CAMERA_PREVIEW_VISIBLE_KEY, String(Boolean(visible)))
   emitAdminConfigUpdated({ cameraPreviewVisible: Boolean(visible) })
+  scheduleSharedAdminStateSync()
 }
 
 export function getRobotStudioConfig(): RobotStudioConfigV1 {
@@ -885,6 +1074,7 @@ export function setRobotStudioConfig(nextConfig: RobotStudioConfigV1): RobotStud
   const normalized = normalizeRobotStudioConfig(nextConfig)
   localStorage.setItem(ADMIN_ROBOT_STUDIO_CONFIG_KEY, JSON.stringify(normalized))
   emitAdminConfigUpdated({ robotStudioConfig: normalized })
+  scheduleSharedAdminStateSync()
   return normalized
 }
 
