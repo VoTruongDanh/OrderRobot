@@ -28,13 +28,9 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
-      - name: Install Node dependencies
-        env:
-          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
-          ELECTRON_SKIP_DOWNLOAD: "1"
-        run: |
-          npm ci --omit=dev
-          npm --prefix apps/kiosk-ui ci
+      # Root không cài: tránh devDependencies monorepo (Electron, …). Build UI chỉ cần apps/kiosk-ui (Vite/TS là toolchain cho `vite build`, không phải chạy dev server).
+      - name: Install Node dependencies (kiosk-ui only)
+        run: npm --prefix apps/kiosk-ui ci
 
       - name: Install Python dependencies
         run: |
@@ -42,7 +38,9 @@ jobs:
           pip install -r services/core-backend/requirements.txt -r services/ai-backend/requirements.txt
 
       - name: Build UI
-        run: npm run build:ui
+        run: |
+          npm --prefix apps/kiosk-ui run robot-models:sync
+          npm --prefix apps/kiosk-ui run build
 
   build-and-push-core:
     runs-on: ubuntu-latest
