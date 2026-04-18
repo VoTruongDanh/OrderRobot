@@ -29,8 +29,11 @@ jobs:
           cache: "pip"
 
       - name: Install Node dependencies
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+          ELECTRON_SKIP_DOWNLOAD: "1"
         run: |
-          npm ci
+          npm ci --omit=dev
           npm --prefix apps/kiosk-ui ci
 
       - name: Install Python dependencies
