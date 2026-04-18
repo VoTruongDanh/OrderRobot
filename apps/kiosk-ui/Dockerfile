@@ -8,10 +8,12 @@ RUN npm ci && npm --prefix apps/kiosk-ui ci
 
 COPY . /app
 
-ARG VITE_CORE_API_URL=http://localhost:8011
-ARG VITE_AI_API_URL=http://localhost:8012
-ARG VITE_MENU_API_URL=http://localhost:8011/menu
-ARG VITE_ORDERS_API_URL=http://localhost:8011/orders
+# Dùng đường dẫn tương đối để trình duyệt luôn gọi qua cùng origin (nginx /api/core, /api/ai).
+# Tránh bake http://...:8011|:8012 — resolveBrowserSafe* có nhánh same-origin sẽ giữ URL tuyệt đối và bỏ qua reverse proxy.
+ARG VITE_CORE_API_URL=/api/core
+ARG VITE_AI_API_URL=/api/ai
+ARG VITE_MENU_API_URL=/api/core/menu
+ARG VITE_ORDERS_API_URL=/api/core/orders
 
 ENV VITE_CORE_API_URL=${VITE_CORE_API_URL}
 ENV VITE_AI_API_URL=${VITE_AI_API_URL}
