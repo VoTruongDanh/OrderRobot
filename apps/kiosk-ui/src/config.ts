@@ -939,6 +939,7 @@ export function resolveBrowserSafeAiApiUrl(aiApiUrl: string): string {
   try {
     const href = typeof window !== 'undefined' ? window.location.href : 'http://localhost/'
     const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost'
+    const currentProtocol = typeof window !== 'undefined' ? window.location.protocol : 'http:'
     const parsed = new URL(rawAiApi, href)
     const sameOrigin = parsed.origin === origin
     if (sameOrigin) {
@@ -948,6 +949,9 @@ export function resolveBrowserSafeAiApiUrl(aiApiUrl: string): string {
     // keep explicit localhost AI URLs instead of forcing /api/ai reverse proxy paths.
     if (isLocalDevBrowserContext()) {
       return parsed.toString()
+    }
+    if (currentProtocol === 'https:' && parsed.protocol === 'http:') {
+      return '/api/ai'
     }
     if (isLocalLikeHost(parsed.hostname)) {
       return '/api/ai'
