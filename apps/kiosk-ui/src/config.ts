@@ -1,23 +1,17 @@
 const LEGACY_ENV_VALUE_MIGRATIONS: Record<string, Record<string, string>> = {
-  VITE_CORE_API_URL: { 'http://127.0.0.1:8001': 'http://127.0.0.1:8011' },
-  VITE_AI_API_URL: { 'http://127.0.0.1:8002': 'http://127.0.0.1:8012' },
-  VITE_MENU_API_URL: { 'http://127.0.0.1:8001/menu': 'http://127.0.0.1:8011/menu' },
-  VITE_ORDERS_API_URL: { 'http://127.0.0.1:8001/orders': 'http://127.0.0.1:8011/orders' },
-  VITE_PRODUCT_SIZE_API_URL: { 'http://127.0.0.1:8001/product-size/filter': 'http://127.0.0.1:8011/product-size/filter' },
-}
-
-function isLocalDevPort(port: string): boolean {
-  return port === '5173' || port === '4173' || port === '3000'
+  VITE_CORE_API_URL: { 'http://127.0.0.1:8001': '/api/core', 'http://127.0.0.1:8011': '/api/core' },
+  VITE_AI_API_URL: { 'http://127.0.0.1:8002': '/api/ai', 'http://127.0.0.1:8012': '/api/ai' },
+  VITE_MENU_API_URL: { 'http://127.0.0.1:8001/menu': '/api/core/menu', 'http://127.0.0.1:8011/menu': '/api/core/menu' },
+  VITE_ORDERS_API_URL: { 'http://127.0.0.1:8001/orders': '/api/core/orders', 'http://127.0.0.1:8011/orders': '/api/core/orders' },
+  VITE_PRODUCT_SIZE_API_URL: {
+    'http://127.0.0.1:8001/product-size/filter': '/api/core/product-size/filter',
+    'http://127.0.0.1:8011/product-size/filter': '/api/core/product-size/filter',
+  },
 }
 
 function isLocalLikeHost(hostname: string): boolean {
   const host = String(hostname || '').trim().toLowerCase()
   return host === 'localhost' || host === '127.0.0.1' || host === '::1'
-}
-
-function isLocalDevBrowserContext(): boolean {
-  if (typeof window === 'undefined') return false
-  return isLocalDevPort(String(window.location.port || '')) && isLocalLikeHost(window.location.hostname)
 }
 
 function parsePositiveStoreId(value: string | null | undefined): string {
@@ -28,9 +22,6 @@ function parsePositiveStoreId(value: string | null | undefined): string {
 }
 
 function getDefaultCoreApiFallback(): string {
-  if (typeof window !== 'undefined') {
-    return isLocalDevBrowserContext() ? 'http://127.0.0.1:8011' : '/api/core'
-  }
   return '/api/core'
 }
 
@@ -46,11 +37,10 @@ function resolveBrowserSafeCoreApiUrl(coreApiUrl: string): string {
     const href = typeof window !== 'undefined' ? window.location.href : 'http://localhost/'
     const parsed = new URL(rawCoreApi, href)
     const normalized = parsed.toString().replace(/\/$/, '')
-    if (isLocalDevBrowserContext()) {
-      return normalized
+    if (isLocalLikeHost(parsed.hostname)) {
+      return '/api/core'
     }
-    const port = String(parsed.port || '')
-    if (isLocalLikeHost(parsed.hostname) && (port === '8011' || port === '18011')) {
+    if (typeof window !== 'undefined' && parsed.origin !== window.location.origin) {
       return '/api/core'
     }
     return normalized
@@ -945,15 +935,13 @@ export function resolveBrowserSafeAiApiUrl(aiApiUrl: string): string {
     if (sameOrigin) {
       return parsed.toString()
     }
-    // In local/dev-like browser contexts (including docker-exposed localhost ports),
-    // keep explicit localhost AI URLs instead of forcing /api/ai reverse proxy paths.
-    if (isLocalDevBrowserContext()) {
-      return parsed.toString()
-    }
     if (currentProtocol === 'https:' && parsed.protocol === 'http:') {
       return '/api/ai'
     }
     if (isLocalLikeHost(parsed.hostname)) {
+      return '/api/ai'
+    }
+    if (typeof window !== 'undefined' && parsed.origin !== window.location.origin) {
       return '/api/ai'
     }
     return parsed.toString()
@@ -975,7 +963,10 @@ export function resolveBrowserSafeMenuApiUrl(menuApiUrl: string, coreApiUrl: str
     const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost'
     const parsed = new URL(rawMenuApi, href)
     const sameOrigin = parsed.origin === origin
-    if (sameOrigin || isLocalLikeHost(parsed.hostname)) {
+    if (isLocalLikeHost(parsed.hostname)) {
+      return `${String(coreApiUrl || '').replace(/\/$/, '')}/menu`
+    }
+    if (sameOrigin) {
       return parsed.toString()
     }
     const safeCore = String(coreApiUrl || '').trim().replace(/\/$/, '')
@@ -993,13 +984,50 @@ export function getMenuApiUrl(): string {
 }
 
 export function getOrdersApiUrl(): string {
-  return appendStoreContextToUrl(getEnvConfig('VITE_ORDERS_API_URL', `${getCoreApiUrl()}/orders`))
+  const configured = getEnvConfig('VITE_ORDERS_API_URL', `${getCoreApiUrl()}/orders`)
+  return appendStoreContextToUrl(resolveBrowserSafeOrdersApiUrl(configured, getCoreApiUrl()))
 }
 export function getProductSizeApiUrl(): string {
-  return getEnvConfig(
+  const configured = getEnvConfig(
     'VITE_PRODUCT_SIZE_API_URL',
-    'http://cnxvn.ddns.net:8080/api/v1/product-size/filter?productId={productId}&page=0&size=10&sort=',
+    `${getCoreApiUrl()}/product-size/filter?productId={productId}&page=0&size=10&sort=`,
   )
+  return resolveBrowserSafeProductSizeApiUrl(configured, getCoreApiUrl())
+}
+
+function resolveBrowserSafeOrdersApiUrl(ordersApiUrl: string, coreApiUrl: string): string {
+  const rawOrdersApi = String(ordersApiUrl || '').trim()
+  if (!rawOrdersApi) return `${String(coreApiUrl || '').replace(/\/$/, '')}/orders`
+  if (rawOrdersApi.startsWith('/')) return rawOrdersApi
+  try {
+    const href = typeof window !== 'undefined' ? window.location.href : 'http://localhost/'
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost'
+    const parsed = new URL(rawOrdersApi, href)
+    if (isLocalLikeHost(parsed.hostname) || parsed.origin !== origin) {
+      return `${String(coreApiUrl || '').replace(/\/$/, '')}/orders`
+    }
+    return parsed.toString()
+  } catch {
+    return `${String(coreApiUrl || '').replace(/\/$/, '')}/orders`
+  }
+}
+
+function resolveBrowserSafeProductSizeApiUrl(productSizeApiUrl: string, coreApiUrl: string): string {
+  const rawProductSizeApi = String(productSizeApiUrl || '').trim()
+  const fallback = `${String(coreApiUrl || '').replace(/\/$/, '')}/product-size/filter?productId={productId}&page=0&size=10&sort=`
+  if (!rawProductSizeApi) return fallback
+  if (rawProductSizeApi.startsWith('/')) return rawProductSizeApi
+  try {
+    const href = typeof window !== 'undefined' ? window.location.href : 'http://localhost/'
+    const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost'
+    const parsed = new URL(rawProductSizeApi, href)
+    if (isLocalLikeHost(parsed.hostname) || parsed.origin !== origin) {
+      return fallback
+    }
+    return parsed.toString()
+  } catch {
+    return fallback
+  }
 }
 
 export function getProductDefaultSizeName(): string {

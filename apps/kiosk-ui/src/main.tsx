@@ -11,11 +11,7 @@ import { getAllAdminEnvConfig } from './config'
 
 const ADMIN_AUTH_TOKEN_KEY = 'admin.auth.accessToken'
 const ADMIN_AUTH_USER_KEY = 'admin.auth.username'
-const DEFAULT_ADMIN_LOGIN_URL = 'http://cnxvn.ddns.net:8080/api/v1/auth/login'
-const DEFAULT_CORE_API_URL =
-  typeof window !== 'undefined' && (window.location.port === '5173' || window.location.port === '4173' || window.location.port === '3000')
-    ? 'http://127.0.0.1:8011'
-    : '/api/core'
+const DEFAULT_ADMIN_LOGIN_URL = 'https://cnxvn.ddns.net/api/auth/login'
 
 function extractAccessToken(payload: unknown): string {
   if (!payload || typeof payload !== 'object') {
@@ -51,11 +47,6 @@ async function requestLogin(targetUrl: string, username: string, password: strin
   return { accessToken }
 }
 
-function isNetworkLikeError(err: unknown): boolean {
-  const message = err instanceof Error ? err.message : String(err || '')
-  return /failed to fetch|networkerror|load failed|cors|network request failed/i.test(message)
-}
-
 function AdminLoginGate() {
   const [username, setUsername] = useState(() => localStorage.getItem(ADMIN_AUTH_USER_KEY) || '')
   const [password, setPassword] = useState('')
@@ -69,13 +60,6 @@ function AdminLoginGate() {
     return String(envConfig.POS_AUTH_LOGIN_URL || DEFAULT_ADMIN_LOGIN_URL).trim() || DEFAULT_ADMIN_LOGIN_URL
   }, [])
 
-  const coreApiBaseUrl = useMemo(() => {
-    const raw = String(import.meta.env.VITE_CORE_API_URL || DEFAULT_CORE_API_URL).trim()
-    return raw.replace(/\/+$/, '')
-  }, [])
-
-  const proxyLoginUrl = `${coreApiBaseUrl}/auth/login/proxy`
-
   const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const cleanUsername = username.trim()
@@ -87,18 +71,8 @@ function AdminLoginGate() {
     setLoading(true)
     setError('')
     try {
-      let accessToken = ''
-      try {
-        const result = await requestLogin(proxyLoginUrl, cleanUsername, password)
-        accessToken = result.accessToken
-      } catch (proxyErr) {
-        if (!isNetworkLikeError(proxyErr) || loginUrl === proxyLoginUrl) {
-          throw proxyErr
-        }
-
-        const result = await requestLogin(loginUrl, cleanUsername, password)
-        accessToken = result.accessToken
-      }
+      const result = await requestLogin(loginUrl, cleanUsername, password)
+      const accessToken = result.accessToken
 
       localStorage.setItem(ADMIN_AUTH_TOKEN_KEY, accessToken)
       localStorage.setItem(ADMIN_AUTH_USER_KEY, cleanUsername)
@@ -107,7 +81,7 @@ function AdminLoginGate() {
     } catch (err) {
       const detail = err instanceof Error ? err.message : 'Login failed.'
       if (/failed to fetch/i.test(detail)) {
-        setError('Cannot reach login service. Start core backend (port 8011) and try again.')
+        setError(`Cannot reach login service at ${loginUrl}.`)
       } else {
         setError(detail)
       }
