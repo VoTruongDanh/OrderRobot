@@ -12,10 +12,20 @@ import { getAllAdminEnvConfig } from './config'
 const ADMIN_AUTH_TOKEN_KEY = 'admin.auth.accessToken'
 const ADMIN_AUTH_USER_KEY = 'admin.auth.username'
 const DEFAULT_ADMIN_LOGIN_URL = 'http://cnxvn.ddns.net:8080/api/v1/auth/login'
+const LOCAL_LIKE_HOSTS = new Set(['localhost', '127.0.0.1', '::1'])
+
+function isLocalLikeHost(hostname: string): boolean {
+  return LOCAL_LIKE_HOSTS.has(String(hostname || '').trim().toLowerCase())
+}
+
+function isLocalDevBrowserContext(): boolean {
+  if (typeof window === 'undefined') return false
+  const port = String(window.location.port || '')
+  return (port === '5173' || port === '4173' || port === '3000') && isLocalLikeHost(window.location.hostname)
+}
+
 const DEFAULT_CORE_API_URL =
-  typeof window !== 'undefined' && (window.location.port === '5173' || window.location.port === '4173' || window.location.port === '3000')
-    ? 'http://127.0.0.1:8011'
-    : '/api/core'
+  isLocalDevBrowserContext() ? 'http://127.0.0.1:8011' : '/api/core'
 
 function extractAccessToken(payload: unknown): string {
   if (!payload || typeof payload !== 'object') {
@@ -92,7 +102,7 @@ function AdminLoginGate() {
         const result = await requestLogin(proxyLoginUrl, cleanUsername, password)
         accessToken = result.accessToken
       } catch (proxyErr) {
-        if (!isNetworkLikeError(proxyErr) || loginUrl === proxyLoginUrl) {
+        if (!isNetworkLikeError(proxyErr) || loginUrl === proxyLoginUrl || !isLocalDevBrowserContext()) {
           throw proxyErr
         }
 
