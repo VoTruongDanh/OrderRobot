@@ -13494,7 +13494,9 @@
         if (!Array.isArray(items) || items.length === 0) {
             currentMenuItems = [];
             menuSizeOptionsCache.clear();
-            runtimeStoreDisplayName = '';
+            if (!runtimeStoreTableLoaded) {
+                runtimeStoreDisplayName = '';
+            }
             if (menuShellBadge) {
                 menuShellBadge.textContent = '0 món';
             }
