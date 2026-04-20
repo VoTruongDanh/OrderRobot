@@ -109,6 +109,11 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           router: () => toProxyTarget(corePortFile, configuredCorePort, coreFallbackPorts),
         },
+        '/api/pos': {
+          target: 'http://cnxvn.ddns.net:8080',
+          changeOrigin: true,
+          rewrite: (requestPath) => requestPath.replace(/^\/api\/pos/, '/api/v1'),
+        },
       },
     },
     preview: {

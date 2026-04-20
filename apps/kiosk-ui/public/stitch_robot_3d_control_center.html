@@ -6250,8 +6250,58 @@
     }
     const runtimeStoreId = isAdminPreviewMode ? null : resolveRuntimeStoreId();
     const runtimeTableId = isAdminPreviewMode ? null : resolveRuntimeTableId();
+    const STORE_TABLE_API_BASE_URL = '/api/pos/store-tables';
     let runtimeStoreDisplayName = '';
-    let runtimeTableDisplayName = Number.isFinite(runtimeTableId) && runtimeTableId > 0 ? `Bàn ${runtimeTableId}` : '';
+    let runtimeTableDisplayName = '';
+    let runtimeStoreTableLoadTask = null;
+    let runtimeStoreTableLoaded = false;
+    function getFallbackTableDisplayName() {
+        return Number.isFinite(runtimeTableId) && runtimeTableId > 0 ? `Bàn ${runtimeTableId}` : '';
+    }
+    function normalizeRuntimeDisplayName(value) {
+        return String(value || '').trim();
+    }
+    function applyRuntimeStoreTableDisplayNames(storeName, tableName) {
+        const nextStoreName = normalizeRuntimeDisplayName(storeName);
+        const nextTableName = normalizeRuntimeDisplayName(tableName);
+        if (nextStoreName) {
+            runtimeStoreDisplayName = nextStoreName;
+        }
+        runtimeTableDisplayName = nextTableName || getFallbackTableDisplayName();
+        renderVoiceMiniContext();
+    }
+    async function ensureRuntimeStoreTableContextLoaded() {
+        if (runtimeStoreTableLoaded || runtimeStoreTableLoadTask || !Number.isFinite(runtimeTableId) || runtimeTableId <= 0) {
+            return runtimeStoreTableLoadTask;
+        }
+        runtimeStoreTableLoadTask = (async () => {
+            try {
+                const response = await fetch(`${STORE_TABLE_API_BASE_URL}/${runtimeTableId}`, {
+                    method: 'GET',
+                    headers: { Accept: 'application/json' },
+                });
+                if (!response.ok) {
+                    throw new Error(`Store table lookup failed with status ${response.status}`);
+                }
+                const payload = await response.json();
+                const data = payload && typeof payload === 'object' ? payload.data : null;
+                if (data && typeof data === 'object') {
+                    applyRuntimeStoreTableDisplayNames(data.storeName, data.tableName);
+                } else {
+                    runtimeTableDisplayName = getFallbackTableDisplayName();
+                    renderVoiceMiniContext();
+                }
+                runtimeStoreTableLoaded = true;
+            } catch (error) {
+                runtimeTableDisplayName = getFallbackTableDisplayName();
+                renderVoiceMiniContext();
+                console.warn('[kiosk] Failed to load store-table context:', error);
+            } finally {
+                runtimeStoreTableLoadTask = null;
+            }
+        })();
+        return runtimeStoreTableLoadTask;
+    }
     function hasResolvedStoreId() {
         return Number.isFinite(runtimeStoreId) && runtimeStoreId > 0;
     }
@@ -6268,7 +6318,7 @@
                 chips.push({
                     icon: 'table_restaurant',
                     label: 'Bàn',
-                    value: runtimeTableDisplayName || `Bàn ${runtimeTableId}`,
+                    value: runtimeTableDisplayName || getFallbackTableDisplayName(),
                 });
             } else {
                 chips.push({
@@ -13459,9 +13509,11 @@
             ...item,
             _category: normalizeCategory(item),
         }));
-        runtimeStoreDisplayName = String(
-            currentMenuItems.find((item) => String(item?.store_name || '').trim())?.store_name || ''
-        ).trim();
+        if (!runtimeStoreDisplayName) {
+            runtimeStoreDisplayName = String(
+                currentMenuItems.find((item) => String(item?.store_name || '').trim())?.store_name || ''
+            ).trim();
+        }
         const availableCategories = new Set(currentMenuItems.map((item) => item._category));
         if (activeMenuCategory !== 'all' && !availableCategories.has(activeMenuCategory)) {
             activeMenuCategory = 'all';
@@ -13615,7 +13667,9 @@
     hideOrderFlow();
     updateMiniCart([]);
     setCartPanelOpen(false);
+    runtimeTableDisplayName = getFallbackTableDisplayName();
     renderVoiceMiniContext();
+    void ensureRuntimeStoreTableContextLoaded();
     if (isAdminPreviewMode || hasResolvedStoreId()) {
         void ensureMenuLoaded();
     } else {
